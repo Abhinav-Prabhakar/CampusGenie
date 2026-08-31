@@ -1,21 +1,25 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import SidebarNav, { type SidebarRecent } from "@/components/primitives/SidebarNav";
 import PromptBar from "@/components/primitives/PromptBar";
 import ThinkingState from "@/components/primitives/ThinkingState";
-import LoadingState from "@/components/primitives/LoadingState";
-import ToolChips from "@/components/primitives/ToolChips";
-import TaskRows from "@/components/primitives/TaskRows";
 import ApprovalCard from "@/components/primitives/ApprovalCard";
 import RecommendationCard from "@/components/primitives/RecommendationCard";
 import ContextCards from "@/components/primitives/ContextCards";
 import FineTuneCard from "@/components/primitives/FineTuneCard";
-import CodeBlock from "@/components/primitives/CodeBlock";
+import Flowchart from "@/components/primitives/Flowchart";
+import StreamingText from "@/components/primitives/StreamingText";
 import { EntityChip } from "@/components/atoms/EntityChip";
 import { StreamText } from "@/components/atoms/StreamText";
 import { Button } from "@/components/atoms/Button";
-import { AVAILABLE_MODELS, type LLMModelConfig, type LLMProvider } from "@/lib/llm";
+import {
+  DEFAULT_AVAILABLE_MODELS,
+  getStoredCustomModels,
+  saveStoredCustomModels,
+  type LLMModelConfig,
+  type LLMProvider,
+} from "@/lib/llm";
 import KeyboardShortcutsModal from "@/components/shortcuts/KeyboardShortcutsModal";
 import EventIcons from "@/components/events/EventIcons";
 import { useTheme } from "@/lib/theme";
@@ -63,10 +67,11 @@ export default function CampusGenieChatPage() {
   const { isDark, toggleTheme } = useTheme();
   const { threads, activeThreadId, saveThread, setActiveThreadId } = useChatStore();
 
+  const [models, setModels] = useState<LLMModelConfig[]>(DEFAULT_AVAILABLE_MODELS);
+  const [selectedModel, setSelectedModel] = useState<LLMModelConfig>(DEFAULT_AVAILABLE_MODELS[0]);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [activeTitle, setActiveTitle] = useState<string | null>(null);
   const [currentThreadId, setCurrentThreadId] = useState<string | null>(null);
-  const [selectedModel, setSelectedModel] = useState<LLMModelConfig>(AVAILABLE_MODELS[0]);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState<boolean>(false);
@@ -76,7 +81,49 @@ export default function CampusGenieChatPage() {
   const [customApiKey, setCustomApiKey] = useState<string>("");
   const [customBaseUrl, setCustomBaseUrl] = useState<string>("");
 
+  // New Custom Model Form State
+  const [showAddModelForm, setShowAddModelForm] = useState<boolean>(false);
+  const [newModelName, setNewModelName] = useState<string>("");
+  const [newModelId, setNewModelId] = useState<string>("");
+  const [newModelProvider, setNewModelProvider] = useState<LLMProvider>("openai");
+  const [newModelReasoning, setNewModelReasoning] = useState<boolean>(false);
+  const [newModelBaseUrl, setNewModelBaseUrl] = useState<string>("");
+  const [newModelApiKey, setNewModelApiKey] = useState<string>("");
+
   const scrollAnchorRef = useRef<HTMLDivElement>(null);
+
+  // Sync models from /api/models and localStorage
+  const refreshModels = async () => {
+    const customStored = getStoredCustomModels();
+    try {
+      const res = await fetch("/api/models");
+      if (res.ok) {
+        const data = await res.json();
+        const serverModels: LLMModelConfig[] = data.models || DEFAULT_AVAILABLE_MODELS;
+        
+        // Merge server models with custom models from localStorage without duplicates
+        const merged = [...customStored, ...serverModels.filter((sm) => !customStored.some((cm) => cm.id === sm.id))];
+        setModels(merged);
+        
+        if (data.defaultModel) {
+          const match = merged.find((m) => m.id === data.defaultModel);
+          if (match) setSelectedModel(match);
+        }
+        return;
+      }
+    } catch (e) {
+      console.warn("Failed to fetch /api/models, falling back to local list:", e);
+    }
+    const fallbackMerged = [...customStored, ...DEFAULT_AVAILABLE_MODELS.filter((dm) => !customStored.some((cm) => cm.id === dm.id))];
+    setModels(fallbackMerged);
+  };
+
+  useEffect(() => {
+    refreshModels();
+    const handleCustomModelsUpdated = () => refreshModels();
+    window.addEventListener("cg-custom-models-updated", handleCustomModelsUpdated);
+    return () => window.removeEventListener("cg-custom-models-updated", handleCustomModelsUpdated);
+  }, []);
 
   // Initialize settings and load active thread or prompt
   useEffect(() => {
@@ -115,6 +162,43 @@ export default function CampusGenieChatPage() {
     localStorage.setItem("cg_api_key", customApiKey);
     localStorage.setItem("cg_base_url", customBaseUrl);
     setSettingsOpen(false);
+  };
+
+  const handleAddCustomModel = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newModelId.trim() || !newModelName.trim()) return;
+
+    const newConfig: LLMModelConfig = {
+      id: newModelId.trim(),
+      name: newModelName.trim(),
+      provider: newModelProvider,
+      isReasoning: newModelReasoning,
+      customBaseUrl: newModelBaseUrl.trim() || undefined,
+      customApiKey: newModelApiKey.trim() || undefined,
+      isCustom: true,
+    };
+
+    const existing = getStoredCustomModels();
+    const updated = [newConfig, ...existing.filter((m) => m.id !== newConfig.id)];
+    saveStoredCustomModels(updated);
+    setSelectedModel(newConfig);
+
+    // Reset form
+    setNewModelName("");
+    setNewModelId("");
+    setNewModelReasoning(false);
+    setNewModelBaseUrl("");
+    setNewModelApiKey("");
+    setShowAddModelForm(false);
+  };
+
+  const handleDeleteCustomModel = (id: string) => {
+    const existing = getStoredCustomModels();
+    const updated = existing.filter((m) => m.id !== id);
+    saveStoredCustomModels(updated);
+    if (selectedModel.id === id) {
+      setSelectedModel(DEFAULT_AVAILABLE_MODELS[0]);
+    }
   };
 
   const handleSend = async (text: string) => {
@@ -156,6 +240,9 @@ export default function CampusGenieChatPage() {
     const isFlavor = lower.includes("flavor") || lower.includes("launch") || lower.includes("how many");
     const isEvent = lower.includes("event") || lower.includes("week") || lower.includes("tonight") || lower.includes("meetup");
 
+    const effectiveApiKey = selectedModel.customApiKey || customApiKey || undefined;
+    const effectiveBaseUrl = selectedModel.customBaseUrl || customBaseUrl || undefined;
+
     try {
       const response = await fetch("/api/chat", {
         method: "POST",
@@ -164,8 +251,8 @@ export default function CampusGenieChatPage() {
           messages: newMessages.map((m) => ({ role: m.role, content: m.content })),
           model: selectedModel.id,
           provider: selectedModel.provider,
-          customApiKey: customApiKey || undefined,
-          customBaseUrl: customBaseUrl || undefined,
+          customApiKey: effectiveApiKey,
+          customBaseUrl: effectiveBaseUrl,
         }),
       });
 
@@ -324,33 +411,42 @@ export default function CampusGenieChatPage() {
         }
       />
 
-      {/* Main Chat Pane */}
       <div className="flex min-w-0 flex-1 flex-col gap-2.5">
         <section className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-[14px] border border-line bg-canvas shadow-card">
-          {/* Header Tab Bar */}
+          {/* Top Bar */}
           <header className="flex h-11 shrink-0 items-center justify-between border-b border-line px-3 sm:px-4 bg-canvas">
             <div className="flex items-center gap-2">
               <span className="text-[13.5px] font-semibold text-ink">Campus Genie</span>
-              <span className="text-[11px] text-ink-3">· Lakehouse Agent</span>
+              <span className="text-[12px] text-ink-3">/</span>
+              <span className="text-[12.5px] font-medium text-ink-2 truncate max-w-[200px] sm:max-w-[320px]">
+                {activeTitle || "Lakehouse Assistant"}
+              </span>
             </div>
 
-            {/* Right Controls: Model Picker, Settings, Theme */}
             <div className="flex items-center gap-2">
-              {/* Model Selector Dropdown */}
+              {/* Model Picker */}
               <div className="relative">
                 <select
                   value={selectedModel.id}
                   onChange={(e) => {
-                    const m = AVAILABLE_MODELS.find((x) => x.id === e.target.value);
+                    if (e.target.value === "ADD_CUSTOM") {
+                      setShowAddModelForm(true);
+                      setSettingsOpen(true);
+                      return;
+                    }
+                    const m = models.find((x) => x.id === e.target.value);
                     if (m) setSelectedModel(m);
                   }}
                   className="h-7 rounded-[7px] border border-line bg-surface px-2 text-[12px] font-medium text-ink outline-none cursor-pointer hover:border-line-strong transition-colors"
                 >
-                  {AVAILABLE_MODELS.map((m) => (
-                    <option key={m.id} value={m.id}>
-                      {m.name} {m.isReasoning ? "🧠" : ""}
-                    </option>
-                  ))}
+                  <optgroup label="Available Models">
+                    {models.map((m) => (
+                      <option key={m.id} value={m.id}>
+                        {m.name} {m.isReasoning ? "🧠" : ""} {m.isCustom ? "★" : ""}
+                      </option>
+                    ))}
+                  </optgroup>
+                  <option value="ADD_CUSTOM">+ Add Custom Model...</option>
                 </select>
               </div>
 
@@ -400,247 +496,375 @@ export default function CampusGenieChatPage() {
             </div>
           </header>
 
-          {/* Conversation Stream & Chat Body */}
-          <div className="flex min-h-0 flex-1 flex-col justify-between overflow-hidden bg-canvas">
-            <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-5 max-w-[860px] mx-auto w-full">
-              {/* Empty State / Suggestions */}
-              {messages.length === 0 && (
-                <div className="my-auto flex flex-col items-center justify-center text-center py-12 px-4">
-                  <div className="flex size-12 items-center justify-center rounded-[12px] bg-accent-tint text-accent text-2xl mb-3 shadow-hairline">
-                    🧞
-                  </div>
-                  <h2 className="text-[19px] font-semibold text-ink mb-1">
-                    Ask Campus Genie anything about your week
-                  </h2>
-                  <p className="text-[13.5px] text-ink-2 max-w-[500px] mb-6 leading-relaxed">
-                    Powered by Databricks Lakehouse &amp; Genie Agents. Tap a prompt below or ask your own question about campus life, research labs, or city meetups.
+          {/* Main Chat Flow */}
+          <div className="flex min-h-0 flex-1 flex-col overflow-y-auto p-4 sm:p-6 lg:p-8">
+            {messages.length === 0 ? (
+              <div className="my-auto flex flex-col items-center justify-center text-center max-w-xl mx-auto space-y-6">
+                <div className="flex size-12 items-center justify-center rounded-2xl bg-hover-2 text-ink shadow-hairline">
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" />
+                  </svg>
+                </div>
+
+                <div className="space-y-2">
+                  <h2 className="text-xl font-semibold text-ink">How can Campus Genie assist you today?</h2>
+                  <p className="text-[13px] text-ink-2 leading-relaxed">
+                    Powered by Databricks Unity Catalog Delta tables &amp; AI reasoning. Explore research labs, AI club recruitment, campus fests, and alumni career paths.
                   </p>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 w-full max-w-[660px]">
-                    {SUGGESTIONS.map((s) => (
-                      <button
-                        key={s.title}
-                        type="button"
-                        onClick={() => handleSend(s.prompt)}
-                        className="flex flex-col items-start p-3.5 rounded-[12px] border border-line bg-canvas hover:bg-hover hover:border-line-strong transition-all duration-150 text-left shadow-card"
-                      >
-                        <span className="text-[13px] font-semibold text-ink mb-1">{s.title}</span>
-                        <span className="text-[11.5px] text-ink-3 line-clamp-2 leading-normal">{s.prompt}</span>
-                      </button>
-                    ))}
-                  </div>
                 </div>
-              )}
 
-              {/* Messages Loop */}
-              {messages.map((msg) => (
-                <div key={msg.id} className="space-y-4">
-                  {msg.role === "user" ? (
-                    <div className="flex items-start gap-3 justify-end">
-                      <div className="max-w-[85%] rounded-[12px] bg-canvas border border-line-strong p-3.5 shadow-card">
-                        <div className="flex items-center gap-2 mb-1.5">
-                          <EntityChip name="Abhinav (You)" color="var(--accent)" />
-                          <span className="text-[11px] text-ink-3 tabular-nums">{msg.timestamp}</span>
-                        </div>
-                        <p className="text-[13.5px] text-ink font-medium leading-relaxed">
-                          {msg.content}
-                        </p>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="space-y-4">
-                      {/* Thinking State */}
-                      {msg.thinking && (
-                        <div className="rounded-[12px] border border-line bg-canvas p-4 shadow-card">
-                          <ThinkingState variant="Steps" />
-                        </div>
-                      )}
-
-                      {/* Tool Chips */}
-                      <div className="rounded-[12px] border border-line bg-canvas p-4 shadow-card">
-                        <div className="mb-2 text-[12.5px] font-semibold text-ink">Lakehouse Governed Tools</div>
-                        <ToolChips />
-                      </div>
-
-                      {/* Assistant Text Response */}
-                      <div className="rounded-[12px] border border-line bg-canvas p-4 shadow-card space-y-3">
-                        <div className="flex items-center justify-between pb-2 border-b border-line-soft">
-                          <div className="flex items-center gap-2">
-                            <span className="size-2 rounded-full bg-accent animate-pulse" />
-                            <span className="text-[12.5px] font-semibold text-ink">Campus Genie Synthesis</span>
-                            <span className="text-[11px] text-ink-3">via {selectedModel.name}</span>
-                          </div>
-                          <span className="text-[11px] text-ink-3 tabular-nums">{msg.timestamp}</span>
-                        </div>
-                        <div className="text-[13.5px] leading-relaxed text-ink font-normal space-y-2">
-                          <StreamText text={msg.content} />
-                        </div>
-                      </div>
-
-                      {/* Conditional Interactive Cards */}
-                      {msg.cards?.includes("approval") && (
-                        <div>
-                          <ApprovalCard />
-                        </div>
-                      )}
-
-                      {msg.cards?.includes("finetune") && (
-                        <div>
-                          <FineTuneCard />
-                        </div>
-                      )}
-
-                      {msg.cards?.includes("recommendation") && (
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                          <RecommendationCard />
-                          <div className="rounded-[12px] border border-line bg-canvas p-4 shadow-card flex flex-col justify-between">
-                            <div>
-                              <div className="flex items-center justify-between mb-2">
-                                <span className="rounded-full bg-green-tint px-2 py-0.5 text-[11px] font-medium text-green border border-green/20">
-                                  98% Match · City Meetup
-                                </span>
-                                <span className="text-[11.5px] font-semibold text-accent-ink">Free Entry</span>
-                              </div>
-                              <h4 className="text-[14px] font-semibold text-ink mb-1">
-                                Bengaluru Generative AI Mixer @ Koramangala
-                              </h4>
-                              <p className="text-[12.5px] text-ink-2 mb-3">
-                                Hands-on agentic workflows, open-source models, and networking with founders from top AI startups.
-                              </p>
-                              <div className="space-y-1 text-[11.5px] text-ink-3 mb-4">
-                                <div>📅 Saturday · 4:00 PM – 7:30 PM</div>
-                                <div>📍 Indiranagar 100ft Road (18 mins from campus)</div>
-                              </div>
-                            </div>
-                            <div className="flex gap-2">
-                              <Button variant="secondary" className="flex-1 text-xs">View Map</Button>
-                              <Button variant="primary" className="flex-1 text-xs">Reserve Seat</Button>
-                            </div>
-                          </div>
-                        </div>
-                      )}
-
-                      {msg.cards?.includes("context") && (
-                        <div>
-                          <ContextCards />
-                        </div>
-                      )}
-                    </div>
-                  )}
+                {/* Suggestions Grid */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 w-full pt-2 text-left">
+                  {SUGGESTIONS.map((s, idx) => (
+                    <button
+                      key={idx}
+                      type="button"
+                      onClick={() => handleSend(s.prompt)}
+                      className="group flex flex-col justify-between rounded-[10px] border border-line bg-surface p-3.5 text-left transition-all duration-150 hover:border-line-strong hover:bg-hover hover:shadow-card active:scale-[0.99]"
+                    >
+                      <span className="text-[13px] font-medium text-ink group-hover:text-ink">{s.title}</span>
+                      <span className="text-[11.5px] text-ink-3 line-clamp-2 mt-1">{s.prompt}</span>
+                    </button>
+                  ))}
                 </div>
-              ))}
-
-              {/* Live Loading State while waiting */}
-              {isLoading && (
-                <div className="rounded-[12px] border border-line bg-canvas p-4 shadow-card">
-                  <LoadingState variant="Drive" label="Querying Delta Tables & Synthesizing Reasoning..." />
-                </div>
-              )}
-
-              {/* Error Banner — NO FALLBACK */}
-              {errorMessage && (
-                <div className="rounded-[12px] border border-red/40 bg-red-tint/30 p-4 shadow-card text-red space-y-2">
-                  <div className="flex items-center gap-2 font-semibold text-[13px]">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                      <circle cx="12" cy="12" r="10" />
-                      <line x1="12" y1="8" x2="12" y2="12" />
-                      <line x1="12" y1="16" x2="12.01" y2="16" />
-                    </svg>
-                    API Communication Error ({selectedModel.provider})
-                  </div>
-                  <p className="text-[12.5px] leading-relaxed text-ink-2 break-words">
-                    {errorMessage}
-                  </p>
-                  <div className="pt-1 flex items-center gap-2">
-                    <Button variant="secondary" className="text-xs" onClick={() => setSettingsOpen(true)}>
-                      Configure API Key
-                    </Button>
-                    <Button variant="primary" className="text-xs" onClick={() => handleSend(messages.at(-1)?.content || "Retry")}>
-                      Retry Request
-                    </Button>
-                  </div>
-                </div>
-              )}
-
-              <div ref={scrollAnchorRef} />
-            </div>
-
-            {/* Bottom Floating Prompt Bar (Rounded Permanently) */}
-            <div className="shrink-0 border-t border-line bg-canvas p-3">
-              <div className="mx-auto max-w-[780px]">
-                <PromptBar
-                  variant="Rounded"
-                  demo={false}
-                  tall
-                  placeholder="Ask Campus Genie about events, clubs, labs, or career paths..."
-                  onSend={handleSend}
-                />
               </div>
+            ) : (
+              <div className="space-y-6 max-w-3xl mx-auto w-full pb-4">
+                {messages.map((msg) => (
+                  <div
+                    key={msg.id}
+                    className={`flex flex-col space-y-2.5 ${msg.role === "user" ? "items-end" : "items-start"}`}
+                  >
+                    {/* Role Header */}
+                    <div className="flex items-center gap-2 px-1 text-[11px] font-medium text-ink-3">
+                      <span>{msg.role === "user" ? "You" : `Campus Genie (${selectedModel.name})`}</span>
+                      <span>•</span>
+                      <span>{msg.timestamp}</span>
+                    </div>
+
+                    {/* Message Bubble */}
+                    {msg.role === "user" ? (
+                      <div className="rounded-[14px] bg-hover-2 px-4 py-2.5 text-[13.5px] font-medium text-ink max-w-[85%] sm:max-w-[75%] leading-relaxed shadow-sm">
+                        {msg.content}
+                      </div>
+                    ) : (
+                      <div className="w-full space-y-4">
+                        {/* Thinking / Reasoning Accordion Component */}
+                        {msg.thinking && (
+                          <div className="w-full">
+                            <ThinkingState
+                              variant={selectedModel.isReasoning ? "Reasoning" : "Steps"}
+                            />
+                          </div>
+                        )}
+
+                        {/* Text Response Body */}
+                        <div className="rounded-[14px] border border-line bg-surface p-4 text-[13.5px] text-ink leading-relaxed shadow-card whitespace-pre-wrap">
+                          <StreamText text={msg.content} caret={isLoading} />
+                        </div>
+
+                        {/* Governed Cards & Artifacts from Lakehouse */}
+                        {msg.cards?.includes("approval") && (
+                          <div className="w-full animate-fade-in">
+                            <ApprovalCard
+                              questions={[
+                                {
+                                  q: "Want me to place this restock order?",
+                                  type: "radio",
+                                  options: ["Approve order (Amul Dairy · ₹14,250)", "Hold for manager review", "Modify quantity"],
+                                },
+                              ]}
+                              onSubmitted={(answers) => handleSend("Restock order approved. Proceeding with Databricks automated procurement pipeline.")}
+                            />
+                          </div>
+                        )}
+
+                        {msg.cards?.includes("finetune") && (
+                          <div className="w-full animate-fade-in">
+                            <FineTuneCard
+                              fields={[
+                                { key: "flavors", label: "Flavors", value: 12, min: 3, max: 30 },
+                                { key: "storage", label: "Cold Storage", value: 85, min: 20, max: 100, suffix: "%" },
+                                { key: "margin", label: "Est Margin", value: 42, min: 10, max: 80, suffix: "%" },
+                                { key: "batches", label: "Batches/wk", value: 8, min: 1, max: 24 },
+                              ]}
+                            />
+                          </div>
+                        )}
+
+                        {msg.cards?.includes("recommendation") && (
+                          <div className="w-full animate-fade-in">
+                            <RecommendationCard
+                              options={[
+                                {
+                                  key: "acm",
+                                  body: (
+                                    <>
+                                      Join <EntityChip name="ACM Systems & AI Lab" /> with 98% student persona match.
+                                    </>
+                                  ),
+                                  short: "ACM Systems & AI · Wed 6:30 PM",
+                                  signal: 98,
+                                  tone: "green",
+                                  label: "Best Fit",
+                                  cta: "View Event",
+                                  ctaVariant: "primary",
+                                },
+                              ]}
+                            />
+                          </div>
+                        )}
+
+                        {msg.cards?.includes("context") && (
+                          <div className="w-full animate-fade-in">
+                            <ContextCards
+                              chunks={[
+                                {
+                                  title: "Unity Catalog Delta Table",
+                                  chars: "1,420 rows",
+                                  body: "campus_explorer.campus_events: filtered by category = 'AI', dow IN ('WED', 'FRI'), verified by Genie Agent.",
+                                  source: "unity_lakehouse_prod",
+                                  badge: "DELTA",
+                                  tone: "bg-blue",
+                                },
+                              ]}
+                            />
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                ))}
+
+                {/* Error Banner */}
+                {errorMessage && (
+                  <div className="rounded-[10px] border border-red/30 bg-red-tint/20 p-3 text-[13px] text-red flex items-center justify-between">
+                    <span>{errorMessage}</span>
+                    <Button variant="ghost" className="text-xs text-red" onClick={() => setErrorMessage(null)}>
+                      Dismiss
+                    </Button>
+                  </div>
+                )}
+
+                <div ref={scrollAnchorRef} />
+              </div>
+            )}
+          </div>
+
+          {/* Bottom Prompt Bar Input */}
+          <div className="border-t border-line p-3 sm:p-4 bg-surface">
+            <div className="max-w-3xl mx-auto">
+              <PromptBar
+                placeholder={`Ask Campus Genie anything with ${selectedModel.name}...`}
+                onSend={handleSend}
+                demo={false}
+              />
             </div>
           </div>
         </section>
       </div>
 
-      {/* API Configuration Settings Modal */}
+      {/* API Configuration & Custom Models Settings Modal */}
       {settingsOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fade-in">
-          <div className="w-full max-w-md rounded-[14px] border border-line bg-canvas p-5 shadow-overlay space-y-4">
+          <div className="w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-[14px] border border-line bg-canvas p-5 shadow-overlay space-y-4">
             <div className="flex items-center justify-between border-b border-line-soft pb-3">
-              <h3 className="text-[15px] font-semibold text-ink">LLM Provider &amp; API Settings</h3>
+              <div>
+                <h3 className="text-[15px] font-semibold text-ink">LLM Provider &amp; Model Customization</h3>
+                <p className="text-[11.5px] text-ink-3">Configure API keys, custom endpoints, and custom model definitions</p>
+              </div>
               <button
                 type="button"
                 onClick={() => setSettingsOpen(false)}
-                className="text-ink-3 hover:text-ink"
+                className="text-ink-3 hover:text-ink text-sm"
               >
                 ✕
               </button>
             </div>
 
-            <div className="space-y-3 text-[13px]">
-              <div>
-                <label className="block text-ink-2 font-medium mb-1">Select Provider &amp; Model</label>
-                <select
-                  value={selectedModel.id}
-                  onChange={(e) => {
-                    const m = AVAILABLE_MODELS.find((x) => x.id === e.target.value);
-                    if (m) setSelectedModel(m);
-                  }}
-                  className="w-full h-8 rounded-[8px] border border-line bg-surface px-2.5 text-[12.5px] text-ink outline-none"
-                >
-                  {AVAILABLE_MODELS.map((m) => (
-                    <option key={m.id} value={m.id}>
-                      {m.name} ({m.provider}) {m.isReasoning ? "— Thinking" : ""}
-                    </option>
+            <div className="space-y-4 text-[13px]">
+              {/* Global API Defaults */}
+              <div className="rounded-[10px] border border-line bg-surface p-3.5 space-y-3">
+                <div className="text-[12.5px] font-semibold text-ink">Global API Credentials</div>
+                <div>
+                  <label className="block text-ink-2 font-medium mb-1 text-[12px]">Default API Key</label>
+                  <input
+                    type="password"
+                    value={customApiKey}
+                    onChange={(e) => setCustomApiKey(e.target.value)}
+                    placeholder="Defaults to .env.local (LLM_API_KEY / OPENAI_API_KEY / DATABRICKS_TOKEN)"
+                    className="w-full h-8 rounded-[8px] border border-line bg-field px-2.5 text-[12px] text-ink outline-none placeholder:text-ink-3"
+                  />
+                </div>
+                <div>
+                  <label className="block text-ink-2 font-medium mb-1 text-[12px]">Default API Base URL</label>
+                  <input
+                    type="text"
+                    value={customBaseUrl}
+                    onChange={(e) => setCustomBaseUrl(e.target.value)}
+                    placeholder="e.g. https://api.openai.com/v1, https://openrouter.ai/api/v1, or http://localhost:11434/v1"
+                    className="w-full h-8 rounded-[8px] border border-line bg-field px-2.5 text-[12px] text-ink outline-none placeholder:text-ink-3"
+                  />
+                </div>
+              </div>
+
+              {/* Manage Custom Models List */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="text-[12.5px] font-semibold text-ink">Configured Models ({models.length})</div>
+                  <button
+                    type="button"
+                    onClick={() => setShowAddModelForm((p) => !p)}
+                    className="text-[12px] font-medium text-accent-ink hover:underline"
+                  >
+                    {showAddModelForm ? "Cancel Adding" : "+ Add Custom Model"}
+                  </button>
+                </div>
+
+                {/* Add Custom Model Form */}
+                {showAddModelForm && (
+                  <form onSubmit={handleAddCustomModel} className="rounded-[10px] border border-accent/40 bg-surface p-3.5 space-y-2.5 animate-fade-up">
+                    <div className="text-[12px] font-semibold text-accent-ink">New Custom Model Definition</div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      <div>
+                        <label className="block text-[11px] text-ink-3 mb-0.5">Display Name</label>
+                        <input
+                          required
+                          type="text"
+                          value={newModelName}
+                          onChange={(e) => setNewModelName(e.target.value)}
+                          placeholder="e.g. DeepSeek V3 (Groq)"
+                          className="w-full h-7 rounded-[6px] border border-line bg-field px-2 text-[12px] text-ink outline-none"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] text-ink-3 mb-0.5">Model ID / Endpoint</label>
+                        <input
+                          required
+                          type="text"
+                          value={newModelId}
+                          onChange={(e) => setNewModelId(e.target.value)}
+                          placeholder="e.g. deepseek-ai/DeepSeek-V3"
+                          className="w-full h-7 rounded-[6px] border border-line bg-field px-2 text-[12px] text-ink outline-none"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      <div>
+                        <label className="block text-[11px] text-ink-3 mb-0.5">Provider</label>
+                        <select
+                          value={newModelProvider}
+                          onChange={(e) => setNewModelProvider(e.target.value as LLMProvider)}
+                          className="w-full h-7 rounded-[6px] border border-line bg-field px-2 text-[12px] text-ink outline-none"
+                        >
+                          <option value="openai">OpenAI / OpenRouter / Groq / Together</option>
+                          <option value="gemini">Google Gemini</option>
+                          <option value="anthropic">Anthropic Claude</option>
+                          <option value="databricks">Databricks Serving</option>
+                          <option value="ollama">Ollama Local</option>
+                          <option value="custom">Custom Endpoint</option>
+                        </select>
+                      </div>
+                      <div className="flex items-center gap-2 pt-4">
+                        <input
+                          type="checkbox"
+                          id="reasoningCheckbox"
+                          checked={newModelReasoning}
+                          onChange={(e) => setNewModelReasoning(e.target.checked)}
+                          className="rounded border-line"
+                        />
+                        <label htmlFor="reasoningCheckbox" className="text-[12px] text-ink-2 cursor-pointer">
+                          Thinking / Reasoning Model
+                        </label>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      <div>
+                        <label className="block text-[11px] text-ink-3 mb-0.5">Model Base URL (Optional)</label>
+                        <input
+                          type="text"
+                          value={newModelBaseUrl}
+                          onChange={(e) => setNewModelBaseUrl(e.target.value)}
+                          placeholder="Overrides global Base URL"
+                          className="w-full h-7 rounded-[6px] border border-line bg-field px-2 text-[12px] text-ink outline-none"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] text-ink-3 mb-0.5">Model API Key (Optional)</label>
+                        <input
+                          type="password"
+                          value={newModelApiKey}
+                          onChange={(e) => setNewModelApiKey(e.target.value)}
+                          placeholder="Overrides global API key"
+                          className="w-full h-7 rounded-[6px] border border-line bg-field px-2 text-[12px] text-ink outline-none"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="flex justify-end gap-2 pt-1">
+                      <Button variant="ghost" className="text-xs h-7" onClick={() => setShowAddModelForm(false)}>
+                        Cancel
+                      </Button>
+                      <Button variant="primary" className="text-xs h-7" type="submit">
+                        Save Model
+                      </Button>
+                    </div>
+                  </form>
+                )}
+
+                {/* Models List */}
+                <div className="max-h-48 overflow-y-auto rounded-[8px] border border-line divide-y divide-line-soft bg-surface">
+                  {models.map((m) => (
+                    <div key={m.id} className="flex items-center justify-between px-3 py-2 text-[12px]">
+                      <div className="flex items-center gap-2 truncate">
+                        <span className="font-medium text-ink truncate">{m.name}</span>
+                        <span className="text-[10.5px] px-1.5 py-0.5 rounded bg-inset text-ink-3 font-mono">
+                          {m.provider}
+                        </span>
+                        {m.isReasoning && (
+                          <span className="text-[10px] text-accent-ink bg-accent-tint px-1.5 py-0.5 rounded">
+                            Thinking
+                          </span>
+                        )}
+                        {m.isCustom && (
+                          <span className="text-[10px] text-orange bg-orange-tint px-1.5 py-0.5 rounded">
+                            Custom
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        {selectedModel.id === m.id ? (
+                          <span className="text-[11px] text-green font-medium">Active</span>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => setSelectedModel(m)}
+                            className="text-[11px] text-ink-3 hover:text-ink"
+                          >
+                            Select
+                          </button>
+                        )}
+                        {m.isCustom && (
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteCustomModel(m.id)}
+                            className="text-[11px] text-red hover:underline ml-1"
+                          >
+                            Delete
+                          </button>
+                        )}
+                      </div>
+                    </div>
                   ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-ink-2 font-medium mb-1">Custom API Key</label>
-                <input
-                  type="password"
-                  value={customApiKey}
-                  onChange={(e) => setCustomApiKey(e.target.value)}
-                  placeholder="Defaults to .env.local (LLM_API_KEY / OPENAI_API_KEY / DATABRICKS_TOKEN)"
-                  className="w-full h-8 rounded-[8px] border border-line bg-field px-2.5 text-[12.5px] text-ink outline-none placeholder:text-ink-3"
-                />
-              </div>
-
-              <div>
-                <label className="block text-ink-2 font-medium mb-1">Custom API Base URL (Optional)</label>
-                <input
-                  type="text"
-                  value={customBaseUrl}
-                  onChange={(e) => setCustomBaseUrl(e.target.value)}
-                  placeholder="e.g. https://api.openai.com/v1 or http://localhost:11434/v1"
-                  className="w-full h-8 rounded-[8px] border border-line bg-field px-2.5 text-[12.5px] text-ink outline-none placeholder:text-ink-3"
-                />
+                </div>
               </div>
             </div>
 
             <div className="flex justify-end gap-2 pt-2 border-t border-line-soft">
               <Button variant="ghost" className="text-xs" onClick={() => setSettingsOpen(false)}>
-                Cancel
+                Close
               </Button>
               <Button variant="primary" className="text-xs" onClick={handleSaveSettings}>
                 Save Settings

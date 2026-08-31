@@ -30,7 +30,7 @@ export async function POST(req: NextRequest) {
       customBaseUrl,
     } = body;
 
-    // Resolve API Key
+    // Resolve API Key from custom input or environment variables
     const apiKey =
       customApiKey ||
       process.env.LLM_API_KEY ||
@@ -41,21 +41,47 @@ export async function POST(req: NextRequest) {
 
     // Resolve Base URL
     let baseUrl = customBaseUrl || process.env.LLM_BASE_URL;
+    let endpoint = "";
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+    };
+
     if (!baseUrl) {
       if (provider === "databricks") {
         const host = process.env.DATABRICKS_HOST || "https://adb-default.cloud.databricks.com";
-        baseUrl = `${host.replace(/\/+$/, "")}/serving-endpoints`;
+        baseUrl = host.replace(/\/+$/, "");
+        endpoint = `${baseUrl}/serving-endpoints/${model}/invocations`;
       } else if (provider === "gemini") {
         baseUrl = "https://generativelanguage.googleapis.com/v1beta/openai";
+        endpoint = `${baseUrl}/chat/completions`;
       } else if (provider === "ollama") {
         baseUrl = "http://localhost:11434/v1";
+        endpoint = `${baseUrl}/chat/completions`;
+      } else if (provider === "anthropic") {
+        baseUrl = "https://api.anthropic.com/v1";
+        endpoint = `${baseUrl}/messages`;
       } else {
         baseUrl = "https://api.openai.com/v1";
+        endpoint = `${baseUrl}/chat/completions`;
+      }
+    } else {
+      const cleanBase = baseUrl.replace(/\/+$/, "");
+      if (cleanBase.endsWith("/chat/completions") || cleanBase.endsWith("/messages") || cleanBase.endsWith("/invocations")) {
+        endpoint = cleanBase;
+      } else {
+        endpoint = `${cleanBase}/chat/completions`;
       }
     }
 
-    const cleanBaseUrl = baseUrl.replace(/\/+$/, "");
-    const endpoint = `${cleanBaseUrl}/chat/completions`;
+    // Set authorization headers
+    if (apiKey) {
+      if (provider === "anthropic" && endpoint.includes("api.anthropic.com")) {
+        headers["x-api-key"] = apiKey;
+        headers["anthropic-version"] = "2023-06-01";
+      } else {
+        headers["Authorization"] = `Bearer ${apiKey}`;
+      }
+    }
 
     // Format messages with system prompt
     const fullMessages = [
@@ -63,7 +89,7 @@ export async function POST(req: NextRequest) {
       ...messages,
     ];
 
-    const payload: any = {
+    let payload: any = {
       model,
       messages: fullMessages,
       tools: LLM_TOOLS,
@@ -72,12 +98,18 @@ export async function POST(req: NextRequest) {
       temperature: 0.7,
     };
 
-    const headers: Record<string, string> = {
-      "Content-Type": "application/json",
-    };
-
-    if (apiKey) {
-      headers["Authorization"] = `Bearer ${apiKey}`;
+    // Special payload adaptation for Anthropic direct endpoint if not using proxy
+    if (provider === "anthropic" && endpoint.includes("api.anthropic.com")) {
+      payload = {
+        model,
+        system: SYSTEM_PROMPT,
+        messages: messages.map((m: any) => ({
+          role: m.role === "assistant" ? "assistant" : "user",
+          content: m.content,
+        })),
+        max_tokens: 4096,
+        stream: true,
+      };
     }
 
     // Execute with auto-retry (3 attempts, exponential backoff)
@@ -106,6 +138,7 @@ export async function POST(req: NextRequest) {
           error: `API error from ${provider} (${upstreamRes.status} ${upstreamRes.statusText}): ${errorText}`,
           status: upstreamRes.status,
           provider,
+          endpoint,
         },
         { status: upstreamRes.status }
       );
@@ -119,7 +152,6 @@ export async function POST(req: NextRequest) {
           return;
         }
         const reader = upstreamRes.body.getReader();
-        const decoder = new TextDecoder();
 
         try {
           while (true) {

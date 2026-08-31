@@ -1,4 +1,4 @@
-// LLM Provider types, tool schemas, and robust retry logic
+// LLM Provider types, tool schemas, robust retry logic, and custom model persistence
 
 export type LLMProvider = "databricks" | "openai" | "gemini" | "anthropic" | "ollama" | "custom";
 
@@ -8,19 +8,48 @@ export type LLMModelConfig = {
   provider: LLMProvider;
   isReasoning: boolean;
   contextWindow?: number;
+  customBaseUrl?: string;
+  customApiKey?: string;
+  isCustom?: boolean;
 };
 
-export const AVAILABLE_MODELS: LLMModelConfig[] = [
-  { id: "databricks-meta-llama-3-3-70b-instruct", name: "Databricks Llama 3.3 70B", provider: "databricks", isReasoning: false },
-  { id: "databricks-genie-agent", name: "Databricks Genie Reasoning Agent", provider: "databricks", isReasoning: true },
+export const DEFAULT_AVAILABLE_MODELS: LLMModelConfig[] = [
   { id: "gpt-4o", name: "OpenAI GPT-4o", provider: "openai", isReasoning: false },
-  { id: "o3-mini", name: "OpenAI o3-mini (Thinking)", provider: "openai", isReasoning: true },
+  { id: "o3-mini", name: "OpenAI o3-mini (Reasoning)", provider: "openai", isReasoning: true },
   { id: "deepseek/deepseek-r1", name: "DeepSeek R1 (Reasoning)", provider: "openai", isReasoning: true },
   { id: "gemini-2.0-flash", name: "Gemini 2.0 Flash", provider: "gemini", isReasoning: false },
   { id: "gemini-2.0-flash-thinking-exp-01-21", name: "Gemini 2.0 Flash Thinking", provider: "gemini", isReasoning: true },
   { id: "claude-3-7-sonnet", name: "Claude 3.7 Sonnet (Thinking)", provider: "anthropic", isReasoning: true },
+  { id: "databricks-meta-llama-3-3-70b-instruct", name: "Databricks Llama 3.3 70B", provider: "databricks", isReasoning: false },
+  { id: "databricks-genie-agent", name: "Databricks Genie Agent", provider: "databricks", isReasoning: true },
   { id: "llama3.3", name: "Ollama Local Llama 3.3", provider: "ollama", isReasoning: false },
 ];
+
+export const AVAILABLE_MODELS = DEFAULT_AVAILABLE_MODELS;
+
+const CUSTOM_MODELS_KEY = "cg_custom_models";
+
+export function getStoredCustomModels(): LLMModelConfig[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = localStorage.getItem(CUSTOM_MODELS_KEY);
+    if (!raw) return [];
+    return JSON.parse(raw);
+  } catch (e) {
+    console.error("Failed to parse custom models from localStorage", e);
+    return [];
+  }
+}
+
+export function saveStoredCustomModels(models: LLMModelConfig[]): void {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem(CUSTOM_MODELS_KEY, JSON.stringify(models));
+    window.dispatchEvent(new Event("cg-custom-models-updated"));
+  } catch (e) {
+    console.error("Failed to save custom models", e);
+  }
+}
 
 export const LLM_TOOLS = [
   {
