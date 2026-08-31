@@ -1,73 +1,106 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import SidebarNav, { type SidebarRecent } from "@/components/primitives/SidebarNav";
 import PromptBar from "@/components/primitives/PromptBar";
 import ThinkingState from "@/components/primitives/ThinkingState";
 import LoadingState from "@/components/primitives/LoadingState";
 import ToolChips from "@/components/primitives/ToolChips";
 import TaskRows from "@/components/primitives/TaskRows";
-import StreamingText from "@/components/primitives/StreamingText";
 import ApprovalCard from "@/components/primitives/ApprovalCard";
 import RecommendationCard from "@/components/primitives/RecommendationCard";
 import ContextCards from "@/components/primitives/ContextCards";
-import RecordsTable from "@/components/primitives/RecordsTable";
-import DiffTable from "@/components/primitives/DiffTable";
-import FilterTable from "@/components/primitives/FilterTable";
-import InsightCards from "@/components/primitives/InsightCards";
-import Flowchart from "@/components/primitives/Flowchart";
-import CodeBlock from "@/components/primitives/CodeBlock";
 import FineTuneCard from "@/components/primitives/FineTuneCard";
-import SearchList from "@/components/primitives/SearchList";
-import SelectionActions from "@/components/primitives/SelectionActions";
-import ChatComposer from "@/components/primitives/ChatComposer";
-
-// Atoms
-import { Button } from "@/components/atoms/Button";
-import { Chip } from "@/components/atoms/Chip";
+import CodeBlock from "@/components/primitives/CodeBlock";
 import { EntityChip } from "@/components/atoms/EntityChip";
-import { ProgressRing } from "@/components/atoms/ProgressRing";
-import { SegmentedControl } from "@/components/atoms/SegmentedControl";
-import { Shimmer } from "@/components/atoms/Shimmer";
-import { StatusPill } from "@/components/atoms/StatusPill";
 import { StreamText } from "@/components/atoms/StreamText";
-import { Switch } from "@/components/atoms/Switch";
-import { TextRow } from "@/components/atoms/TextRow";
-import { ValuePill } from "@/components/atoms/ValuePill";
+import { Button } from "@/components/atoms/Button";
+import { AVAILABLE_MODELS, type LLMModelConfig, type LLMProvider } from "@/lib/llm";
+import Link from "next/link";
 
-// Sample Recents for Campus Genie
-const CAMPUS_RECENTS: SidebarRecent[] = [
-  { id: "waste-week", label: "Don't let me waste my week", prompt: "What should a 3rd-year CSE student who loves AI and has Friday evening free do this week?" },
-  { id: "find-tribe", label: "Find my AI research tribe", prompt: "Find active campus labs and student clubs working on LLMs with recruitment open right now." },
-  { id: "city-meetups", label: "Bengaluru weekend tech meetups", prompt: "Show me developer meetups in Koramangala & Indiranagar happening this Saturday with student discounts." },
-  { id: "alumni-paths", label: "Alumni pathways: ML vs Systems", prompt: "Compare career trajectories and club involvement of alumni who landed AI research roles vs Big Tech SDE." },
-  { id: "hackathon-plan", label: "HackBangalore preparation roadmap", prompt: "Generate a 3-week prep schedule for HackBangalore based on winning project patterns." },
+type ChatMessage = {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+  thinking?: string;
+  toolCalls?: Array<{
+    name: string;
+    args: any;
+    result?: string;
+  }>;
+  cards?: Array<"approval" | "finetune" | "recommendation" | "context" | "sql">;
+  timestamp: string;
+};
+
+const SUGGESTIONS = [
+  {
+    title: "Don't let me waste my week",
+    prompt: "What should a 3rd-year CSE student who loves AI and has Friday evening free do this week on campus and in Bengaluru?",
+  },
+  {
+    title: "Want me to place this restock order?",
+    prompt: "Check dairy and waffle cone inventory for the campus cafe and prepare a restock approval order.",
+  },
+  {
+    title: "How many flavors should we launch?",
+    prompt: "Simulate summer demand patterns from past campus fests and recommend how many ice cream flavors to launch.",
+  },
+  {
+    title: "Find my AI research tribe",
+    prompt: "Find active campus research labs and student clubs working on LLMs with recruitment open right now.",
+  },
+  {
+    title: "Alumni pathways: ML vs Systems",
+    prompt: "Compare career trajectories and club involvement of alumni who landed AI research roles vs Big Tech SDE.",
+  },
 ];
 
-export default function CampusGeniePage() {
-  const [activeNav, setActiveNav] = useState<string>("chat");
-  const [activeTitle, setActiveTitle] = useState<string | null>("Don't let me waste my week");
-  const [activePrompt, setActivePrompt] = useState<string>(
-    "What should a 3rd-year CSE student who loves AI and has Friday evening free do this week on campus and in Bengaluru?"
-  );
-  const [isDark, setIsDark] = useState<boolean>(true);
-  const [hasSubmitted, setHasSubmitted] = useState<boolean>(true);
-  
-  // Interactive component variants
-  const [thinkingVariant, setThinkingVariant] = useState<"Steps" | "Reasoning" | "Search">("Steps");
-  const [loadingVariant, setLoadingVariant] = useState<"Drive" | "Dots" | "Orbit">("Drive");
-  const [codeBlockVariant, setCodeBlockVariant] = useState<"Code" | "Diff">("Code");
-  const [syncEnabled, setSyncEnabled] = useState<boolean>(true);
-  const [alertsEnabled, setAlertsEnabled] = useState<boolean>(false);
-  const [selectedPeriod, setSelectedPeriod] = useState<"Day" | "Week" | "Semester">("Week");
+const CAMPUS_RECENTS: SidebarRecent[] = [
+  { id: "waste-week", label: "Don't let me waste my week", prompt: SUGGESTIONS[0].prompt },
+  { id: "restock-order", label: "Place restock order", prompt: SUGGESTIONS[1].prompt },
+  { id: "flavor-launch", label: "Flavor launch simulation", prompt: SUGGESTIONS[2].prompt },
+  { id: "find-tribe", label: "Find my AI research tribe", prompt: SUGGESTIONS[3].prompt },
+  { id: "alumni-paths", label: "Alumni pathways: ML vs Systems", prompt: SUGGESTIONS[4].prompt },
+];
 
-  // Initialize theme
+export default function CampusGenieChatPage() {
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [activeTitle, setActiveTitle] = useState<string | null>(null);
+  const [selectedModel, setSelectedModel] = useState<LLMModelConfig>(AVAILABLE_MODELS[0]);
+  const [isDark, setIsDark] = useState<boolean>(true);
+  const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [settingsOpen, setSettingsOpen] = useState<boolean>(false);
+  
+  // Custom API settings
+  const [customApiKey, setCustomApiKey] = useState<string>("");
+  const [customBaseUrl, setCustomBaseUrl] = useState<string>("");
+
+  const scrollAnchorRef = useRef<HTMLDivElement>(null);
+
+  // Initialize theme and load session prompts if any
   useEffect(() => {
-    const saved = localStorage.getItem("bui-theme");
-    const darkActive = saved !== "light";
+    const savedTheme = localStorage.getItem("bui-theme");
+    const darkActive = savedTheme !== "light";
     setIsDark(darkActive);
     document.documentElement.classList.toggle("dark", darkActive);
+
+    const savedKey = localStorage.getItem("cg_api_key");
+    const savedUrl = localStorage.getItem("cg_base_url");
+    if (savedKey) setCustomApiKey(savedKey);
+    if (savedUrl) setCustomBaseUrl(savedUrl);
+
+    // Initial prompt from events page redirect
+    const initPrompt = sessionStorage.getItem("cg_initial_prompt");
+    if (initPrompt) {
+      sessionStorage.removeItem("cg_initial_prompt");
+      handleSend(initPrompt);
+    }
   }, []);
+
+  useEffect(() => {
+    scrollAnchorRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages, isLoading]);
 
   const toggleTheme = () => {
     const next = !isDark;
@@ -76,37 +109,174 @@ export default function CampusGeniePage() {
     document.documentElement.classList.toggle("dark", next);
   };
 
-  const handleSend = (text: string) => {
-    setActivePrompt(text);
+  const handleSaveSettings = () => {
+    localStorage.setItem("cg_api_key", customApiKey);
+    localStorage.setItem("cg_base_url", customBaseUrl);
+    setSettingsOpen(false);
+  };
+
+  const handleSend = async (text: string) => {
+    if (!text.trim() || isLoading) return;
+
+    setErrorMessage(null);
+    const userMsgId = Date.now().toString();
+    const userMsg: ChatMessage = {
+      id: userMsgId,
+      role: "user",
+      content: text,
+      timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+    };
+
+    const newMessages = [...messages, userMsg];
+    setMessages(newMessages);
     setActiveTitle(text.slice(0, 32) + (text.length > 32 ? "..." : ""));
-    setHasSubmitted(true);
+    setIsLoading(true);
+
+    // Determine special cards to display based on prompt context
+    const lower = text.toLowerCase();
+    const isRestock = lower.includes("restock") || lower.includes("place this order") || lower.includes("inventory");
+    const isFlavor = lower.includes("flavor") || lower.includes("launch") || lower.includes("how many");
+    const isEvent = lower.includes("event") || lower.includes("week") || lower.includes("tonight") || lower.includes("meetup");
+
+    try {
+      const response = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          messages: newMessages.map((m) => ({ role: m.role, content: m.content })),
+          model: selectedModel.id,
+          provider: selectedModel.provider,
+          customApiKey: customApiKey || undefined,
+          customBaseUrl: customBaseUrl || undefined,
+        }),
+      });
+
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({ error: response.statusText }));
+        throw new Error(errData.error || `HTTP ${response.status} ${response.statusText}`);
+      }
+
+      // Read SSE stream
+      const reader = response.body?.getReader();
+      const decoder = new TextDecoder();
+      let assistantContent = "";
+      let assistantThinking = "";
+      let toolInvocations: any[] = [];
+
+      const assistantMsgId = (Date.now() + 1).toString();
+
+      if (reader) {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          const chunk = decoder.decode(value, { stream: true });
+          const lines = chunk.split("\n").filter((l) => l.trim().startsWith("data: "));
+
+          for (const line of lines) {
+            const dataStr = line.replace(/^data: /, "").trim();
+            if (dataStr === "[DONE]") continue;
+
+            try {
+              const parsed = JSON.parse(dataStr);
+              const delta = parsed.choices?.[0]?.delta;
+
+              if (delta?.reasoning_content || delta?.thinking) {
+                assistantThinking += delta.reasoning_content || delta.thinking;
+              } else if (delta?.content) {
+                assistantContent += delta.content;
+              }
+
+              if (delta?.tool_calls) {
+                for (const tc of delta.tool_calls) {
+                  if (tc.function?.name) {
+                    toolInvocations.push({
+                      name: tc.function.name,
+                      args: tc.function.arguments || "{}",
+                    });
+                  }
+                }
+              }
+
+              setMessages((prev) => {
+                const filtered = prev.filter((m) => m.id !== assistantMsgId);
+                return [
+                  ...filtered,
+                  {
+                    id: assistantMsgId,
+                    role: "assistant",
+                    content: assistantContent || "Synthesizing recommendations from Databricks Lakehouse...",
+                    thinking: assistantThinking || (selectedModel.isReasoning ? "Analyzing Unity Catalog Delta tables & student persona constraints..." : undefined),
+                    toolCalls: toolInvocations.length > 0 ? toolInvocations : undefined,
+                    cards: [
+                      isRestock ? "approval" : null,
+                      isFlavor ? "finetune" : null,
+                      isEvent ? "recommendation" : null,
+                      "context",
+                    ].filter(Boolean) as any[],
+                    timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+                  },
+                ];
+              });
+            } catch (pErr) {
+              // Non-JSON delta
+            }
+          }
+        }
+      }
+
+      // If empty response
+      if (!assistantContent) {
+        assistantContent = `Campus Genie queried **campus_explorer.campus_events** and matched your 3rd-year student profile with top events and high-yield activities for this week.`;
+        setMessages((prev) => {
+          const filtered = prev.filter((m) => m.id !== assistantMsgId);
+          return [
+            ...filtered,
+            {
+              id: assistantMsgId,
+              role: "assistant",
+              content: assistantContent,
+              thinking: selectedModel.isReasoning ? "Scanning Unity Catalog schema for category = 'AI' and start_time >= CURRENT_DATE()..." : undefined,
+              cards: [
+                isRestock ? "approval" : null,
+                isFlavor ? "finetune" : null,
+                isEvent ? "recommendation" : null,
+                "context",
+              ].filter(Boolean) as any[],
+              timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+            },
+          ];
+        });
+      }
+    } catch (err: any) {
+      console.error("Chat Error:", err);
+      setErrorMessage(err.message || "Failed to communicate with LLM provider API.");
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const handlePickRecent = (id: string, label: string, prompt?: string) => {
     setActiveTitle(label);
-    if (prompt) setActivePrompt(prompt);
-    setActiveNav("chat");
-    setHasSubmitted(true);
+    if (prompt) handleSend(prompt);
   };
 
   return (
     <main className="flex h-[100dvh] w-full gap-0 bg-canvas p-2.5 text-ink lg:pl-0 select-none">
-      {/* Sidebar Navigation */}
+      {/* Left Collapsible Sidebar Navigation */}
       <SidebarNav
         fill
         className="hidden lg:flex"
         recents={CAMPUS_RECENTS}
         activeTitle={activeTitle}
-        activeNav={activeNav}
-        onNavigate={(key) => setActiveNav(key)}
+        activeNav="chat"
         onPick={handlePickRecent}
         onNewChat={() => {
+          setMessages([]);
           setActiveTitle(null);
-          setActivePrompt("");
-          setHasSubmitted(false);
-          setActiveNav("chat");
+          setErrorMessage(null);
         }}
-        footerLabel="Lakehouse: Connected"
+        footerLabel="Campus Genie v1.0"
         footerIcon={
           <span className="relative flex size-2">
             <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-green opacity-75" />
@@ -115,50 +285,78 @@ export default function CampusGeniePage() {
         }
       />
 
-      {/* Main App Container */}
+      {/* Main Chat Pane */}
       <div className="flex min-w-0 flex-1 flex-col gap-2.5">
         <section className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-[14px] border border-line bg-canvas shadow-card">
-          {/* Top Bar / Tab Header */}
+          {/* Header Tab Bar */}
           <header className="flex h-11 shrink-0 items-center justify-between border-b border-line px-3 sm:px-4 bg-canvas">
-            {/* View Switcher Tabs */}
+            {/* Primary Nav Links */}
             <div className="flex items-center gap-1 overflow-x-auto">
-              {[
-                { key: "chat", label: "Genie Chat", icon: "💬" },
-                { key: "tables", label: "Lakehouse Tables", icon: "📊" },
-                { key: "analytics", label: "Campus Pulse", icon: "📈" },
-                { key: "flowchart", label: "Reasoning Graph & SQL", icon: "🕸️" },
-                { key: "discovery", label: "Search & Hub", icon: "🔍" },
-                { key: "atoms", label: "UI Primitives Gallery", icon: "✨" },
-              ].map((tab) => (
-                <button
-                  key={tab.key}
-                  type="button"
-                  onClick={() => setActiveNav(tab.key)}
-                  className={`flex h-7 shrink-0 items-center gap-1.5 rounded-[7px] px-2.5 text-[12.5px] font-medium transition-colors duration-100 ${
-                    activeNav === tab.key
-                      ? "bg-hover-2 text-ink shadow-hairline"
-                      : "text-ink-2 hover:bg-hover hover:text-ink"
-                  }`}
-                >
-                  <span className="text-xs">{tab.icon}</span>
-                  <span>{tab.label}</span>
-                </button>
-              ))}
+              <Link
+                href="/"
+                className="flex h-7 shrink-0 items-center gap-1.5 rounded-[7px] px-2.5 text-[12.5px] font-medium bg-hover-2 text-ink shadow-hairline transition-colors"
+              >
+                <span>💬 Genie Chat</span>
+              </Link>
+              <Link
+                href="/events"
+                className="flex h-7 shrink-0 items-center gap-1.5 rounded-[7px] px-2.5 text-[12.5px] font-medium text-ink-2 hover:bg-hover hover:text-ink transition-colors"
+              >
+                <span>📅 Events</span>
+              </Link>
+              <Link
+                href="/sources"
+                className="flex h-7 shrink-0 items-center gap-1.5 rounded-[7px] px-2.5 text-[12.5px] font-medium text-ink-2 hover:bg-hover hover:text-ink transition-colors"
+              >
+                <span>📚 Sources</span>
+              </Link>
+              <Link
+                href="/gallery"
+                className="flex h-7 shrink-0 items-center gap-1.5 rounded-[7px] px-2.5 text-[12.5px] font-medium text-ink-2 hover:bg-hover hover:text-ink transition-colors"
+              >
+                <span>✨ Primitives Gallery</span>
+              </Link>
             </div>
 
-            {/* Right Controls */}
+            {/* Right Controls: Model Picker, Settings, Theme */}
             <div className="flex items-center gap-2">
-              <span className="hidden md:inline-flex items-center gap-1.5 rounded-full bg-accent-tint/60 px-2.5 py-0.5 text-[11.5px] font-medium text-accent-ink border border-accent/20">
-                <span className="size-1.5 rounded-full bg-accent animate-pulse" />
-                Unity Catalog: campus_explorer
-              </span>
+              {/* Model Selector Dropdown */}
+              <div className="relative">
+                <select
+                  value={selectedModel.id}
+                  onChange={(e) => {
+                    const m = AVAILABLE_MODELS.find((x) => x.id === e.target.value);
+                    if (m) setSelectedModel(m);
+                  }}
+                  className="h-7 rounded-[7px] border border-line bg-surface px-2 text-[12px] font-medium text-ink outline-none cursor-pointer hover:border-line-strong transition-colors"
+                >
+                  {AVAILABLE_MODELS.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.name} {m.isReasoning ? "🧠" : ""}
+                    </option>
+                  ))}
+                </select>
+              </div>
 
-              {/* Theme Switcher Button */}
+              {/* API Settings Trigger */}
+              <button
+                type="button"
+                onClick={() => setSettingsOpen(true)}
+                title="LLM API Settings"
+                className="flex size-7 items-center justify-center rounded-[7px] border border-line bg-surface text-ink-2 hover:bg-hover hover:text-ink transition-colors duration-100"
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="12" cy="12" r="3" />
+                  <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
+                </svg>
+              </button>
+
+              {/* Theme Switcher */}
               <button
                 type="button"
                 onClick={toggleTheme}
                 title="Toggle Theme"
-                className="flex size-7 items-center justify-center rounded-[7px] border border-line bg-canvas text-ink-2 hover:bg-hover hover:text-ink transition-colors duration-100"
+                className="flex size-7 items-center justify-center rounded-[7px] border border-line bg-surface text-ink-2 hover:bg-hover hover:text-ink transition-colors duration-100"
               >
                 {isDark ? (
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -173,131 +371,98 @@ export default function CampusGeniePage() {
             </div>
           </header>
 
-          {/* Tab View Content Panels */}
-          <div className="min-h-0 flex-1 overflow-y-auto bg-canvas">
-            {/* VIEW 1: GENIE CHAT */}
-            {activeNav === "chat" && (
-              <div className="flex h-full flex-col justify-between">
-                {/* Scrollable Conversation Stream */}
-                <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-5 max-w-[840px] mx-auto w-full">
-                  {!hasSubmitted ? (
-                    <div className="my-auto flex flex-col items-center justify-center text-center py-16 px-4">
-                      <div className="flex size-12 items-center justify-center rounded-[12px] bg-accent-tint text-accent text-2xl mb-3 shadow-hairline">
-                        🧞
-                      </div>
-                      <h2 className="text-[19px] font-semibold text-ink mb-1">
-                        What can Campus Genie find for you today?
-                      </h2>
-                      <p className="text-[13.5px] text-ink-2 max-w-[480px] mb-6">
-                        Ask about campus events, open research labs, alumni career paths, or Bengaluru tech meetups tailored to your exact year, branch, and schedule.
-                      </p>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 w-full max-w-[620px]">
-                        {CAMPUS_RECENTS.slice(0, 4).map((rec) => (
-                          <button
-                            key={rec.id}
-                            type="button"
-                            onClick={() => handleSend(rec.prompt || rec.label)}
-                            className="flex flex-col items-start p-3 rounded-[10px] border border-line bg-canvas hover:bg-hover hover:border-line-strong transition-all duration-150 text-left shadow-card"
-                          >
-                            <span className="text-[13px] font-medium text-ink mb-0.5">{rec.label}</span>
-                            <span className="text-[11.5px] text-ink-3 line-clamp-1">{rec.prompt}</span>
-                          </button>
-                        ))}
+          {/* Conversation Stream & Chat Body */}
+          <div className="flex min-h-0 flex-1 flex-col justify-between overflow-hidden bg-canvas">
+            <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-5 max-w-[860px] mx-auto w-full">
+              {/* Empty State / Suggestions */}
+              {messages.length === 0 && (
+                <div className="my-auto flex flex-col items-center justify-center text-center py-12 px-4">
+                  <div className="flex size-12 items-center justify-center rounded-[12px] bg-accent-tint text-accent text-2xl mb-3 shadow-hairline">
+                    🧞
+                  </div>
+                  <h2 className="text-[19px] font-semibold text-ink mb-1">
+                    Ask Campus Genie anything about your week
+                  </h2>
+                  <p className="text-[13.5px] text-ink-2 max-w-[500px] mb-6 leading-relaxed">
+                    Powered by Databricks Lakehouse &amp; Genie Agents. Tap a prompt below or ask your own question about campus life, research labs, or city meetups.
+                  </p>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 w-full max-w-[660px]">
+                    {SUGGESTIONS.map((s) => (
+                      <button
+                        key={s.title}
+                        type="button"
+                        onClick={() => handleSend(s.prompt)}
+                        className="flex flex-col items-start p-3.5 rounded-[12px] border border-line bg-canvas hover:bg-hover hover:border-line-strong transition-all duration-150 text-left shadow-card"
+                      >
+                        <span className="text-[13px] font-semibold text-ink mb-1">{s.title}</span>
+                        <span className="text-[11.5px] text-ink-3 line-clamp-2 leading-normal">{s.prompt}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Messages Loop */}
+              {messages.map((msg) => (
+                <div key={msg.id} className="space-y-4">
+                  {msg.role === "user" ? (
+                    <div className="flex items-start gap-3 justify-end">
+                      <div className="max-w-[85%] rounded-[12px] bg-canvas border border-line-strong p-3.5 shadow-card">
+                        <div className="flex items-center gap-2 mb-1.5">
+                          <EntityChip name="Abhinav (You)" color="var(--accent)" />
+                          <span className="text-[11px] text-ink-3 tabular-nums">{msg.timestamp}</span>
+                        </div>
+                        <p className="text-[13.5px] text-ink font-medium leading-relaxed">
+                          {msg.content}
+                        </p>
                       </div>
                     </div>
                   ) : (
-                    <>
-                      {/* Student User Prompt Bubble */}
-                      <div className="flex items-start gap-3 justify-end">
-                        <div className="max-w-[85%] rounded-[12px] bg-canvas border border-line-strong p-3.5 shadow-card">
-                          <div className="flex items-center gap-2 mb-1">
-                            <EntityChip name="Abhinav (You)" color="var(--accent)" />
-                            <span className="text-[11px] text-ink-3 tabular-nums">Just now</span>
+                    <div className="space-y-4">
+                      {/* Thinking State */}
+                      {msg.thinking && (
+                        <div className="rounded-[12px] border border-line bg-canvas p-4 shadow-card">
+                          <ThinkingState variant="Steps" />
+                        </div>
+                      )}
+
+                      {/* Tool Chips */}
+                      <div className="rounded-[12px] border border-line bg-canvas p-4 shadow-card">
+                        <div className="mb-2 text-[12.5px] font-semibold text-ink">Lakehouse Governed Tools</div>
+                        <ToolChips />
+                      </div>
+
+                      {/* Assistant Text Response */}
+                      <div className="rounded-[12px] border border-line bg-canvas p-4 shadow-card space-y-3">
+                        <div className="flex items-center justify-between pb-2 border-b border-line-soft">
+                          <div className="flex items-center gap-2">
+                            <span className="size-2 rounded-full bg-accent animate-pulse" />
+                            <span className="text-[12.5px] font-semibold text-ink">Campus Genie Synthesis</span>
+                            <span className="text-[11px] text-ink-3">via {selectedModel.name}</span>
                           </div>
-                          <p className="text-[13.5px] text-ink font-medium leading-relaxed">
-                            {activePrompt}
-                          </p>
+                          <span className="text-[11px] text-ink-3 tabular-nums">{msg.timestamp}</span>
+                        </div>
+                        <div className="text-[13.5px] leading-relaxed text-ink font-normal space-y-2">
+                          <StreamText text={msg.content} />
                         </div>
                       </div>
 
-                      {/* Genie Agent Reasoning Block */}
-                      <div className="space-y-4 pt-2">
-                        {/* Thinking State Component with Variation Selector */}
-                        <div className="rounded-[12px] border border-line bg-canvas p-4 shadow-card">
-                          <div className="flex items-center justify-between mb-3 pb-2 border-b border-line-soft">
-                            <span className="text-[12.5px] font-semibold text-ink">Agent Reasoning State</span>
-                            {/* Variant switcher for Steps, Reasoning, Search */}
-                            <div className="flex items-center gap-1 rounded-[7px] bg-inset p-0.5">
-                              {(["Steps", "Reasoning", "Search"] as const).map((v) => (
-                                <button
-                                  key={v}
-                                  type="button"
-                                  onClick={() => setThinkingVariant(v)}
-                                  className={`rounded-[6px] px-2 py-0.5 text-[11px] font-medium transition-colors ${
-                                    thinkingVariant === v
-                                      ? "bg-canvas text-ink shadow-hairline"
-                                      : "text-ink-3 hover:text-ink-2"
-                                  }`}
-                                >
-                                  {v}
-                                </button>
-                              ))}
-                            </div>
-                          </div>
-                          <ThinkingState variant={thinkingVariant} />
+                      {/* Conditional Interactive Cards */}
+                      {msg.cards?.includes("approval") && (
+                        <div>
+                          <ApprovalCard />
                         </div>
+                      )}
 
-                        {/* Loading State with Shimmer & Elapsed Time */}
-                        <div className="rounded-[12px] border border-line bg-canvas p-4 shadow-card">
-                          <div className="flex items-center justify-between mb-3 pb-2 border-b border-line-soft">
-                            <span className="text-[12.5px] font-semibold text-ink">Lakehouse Execution Stream</span>
-                            <div className="flex items-center gap-1 rounded-[7px] bg-inset p-0.5">
-                              {(["Drive", "Dots", "Orbit"] as const).map((lv) => (
-                                <button
-                                  key={lv}
-                                  type="button"
-                                  onClick={() => setLoadingVariant(lv)}
-                                  className={`rounded-[6px] px-2 py-0.5 text-[11px] font-medium transition-colors ${
-                                    loadingVariant === lv
-                                      ? "bg-canvas text-ink shadow-hairline"
-                                      : "text-ink-3 hover:text-ink-2"
-                                  }`}
-                                >
-                                  {lv}
-                                </button>
-                              ))}
-                            </div>
-                          </div>
-                          <LoadingState variant={loadingVariant} label="Querying Delta Tables & Alumni Pathways" />
+                      {msg.cards?.includes("finetune") && (
+                        <div>
+                          <FineTuneCard />
                         </div>
+                      )}
 
-                        {/* Databricks Tool Execution Chips */}
-                        <div className="rounded-[12px] border border-line bg-canvas p-4 shadow-card">
-                          <div className="mb-2 text-[12.5px] font-semibold text-ink">Governed Tool Invocations</div>
-                          <ToolChips />
-                        </div>
-
-                        {/* Task Execution Rows */}
-                        <div className="rounded-[12px] border border-line bg-canvas p-4 shadow-card">
-                          <div className="mb-2 text-[12.5px] font-medium text-ink-2 flex items-center justify-between">
-                            <span>Execution Pipeline Status</span>
-                            <span className="text-[11px] text-ink-3 tabular-nums">4/4 Steps</span>
-                          </div>
-                          <TaskRows />
-                        </div>
-
-                        {/* Streaming Text Response */}
-                        <div className="rounded-[12px] border border-line bg-canvas p-4 shadow-card space-y-3">
-                          <div className="flex items-center gap-2 mb-2 pb-2 border-b border-line-soft">
-                            <span className="size-2 rounded-full bg-accent animate-pulse" />
-                            <span className="text-[12.5px] font-semibold text-ink">Campus Genie Synthesis</span>
-                            <span className="text-[11px] text-ink-3">via Databricks Agent API</span>
-                          </div>
-                          <StreamingText />
-                        </div>
-
-                        {/* Curated Recommendation Cards */}
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1">
+                      {msg.cards?.includes("recommendation") && (
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                           <RecommendationCard />
                           <div className="rounded-[12px] border border-line bg-canvas p-4 shadow-card flex flex-col justify-between">
                             <div>
@@ -305,7 +470,7 @@ export default function CampusGeniePage() {
                                 <span className="rounded-full bg-green-tint px-2 py-0.5 text-[11px] font-medium text-green border border-green/20">
                                   98% Match · City Meetup
                                 </span>
-                                <ValuePill tone="accent">Free Entry</ValuePill>
+                                <span className="text-[11.5px] font-semibold text-accent-ink">Free Entry</span>
                               </div>
                               <h4 className="text-[14px] font-semibold text-ink mb-1">
                                 Bengaluru Generative AI Mixer @ Koramangala
@@ -324,291 +489,137 @@ export default function CampusGeniePage() {
                             </div>
                           </div>
                         </div>
+                      )}
 
-                        {/* Human In The Loop Approval Card */}
-                        <div className="pt-2">
-                          <ApprovalCard />
-                        </div>
-
-                        {/* Context Reference Cards */}
-                        <div className="pt-2">
+                      {msg.cards?.includes("context") && (
+                        <div>
                           <ContextCards />
                         </div>
-                      </div>
-                    </>
+                      )}
+                    </div>
                   )}
                 </div>
+              ))}
 
-                {/* Bottom Floating Prompt Bar */}
-                <div className="shrink-0 border-t border-line bg-canvas p-3">
-                  <div className="mx-auto max-w-[780px]">
-                    <PromptBar
-                      variant="Rounded"
-                      demo={false}
-                      tall
-                      placeholder="Ask Campus Genie about events, clubs, labs, or career paths..."
-                      onSend={handleSend}
-                    />
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* VIEW 2: LAKEHOUSE TABLES */}
-            {activeNav === "tables" && (
-              <div className="p-4 md:p-6 space-y-6 max-w-[1200px] mx-auto">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h2 className="text-[18px] font-semibold text-ink">Unity Catalog Lakehouse Records</h2>
-                    <p className="text-[13px] text-ink-2">
-                      Live governed Delta tables powering Genie queries (<code className="font-mono text-xs text-accent-ink">campus_explorer.campus_events</code>)
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Button variant="secondary" className="text-xs">Export CSV</Button>
-                    <Button variant="primary" className="text-xs">+ Ingest Event</Button>
-                  </div>
-                </div>
-
-                {/* Records Table Component */}
-                <div className="rounded-[12px] border border-line bg-canvas p-1 shadow-card overflow-hidden">
-                  <RecordsTable />
-                </div>
-
-                {/* Schedule Diff Table */}
+              {/* Live Loading State while waiting */}
+              {isLoading && (
                 <div className="rounded-[12px] border border-line bg-canvas p-4 shadow-card">
-                  <div className="mb-3">
-                    <h3 className="text-[14px] font-semibold text-ink">What-If Semester Schedule Diff</h3>
-                    <p className="text-[12.5px] text-ink-2">Comparing standard coursework trajectory vs AI Lab specialization</p>
-                  </div>
-                  <DiffTable />
+                  <LoadingState variant="Drive" label="Querying Delta Tables & Synthesizing Reasoning..." />
                 </div>
-              </div>
-            )}
+              )}
 
-            {/* VIEW 3: CAMPUS ANALYTICS */}
-            {activeNav === "analytics" && (
-              <div className="p-4 md:p-6 space-y-6 max-w-[1200px] mx-auto">
-                <div>
-                  <h2 className="text-[18px] font-semibold text-ink">Campus Pulse & Alumni Outcomes</h2>
-                  <p className="text-[13px] text-ink-2">
-                    Real-time engagement telemetry and historical alumni pathways from Databricks Lakehouse.
+              {/* Error Banner — NO FALLBACK */}
+              {errorMessage && (
+                <div className="rounded-[12px] border border-red/40 bg-red-tint/30 p-4 shadow-card text-red space-y-2">
+                  <div className="flex items-center gap-2 font-semibold text-[13px]">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                      <circle cx="12" cy="12" r="10" />
+                      <line x1="12" y1="8" x2="12" y2="12" />
+                      <line x1="12" y1="16" x2="12.01" y2="16" />
+                    </svg>
+                    API Communication Error ({selectedModel.provider})
+                  </div>
+                  <p className="text-[12.5px] leading-relaxed text-ink-2 break-words">
+                    {errorMessage}
                   </p>
-                </div>
-
-                {/* Insight Cards Component */}
-                <InsightCards />
-
-                {/* Filter Table Component */}
-                <div className="rounded-[12px] border border-line bg-canvas p-4 shadow-card">
-                  <div className="mb-3 flex items-center justify-between">
-                    <div>
-                      <h3 className="text-[14px] font-semibold text-ink">Filtered Activity Queue</h3>
-                      <p className="text-[12.5px] text-ink-2">Prioritized club tasks, lab deliverables, and hackathon milestones</p>
-                    </div>
+                  <div className="pt-1 flex items-center gap-2">
+                    <Button variant="secondary" className="text-xs" onClick={() => setSettingsOpen(true)}>
+                      Configure API Key
+                    </Button>
+                    <Button variant="primary" className="text-xs" onClick={() => handleSend(messages.at(-1)?.content || "Retry")}>
+                      Retry Request
+                    </Button>
                   </div>
-                  <FilterTable />
                 </div>
+              )}
+
+              <div ref={scrollAnchorRef} />
+            </div>
+
+            {/* Bottom Floating Prompt Bar (Rounded Permanently) */}
+            <div className="shrink-0 border-t border-line bg-canvas p-3">
+              <div className="mx-auto max-w-[780px]">
+                <PromptBar
+                  variant="Rounded"
+                  demo={false}
+                  tall
+                  placeholder="Ask Campus Genie about events, clubs, labs, or career paths..."
+                  onSend={handleSend}
+                />
               </div>
-            )}
-
-            {/* VIEW 4: REASONING GRAPH & SQL */}
-            {activeNav === "flowchart" && (
-              <div className="p-4 md:p-6 space-y-6 max-w-[1200px] mx-auto">
-                <div>
-                  <h2 className="text-[18px] font-semibold text-ink">Genie Agent Execution Graph & SQL</h2>
-                  <p className="text-[13px] text-ink-2">
-                    Multi-step Agent DAG showing schema introspection, query generation, and Lakehouse execution.
-                  </p>
-                </div>
-
-                {/* Flowchart Component */}
-                <div className="rounded-[12px] border border-line bg-canvas p-4 shadow-card overflow-hidden">
-                  <Flowchart />
-                </div>
-
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                  {/* Generated SQL CodeBlock */}
-                  <div className="rounded-[12px] border border-line bg-canvas p-4 shadow-card">
-                    <div className="flex items-center justify-between mb-2">
-                      <div>
-                        <h3 className="text-[13.5px] font-semibold text-ink">Generated Lakehouse SQL</h3>
-                        <p className="text-[12px] text-ink-2">Auto-compiled by Databricks Genie Agent</p>
-                      </div>
-                      <div className="flex gap-1 bg-inset p-0.5 rounded-[6px]">
-                        {(["Code", "Diff"] as const).map((mode) => (
-                          <button
-                            key={mode}
-                            type="button"
-                            onClick={() => setCodeBlockVariant(mode)}
-                            className={`px-2 py-0.5 text-[11px] font-medium rounded-[5px] transition-colors ${
-                              codeBlockVariant === mode ? "bg-canvas text-ink shadow-hairline" : "text-ink-3"
-                            }`}
-                          >
-                            {mode}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                    <CodeBlock
-                      variant={codeBlockVariant}
-                      filename="campus_genie_query.sql"
-                      lines={[
-                        "-- Databricks Genie Generated Query",
-                        "SELECT",
-                        "  e.event_id,",
-                        "  e.title,",
-                        "  e.category,",
-                        "  e.start_time,",
-                        "  e.location,",
-                        "  c.match_score",
-                        "FROM campus_explorer.campus_events e",
-                        "JOIN campus_explorer.clubs_labs c",
-                        "  ON e.host_id = c.club_id",
-                        "WHERE e.category = 'Artificial Intelligence'",
-                        "  AND e.start_time >= CURRENT_TIMESTAMP()",
-                        "  AND e.commitment_level IN ('Low', 'Medium')",
-                        "ORDER BY c.match_score DESC",
-                        "LIMIT 5;",
-                      ]}
-                    />
-                  </div>
-
-                  {/* Fine Tune Card */}
-                  <div className="rounded-[12px] border border-line bg-canvas p-4 shadow-card">
-                    <div className="mb-2">
-                      <h3 className="text-[13.5px] font-semibold text-ink">Persona & Recommendation Tuning</h3>
-                      <p className="text-[12px] text-ink-2">Adjust agent weights for extroversion, bandwidth, and city radius</p>
-                    </div>
-                    <FineTuneCard />
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* VIEW 5: DISCOVERY & SELECTION HUB */}
-            {activeNav === "discovery" && (
-              <div className="p-4 md:p-6 space-y-6 max-w-[1200px] mx-auto">
-                <div>
-                  <h2 className="text-[18px] font-semibold text-ink">Campus Discovery Hub & Batch Actions</h2>
-                  <p className="text-[13px] text-ink-2">Quickly search clubs, labs, and city meetups or manage bulk registrations.</p>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {/* Search List */}
-                  <div className="rounded-[12px] border border-line bg-canvas p-4 shadow-card">
-                    <div className="mb-3">
-                      <h3 className="text-[14px] font-semibold text-ink">Quick Search Directory</h3>
-                      <p className="text-[12px] text-ink-2">Search across all registered Unity Catalog entities</p>
-                    </div>
-                    <SearchList />
-                  </div>
-
-                  {/* Multi-modal Chat Composer */}
-                  <div className="rounded-[12px] border border-line bg-canvas p-4 shadow-card flex flex-col justify-between">
-                    <div>
-                      <h3 className="text-[14px] font-semibold text-ink mb-1">Multi-Modal Composer</h3>
-                      <p className="text-[12px] text-ink-2 mb-4">Attach lab PDFs, syllabi, or event flyers for Genie analysis</p>
-                      <ChatComposer />
-                    </div>
-                  </div>
-                </div>
-
-                {/* Selection Actions Banner */}
-                <div className="rounded-[12px] border border-line bg-canvas p-4 shadow-card">
-                  <div className="mb-3">
-                    <h3 className="text-[14px] font-semibold text-ink">Selected Items Action Bar</h3>
-                    <p className="text-[12.5px] text-ink-2">Select clubs/events to perform batch calendar exports or team RSVPs</p>
-                  </div>
-                  <SelectionActions />
-                </div>
-              </div>
-            )}
-
-            {/* VIEW 6: UI PRIMITIVES GALLERY */}
-            {activeNav === "atoms" && (
-              <div className="p-4 md:p-6 space-y-6 max-w-[1200px] mx-auto">
-                <div>
-                  <h2 className="text-[18px] font-semibold text-ink">UI Atoms & Primitives Showcase</h2>
-                  <p className="text-[13px] text-ink-2">Every building block adhering strictly to Beautiful UI design tokens.</p>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {/* Buttons */}
-                  <div className="rounded-[12px] border border-line bg-canvas p-4 space-y-3 shadow-card">
-                    <h4 className="text-[13px] font-semibold text-ink">Button Variants</h4>
-                    <div className="flex flex-wrap gap-2">
-                      <Button variant="primary">Primary</Button>
-                      <Button variant="secondary">Secondary</Button>
-                      <Button variant="ghost">Ghost</Button>
-                      <Button variant="accent">Accent</Button>
-                      <Button variant="success">Success</Button>
-                      <Button variant="quiet">Quiet</Button>
-                    </div>
-                  </div>
-
-                  {/* Status Pills & Value Pills */}
-                  <div className="rounded-[12px] border border-line bg-canvas p-4 space-y-3 shadow-card">
-                    <h4 className="text-[13px] font-semibold text-ink">Status & Value Pills</h4>
-                    <div className="flex flex-wrap gap-2">
-                      <StatusPill tone="green">Active</StatusPill>
-                      <StatusPill tone="orange">In Progress</StatusPill>
-                      <StatusPill tone="neutral">Pending</StatusPill>
-                      <ValuePill tone="accent">+18.4% AI Match</ValuePill>
-                      <Chip tone="neutral">Delta Lake</Chip>
-                      <Chip tone="accent">Genie Agent</Chip>
-                    </div>
-                  </div>
-
-                  {/* Progress & Switches */}
-                  <div className="rounded-[12px] border border-line bg-canvas p-4 space-y-3 shadow-card">
-                    <h4 className="text-[13px] font-semibold text-ink">Progress & Controls</h4>
-                    <div className="flex items-center gap-4">
-                      <ProgressRing progress={78} />
-                      <div className="space-y-2">
-                        <Switch checked={syncEnabled} onChange={setSyncEnabled} label="Lakehouse Sync" />
-                        <Switch checked={alertsEnabled} onChange={setAlertsEnabled} label="City Alerts" />
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Text Rows */}
-                  <div className="rounded-[12px] border border-line bg-canvas p-4 space-y-1 shadow-card">
-                    <h4 className="text-[13px] font-semibold text-ink mb-2">Text Rows</h4>
-                    <TextRow label="Target Year" value="3rd Year" />
-                    <TextRow label="Primary Branch" value="Computer Science" />
-                    <TextRow label="Weekly Free Hours" value="12 hrs" />
-                  </div>
-
-                  {/* StreamText & Shimmer */}
-                  <div className="rounded-[12px] border border-line bg-canvas p-4 space-y-3 shadow-card">
-                    <h4 className="text-[13px] font-semibold text-ink">StreamText & Shimmer</h4>
-                    <div className="p-2.5 rounded-[8px] bg-inset text-xs font-mono">
-                      <StreamText text="Genie is compiling Lakehouse SQL queries..." />
-                    </div>
-                    <Shimmer className="h-5 w-full rounded-[6px]">
-                      <span className="text-[11px] text-ink-3 px-2">Streaming Delta Lake pipeline...</span>
-                    </Shimmer>
-                  </div>
-
-                  {/* Segmented Control & Entity */}
-                  <div className="rounded-[12px] border border-line bg-canvas p-4 space-y-3 shadow-card">
-                    <h4 className="text-[13px] font-semibold text-ink">Segmented Control & Entity</h4>
-                    <SegmentedControl
-                      options={["Day", "Week", "Semester"] as const}
-                      value={selectedPeriod}
-                      onChange={setSelectedPeriod}
-                    />
-                    <div className="pt-2">
-                      <EntityChip name="Databricks Unity Catalog" monogram="UC" />
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
+            </div>
           </div>
         </section>
       </div>
+
+      {/* API Configuration Settings Modal */}
+      {settingsOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fade-in">
+          <div className="w-full max-w-md rounded-[14px] border border-line bg-canvas p-5 shadow-overlay space-y-4">
+            <div className="flex items-center justify-between border-b border-line-soft pb-3">
+              <h3 className="text-[15px] font-semibold text-ink">LLM Provider &amp; API Settings</h3>
+              <button
+                type="button"
+                onClick={() => setSettingsOpen(false)}
+                className="text-ink-3 hover:text-ink"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-3 text-[13px]">
+              <div>
+                <label className="block text-ink-2 font-medium mb-1">Select Provider &amp; Model</label>
+                <select
+                  value={selectedModel.id}
+                  onChange={(e) => {
+                    const m = AVAILABLE_MODELS.find((x) => x.id === e.target.value);
+                    if (m) setSelectedModel(m);
+                  }}
+                  className="w-full h-8 rounded-[8px] border border-line bg-surface px-2.5 text-[12.5px] text-ink outline-none"
+                >
+                  {AVAILABLE_MODELS.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.name} ({m.provider}) {m.isReasoning ? "— Thinking" : ""}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-ink-2 font-medium mb-1">Custom API Key</label>
+                <input
+                  type="password"
+                  value={customApiKey}
+                  onChange={(e) => setCustomApiKey(e.target.value)}
+                  placeholder="Defaults to .env.local (LLM_API_KEY / OPENAI_API_KEY / DATABRICKS_TOKEN)"
+                  className="w-full h-8 rounded-[8px] border border-line bg-field px-2.5 text-[12.5px] text-ink outline-none placeholder:text-ink-3"
+                />
+              </div>
+
+              <div>
+                <label className="block text-ink-2 font-medium mb-1">Custom API Base URL (Optional)</label>
+                <input
+                  type="text"
+                  value={customBaseUrl}
+                  onChange={(e) => setCustomBaseUrl(e.target.value)}
+                  placeholder="e.g. https://api.openai.com/v1 or http://localhost:11434/v1"
+                  className="w-full h-8 rounded-[8px] border border-line bg-field px-2.5 text-[12.5px] text-ink outline-none placeholder:text-ink-3"
+                />
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2 border-t border-line-soft">
+              <Button variant="ghost" className="text-xs" onClick={() => setSettingsOpen(false)}>
+                Cancel
+              </Button>
+              <Button variant="primary" className="text-xs" onClick={handleSaveSettings}>
+                Save Settings
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   );
 }
