@@ -9,6 +9,26 @@
   --ease-link: cubic-bezier(0.16, 1, 0.3, 1);
 }
 
+/* ── icon sprite styles ───────────────────────────────── */
+.kb-scope .i,
+.kb-scope svg.i {
+  width: 14px !important;
+  height: 14px !important;
+  flex-shrink: 0 !important;
+  display: inline-block !important;
+  vertical-align: middle !important;
+  fill: none !important;
+  stroke: currentColor !important;
+  stroke-width: 2 !important;
+  stroke-linecap: round !important;
+  stroke-linejoin: round !important;
+}
+.kb-scope .i11, .kb-scope svg.i11 { width: 11px !important; height: 11px !important; stroke-width: 2.4 !important; }
+.kb-scope .i12, .kb-scope svg.i12 { width: 12px !important; height: 12px !important; stroke-width: 2.2 !important; }
+.kb-scope .i13, .kb-scope svg.i13 { width: 13px !important; height: 13px !important; stroke-width: 2.1 !important; }
+.kb-scope .i14, .kb-scope svg.i14 { width: 14px !important; height: 14px !important; stroke-width: 2 !important; }
+.kb-scope .i16, .kb-scope svg.i16 { width: 16px !important; height: 16px !important; }
+
 /* platform glyph swap */
 .kb-scope .g-win { display: none; }
 .kb-scope.pf-win .g-mac, .kb-scope.pf-linux .g-mac { display: none; }
@@ -365,25 +385,6 @@
   text-decoration: none; border: 0; background: transparent;
 }
 .kb-scope .cal-link:hover { color: var(--ink); }
-
-/* floating ⌘K trigger */
-.fab {
-  position: fixed; z-index: 40; right: 18px; bottom: 18px;
-  display: inline-flex; align-items: center; gap: 7px;
-  height: 36px; padding: 0 13px; cursor: pointer;
-  border: 1px solid var(--line); border-radius: 9999px;
-  background: var(--surface); color: var(--ink-2);
-  box-shadow: var(--shadow-raised);
-  font-size: 12px; font-weight: 500;
-  transition: transform 160ms var(--ease-out-strong), color 140ms ease-out, box-shadow 160ms var(--ease-out-strong);
-}
-.fab:hover { transform: translateY(-2px); color: var(--ink); box-shadow: var(--shadow-overlay); }
-.fab kbd {
-  padding: 1px 5px; border: 1px solid var(--line); border-bottom-width: 2px;
-  border-radius: 5px; background: var(--inset);
-  font-family: var(--font-mono); font-size: 10px; color: var(--ink-2); line-height: 1.4;
-}
-.fab .i { color: var(--ink-3); }
 
 /* ── keyframes ─────────────────────────────────────────── */
 @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
