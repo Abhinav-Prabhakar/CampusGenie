@@ -923,6 +923,7 @@
 }
 
 .events-scope .dialog {
+  --tag: var(--ink-3);
   position: relative; z-index: 1;
   width: min(720px, 100%);
   max-height: min(86vh, 800px);
@@ -934,6 +935,12 @@
   box-shadow: var(--shadow-overlay);
   animation: dlg-in 320ms var(--ease-out-strong) both;
 }
+.events-scope .dialog.cat-meeting   { --tag: var(--hue-meeting); }
+.events-scope .dialog.cat-hackathon { --tag: var(--hue-hack); }
+.events-scope .dialog.cat-career    { --tag: var(--hue-career); }
+.events-scope .dialog.cat-workshop  { --tag: var(--hue-workshop); }
+.events-scope .dialog.cat-social    { --tag: var(--hue-social); }
+.events-scope .dialog.cat-sports    { --tag: var(--hue-sports); }
 
 /* ── hero ─────────────────────────────────────────────── */
 .events-scope .dhero {
@@ -1028,17 +1035,20 @@
 
 /* stat tiles */
 .events-scope .tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
-.events-scope .tile {
+.events-scope .tiles .tile {
   padding: 10px;
   border: 1px solid var(--line-soft); border-radius: 8px;
   background: var(--inset);
+  width: auto;
+  height: auto;
+  display: block;
 }
-.events-scope .tile .i { color: var(--ink-3); margin-bottom: 7px; }
-.events-scope .tile b {
+.events-scope .tiles .tile .i { color: var(--ink-3); margin-bottom: 7px; }
+.events-scope .tiles .tile b {
   display: block; font-size: 14.5px; font-weight: 600;
   font-variant-numeric: tabular-nums; letter-spacing: -0.01em; color: var(--ink);
 }
-.events-scope .tile span {
+.events-scope .tiles .tile span {
   display: block; margin-top: 1px; color: var(--ink-3); font-size: 10.5px; font-weight: 500;
 }
 
@@ -1224,14 +1234,48 @@
 
 /* capacity ring */
 .events-scope .ringwrap { display: flex; align-items: center; gap: 12px; }
-.events-scope .ring { width: 60px; height: 60px; flex-shrink: 0; }
-.events-scope .ring .bg { stroke: color-mix(in srgb, var(--ink) 10%, transparent); }
-.events-scope .ring .fg {
-  stroke: var(--ink-3); stroke-linecap: round;
-  transform: rotate(-90deg); transform-origin: center;
-  animation: ring-in 900ms var(--ease-out-strong) 250ms both;
+.events-scope .ring,
+.events-scope svg.ring,
+.events-scope .dring {
+  width: 60px !important;
+  height: 60px !important;
+  flex-shrink: 0 !important;
+  background: transparent !important;
+  background-color: transparent !important;
+  border: none !important;
+  outline: none !important;
+  box-shadow: none !important;
+  --tw-ring-color: transparent !important;
+  --tw-ring-offset-shadow: none !important;
+  --tw-ring-shadow: none !important;
+  --tw-shadow: none !important;
 }
-.events-scope .ring text { fill: var(--ink); font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.events-scope .ring circle,
+.events-scope .dring circle {
+  fill: none !important;
+}
+.events-scope .ring .bg,
+.events-scope .dring .bg {
+  stroke: color-mix(in srgb, var(--ink) 10%, transparent) !important;
+  fill: none !important;
+}
+.events-scope .ring .fg,
+.events-scope .dring .fg {
+  stroke: var(--ink-3) !important;
+  fill: none !important;
+  stroke-linecap: round !important;
+  transform: rotate(-90deg) !important;
+  transform-origin: center !important;
+  animation: ring-in 900ms var(--ease-out-strong) 250ms both !important;
+}
+.events-scope .ring text,
+.events-scope .dring text {
+  fill: var(--ink) !important;
+  font-size: 12px !important;
+  font-weight: 600 !important;
+  font-variant-numeric: tabular-nums !important;
+  font-family: var(--font-sans) !important;
+}
 .events-scope .ringcap b { display: block; font-size: 12.5px; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--ink); }
 .events-scope .ringcap span { display: block; color: var(--ink-3); font-size: 10.5px; }
 .events-scope .ringcap .avs { margin-top: 6px; }

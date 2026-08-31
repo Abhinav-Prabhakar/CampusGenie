@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import type { CampusEvent } from "./EventsView";
+import EventIcons from "./EventIcons";
 
 type EventDetailModalProps = {
   event: CampusEvent | null;
@@ -61,6 +62,9 @@ export default function EventDetailModal({ event, onClose, onAskGenie }: EventDe
 
   return (
     <div className="overlay events-scope" role="presentation" style={{ display: "grid" }}>
+      {/* SVG Sprite Definition */}
+      <EventIcons />
+
       {/* Scrim backdrop */}
       <div className="scrim" onClick={onClose} aria-label="Close dialog" />
 
@@ -88,6 +92,7 @@ export default function EventDetailModal({ event, onClose, onAskGenie }: EventDe
               <span className={`pill pill-${event.pill.tone}`}>
                 {event.pill.tone === "live" && <i className="dot" aria-hidden="true" />}
                 {event.pill.tone === "going" && <svg className="i i11" width={11} height={11} aria-hidden="true"><use href="#i-check"/></svg>}
+                {event.pill.tone === "quiet" && event.flags.virtual && <svg className="i i11" width={11} height={11} aria-hidden="true"><use href="#i-video"/></svg>}
                 {event.pill.text}
               </span>
             )}
