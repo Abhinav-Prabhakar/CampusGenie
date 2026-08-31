@@ -57,7 +57,6 @@ export default function CampusGeniePage() {
   const [thinkingVariant, setThinkingVariant] = useState<"Steps" | "Reasoning" | "Search">("Steps");
   const [loadingVariant, setLoadingVariant] = useState<"Drive" | "Dots" | "Orbit">("Drive");
   const [codeBlockVariant, setCodeBlockVariant] = useState<"Code" | "Diff">("Code");
-  const [promptBarVariant, setPromptBarVariant] = useState<"Rounded" | "Pill">("Rounded");
   const [syncEnabled, setSyncEnabled] = useState<boolean>(true);
   const [alertsEnabled, setAlertsEnabled] = useState<boolean>(false);
   const [selectedPeriod, setSelectedPeriod] = useState<"Day" | "Week" | "Semester">("Week");
@@ -343,25 +342,8 @@ export default function CampusGeniePage() {
                 {/* Bottom Floating Prompt Bar */}
                 <div className="shrink-0 border-t border-line bg-canvas p-3">
                   <div className="mx-auto max-w-[780px]">
-                    <div className="flex items-center justify-between mb-1.5 px-1">
-                      <span className="text-[11px] text-ink-3">Prompt Bar Style:</span>
-                      <div className="flex gap-1">
-                        {(["Rounded", "Pill"] as const).map((pv) => (
-                          <button
-                            key={pv}
-                            type="button"
-                            onClick={() => setPromptBarVariant(pv)}
-                            className={`rounded px-1.5 py-0.5 text-[10.5px] font-medium ${
-                              promptBarVariant === pv ? "bg-hover-2 text-ink" : "text-ink-3"
-                            }`}
-                          >
-                            {pv}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
                     <PromptBar
-                      variant={promptBarVariant}
+                      variant="Rounded"
                       demo={false}
                       tall
                       placeholder="Ask Campus Genie about events, clubs, labs, or career paths..."

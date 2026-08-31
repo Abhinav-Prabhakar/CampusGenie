@@ -82,11 +82,11 @@
   --ink-2: oklch(0.731 0.008 260.731);
   --ink-3: oklch(0.541 0.01 264.484);
 
-  --line: oklch(0.308 0.006 258.354);
-  --line-strong: oklch(0.356 0.007 264.474);
-  --line-soft: oklch(0.278 0.006 258.354);
-  --field: oklch(0.293 0.006 271.223);
-  --stripe: oklch(1 0 0 / 0.055);
+  --line: oklch(0.275 0.004 258.354);
+  --line-strong: oklch(0.315 0.005 264.474);
+  --line-soft: oklch(1 0 0 / 0.05);
+  --field: oklch(0.265 0.005 271.223);
+  --stripe: oklch(1 0 0 / 0.035);
   --stripe-bg: oklch(0.226 0.004 264.485);
 
   --accent: oklch(0.68 0.173 253.301);
@@ -103,21 +103,13 @@
   --tooltip-bg: oklch(0.182 0.004 264.459);
   --tooltip-fg: oklch(0.964 0.002 247.839);
   --tooltip-muted: oklch(0.731 0.008 260.731);
-  --tooltip-border: oklch(0.308 0.006 258.354);
+  --tooltip-border: oklch(0.275 0.004 258.354);
 
   --shadow-hairline: 0 0 0 1px var(--line);
-  /* Elevation rings go to a subtle *light* hairline in dark mode: the ring
-   * paints over the surface behind the element, so a low-alpha white edge
-   * dissolves into the shadow as one continuous stroke (per smooth-shadow-ring),
-   * graduated by how far the surface floats. */
-  --shadow-btn: 0 0 0 1px oklch(1 0 0 / 0.1), 0 1px 2px oklch(0 0 0 / 0.3);
-  --shadow-card:
-    0 0 0 1px oklch(1 0 0 / 0.11), 0 1px 2px oklch(0 0 0 / 0.2),
-    0 2px 6px oklch(0 0 0 / 0.2);
-  --shadow-raised:
-    0 0 0 1px oklch(1 0 0 / 0.13), 0 2px 10px oklch(0 0 0 / 0.22);
-  --shadow-overlay:
-    0 0 0 1px oklch(1 0 0 / 0.15), 0 8px 28px oklch(0 0 0 / 0.34);
+  --shadow-btn: 0 0 0 1px var(--line), 0 1px 2px oklch(0 0 0 / 0.3);
+  --shadow-card: 0 0 0 1px var(--line), 0 1px 3px oklch(0 0 0 / 0.2);
+  --shadow-raised: 0 0 0 1px var(--line), 0 3px 8px oklch(0 0 0 / 0.25);
+  --shadow-overlay: 0 0 0 1px var(--line), 0 8px 24px oklch(0 0 0 / 0.35);
   --shadow-inset-field: inset 0 1px 2px oklch(0 0 0 / 0.4);
 }
 
