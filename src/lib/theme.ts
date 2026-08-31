@@ -18,29 +18,29 @@ export function useTheme() {
         document.documentElement.classList.toggle("dark", nextDark);
       }
     };
-    window.addEventListener("storage", handleStorage);
-    return () => window.removeEventListener("storage", handleStorage);
-  }, []);
 
-  const toggleTheme = useCallback(() => {
-    setIsDark((prev) => {
-      const next = !prev;
-      localStorage.setItem("bui-theme", next ? "dark" : "light");
-      document.documentElement.classList.toggle("dark", next);
-      window.dispatchEvent(new Event("cg-theme-change"));
-      return next;
-    });
-  }, []);
-
-  useEffect(() => {
     const onCustom = () => {
       const saved = localStorage.getItem("bui-theme");
       const darkActive = saved !== "light";
       setIsDark(darkActive);
       document.documentElement.classList.toggle("dark", darkActive);
     };
+
+    window.addEventListener("storage", handleStorage);
     window.addEventListener("cg-theme-change", onCustom);
-    return () => window.removeEventListener("cg-theme-change", onCustom);
+    return () => {
+      window.removeEventListener("storage", handleStorage);
+      window.removeEventListener("cg-theme-change", onCustom);
+    };
+  }, []);
+
+  const toggleTheme = useCallback(() => {
+    const isCurrentlyDark = document.documentElement.classList.contains("dark");
+    const nextDark = !isCurrentlyDark;
+    localStorage.setItem("bui-theme", nextDark ? "dark" : "light");
+    document.documentElement.classList.toggle("dark", nextDark);
+    setIsDark(nextDark);
+    window.dispatchEvent(new Event("cg-theme-change"));
   }, []);
 
   return { isDark, toggleTheme };

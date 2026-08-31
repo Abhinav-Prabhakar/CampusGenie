@@ -6,12 +6,9 @@ import PromptBar from "@/components/primitives/PromptBar";
 import ThinkingState from "@/components/primitives/ThinkingState";
 import ApprovalCard from "@/components/primitives/ApprovalCard";
 import RecommendationCard from "@/components/primitives/RecommendationCard";
-import ContextCards from "@/components/primitives/ContextCards";
 import FineTuneCard from "@/components/primitives/FineTuneCard";
-import Flowchart from "@/components/primitives/Flowchart";
-import StreamingText from "@/components/primitives/StreamingText";
+import MarkdownMessage from "@/components/primitives/MarkdownMessage";
 import { EntityChip } from "@/components/atoms/EntityChip";
-import { StreamText } from "@/components/atoms/StreamText";
 import { Button } from "@/components/atoms/Button";
 import {
   DEFAULT_AVAILABLE_MODELS,
@@ -317,7 +314,6 @@ export default function CampusGenieChatPage() {
                       isRestock ? "approval" : null,
                       isFlavor ? "finetune" : null,
                       isEvent ? "recommendation" : null,
-                      "context",
                     ].filter(Boolean) as any[],
                     timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
                   },
@@ -345,7 +341,6 @@ export default function CampusGenieChatPage() {
           isRestock ? "approval" : null,
           isFlavor ? "finetune" : null,
           isEvent ? "recommendation" : null,
-          "context",
         ].filter(Boolean) as any[],
         timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
       };
@@ -513,7 +508,7 @@ export default function CampusGenieChatPage() {
           </header>
 
           {/* Main Chat Flow */}
-          <div className="flex min-h-0 flex-1 flex-col overflow-y-auto p-4 sm:p-6 lg:p-8">
+          <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-3 py-2 sm:px-6 sm:py-3">
             {messages.length === 0 ? (
               <div className="my-auto flex flex-col items-center justify-center text-center max-w-xl mx-auto space-y-6">
                 <div className="flex size-12 items-center justify-center rounded-2xl bg-hover-2 text-ink shadow-hairline">
@@ -545,26 +540,19 @@ export default function CampusGenieChatPage() {
                 </div>
               </div>
             ) : (
-              <div className="space-y-6 max-w-3xl mx-auto w-full pb-4">
+              <div className="space-y-5 max-w-3xl mx-auto w-full pb-4">
                 {messages.map((msg) => (
                   <div
                     key={msg.id}
-                    className={`flex flex-col space-y-2.5 ${msg.role === "user" ? "items-end" : "items-start"}`}
+                    className={`flex flex-col space-y-1.5 ${msg.role === "user" ? "items-end" : "items-start"}`}
                   >
-                    {/* Role Header */}
-                    <div className="flex items-center gap-2 px-1 text-[11px] font-medium text-ink-3">
-                      <span>{msg.role === "user" ? "You" : `Campus Genie (${selectedModel.name})`}</span>
-                      <span>•</span>
-                      <span>{msg.timestamp}</span>
-                    </div>
-
                     {/* Message Bubble */}
                     {msg.role === "user" ? (
                       <div className="rounded-[14px] bg-hover-2 px-4 py-2.5 text-[13.5px] font-medium text-ink max-w-[85%] sm:max-w-[75%] leading-relaxed shadow-sm">
                         {msg.content}
                       </div>
                     ) : (
-                      <div className="w-full space-y-4">
+                      <div className="w-full space-y-3">
                         {/* Thinking / Reasoning Accordion Component */}
                         {msg.thinking && (
                           <div className="w-full">
@@ -574,9 +562,9 @@ export default function CampusGenieChatPage() {
                           </div>
                         )}
 
-                        {/* Text Response Body */}
-                        <div className="rounded-[14px] border border-line bg-surface p-4 text-[13.5px] text-ink leading-relaxed shadow-card whitespace-pre-wrap">
-                          <StreamText text={msg.content} caret={isLoading} />
+                        {/* Markdown Text Response Body */}
+                        <div className="rounded-[14px] border border-line bg-surface p-4 text-[13.5px] text-ink leading-relaxed shadow-card">
+                          <MarkdownMessage content={msg.content} />
                         </div>
 
                         {/* Governed Cards & Artifacts from Lakehouse */}
@@ -625,23 +613,6 @@ export default function CampusGenieChatPage() {
                                   label: "Best Fit",
                                   cta: "View Event",
                                   ctaVariant: "primary",
-                                },
-                              ]}
-                            />
-                          </div>
-                        )}
-
-                        {msg.cards?.includes("context") && (
-                          <div className="w-full animate-fade-in">
-                            <ContextCards
-                              chunks={[
-                                {
-                                  title: "Unity Catalog Delta Table",
-                                  chars: "1,420 rows",
-                                  body: "campus_explorer.campus_events: filtered by category = 'AI', dow IN ('WED', 'FRI'), verified by Genie Agent.",
-                                  source: "unity_lakehouse_prod",
-                                  badge: "DELTA",
-                                  tone: "bg-blue",
                                 },
                               ]}
                             />
