@@ -1,0 +1,24 @@
+# Campus Genie — Databricks Asset Bundle (DAB) Configuration
+bundle:
+  name: campus_genie
+
+workspace:
+  host: https://dbc-c69189ed-ede0.cloud.databricks.com
+
+resources:
+  jobs:
+    seed_campus_lakehouse:
+      name: "[Campus Genie] Initialize Lakehouse Delta Tables"
+      tasks:
+        - task_key: run_sql_init
+          spark_python_task:
+            python_file: backend/init_lakehouse.py
+
+targets:
+  dev:
+    default: true
+    workspace:
+      root_path: /Workspace/Users/${workspace.current_user.userName}/.bundle/${bundle.name}/dev
+  prod:
+    workspace:
+      root_path: /Shared/.bundle/${bundle.name}/prod

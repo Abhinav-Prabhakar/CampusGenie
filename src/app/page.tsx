@@ -508,7 +508,7 @@ export default function CampusGenieChatPage() {
           </header>
 
           {/* Main Chat Flow */}
-          <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-3 py-2 sm:px-6 sm:py-3">
+          <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-3 pt-2 pb-24 sm:px-6 sm:pt-3 sm:pb-28">
             {messages.length === 0 ? (
               <div className="my-auto flex flex-col items-center justify-center text-center max-w-xl mx-auto space-y-6">
                 <div className="flex size-12 items-center justify-center rounded-2xl bg-hover-2 text-ink shadow-hairline">
@@ -638,11 +638,11 @@ export default function CampusGenieChatPage() {
             )}
           </div>
 
-          {/* Bottom Prompt Bar Input */}
-          <div className="border-t border-line p-3 sm:p-4 bg-surface">
-            <div className="max-w-3xl mx-auto">
+          {/* Floating Bottom Prompt Bar Input */}
+          <div className="absolute inset-x-0 bottom-0 pointer-events-none p-3 sm:p-4 flex justify-center bg-gradient-to-t from-canvas via-canvas/90 to-transparent pt-10 z-20">
+            <div className="w-full max-w-3xl pointer-events-auto rounded-[14px] shadow-[0_12px_36px_rgba(0,0,0,0.35)] backdrop-blur-md">
               <PromptBar
-                placeholder={`Ask Campus Genie anything with ${selectedModel.name}...`}
+                placeholder="Ask Campus Genie anything"
                 onSend={handleSend}
                 demo={false}
               />
