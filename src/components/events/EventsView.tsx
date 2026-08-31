@@ -1,8 +1,8 @@
 "use client";
 
 import { useState, useMemo } from "react";
+import "@/app/events.css";
 
-// Event data type
 export type CampusEvent = {
   id: string;
   cat: "meeting" | "hackathon" | "career" | "workshop" | "social" | "sports";
@@ -298,14 +298,27 @@ const EVENTS_DATA: CampusEvent[] = [
   },
 ];
 
+const CAT_INDICES: Record<string, number> = {
+  all: 0,
+  meeting: 1,
+  hackathon: 2,
+  career: 3,
+  workshop: 4,
+  social: 5,
+  sports: 6,
+};
+
 export default function EventsView({ onAskGenie }: { onAskGenie?: (prompt: string) => void }) {
   const [selectedCat, setSelectedCat] = useState<string>("all");
-  const [selectedWhen, setSelectedWhen] = useState<string>("all");
+  const [selectedWhen, setSelectedWhen] = useState<string>("week");
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [foodFilter, setFoodFilter] = useState<boolean>(false);
   const [virtualFilter, setVirtualFilter] = useState<boolean>(false);
   const [goingFilter, setGoingFilter] = useState<boolean>(false);
-  const [savedEvents, setSavedEvents] = useState<Record<string, boolean>>({});
+  const [savedEvents, setSavedEvents] = useState<Record<string, boolean>>({
+    "10": true,
+    "13": true,
+  });
   const [rsvpEvents, setRsvpEvents] = useState<Record<string, boolean>>({
     "5": true,
     "10": true,
@@ -330,7 +343,6 @@ export default function EventsView({ onAskGenie }: { onAskGenie?: (prompt: strin
     setGoingFilter(false);
   };
 
-  // Filter events
   const filteredEvents = useMemo(() => {
     return EVENTS_DATA.filter((ev) => {
       if (selectedCat !== "all" && ev.cat !== selectedCat) return false;
@@ -351,9 +363,11 @@ export default function EventsView({ onAskGenie }: { onAskGenie?: (prompt: strin
     });
   }, [selectedCat, selectedWhen, foodFilter, virtualFilter, goingFilter, searchQuery, rsvpEvents]);
 
+  const glideTransform = `translateX(${CAT_INDICES[selectedCat] * 100}%)`;
+
   return (
-    <div className="w-full">
-      {/* SVG Sprite */}
+    <div className="events-scope w-full">
+      {/* Complete Feather-Style SVG Sprite */}
       <svg xmlns="http://www.w3.org/2000/svg" style={{ display: "none" }} aria-hidden="true">
         <symbol id="i-cal" viewBox="0 0 24 24"><rect x="3" y="4.5" width="18" height="17" rx="2.5"/><path d="M8 2.5v4M16 2.5v4M3 10h18"/></symbol>
         <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></symbol>
@@ -384,22 +398,22 @@ export default function EventsView({ onAskGenie }: { onAskGenie?: (prompt: strin
         <div className="banner-wrap">
           <aside className="feature">
             <span className="fx">
-              <svg className="i i16" aria-hidden="true"><use href="#i-spark"/></svg>
+              <svg className="i i16" width={16} height={16} aria-hidden="true"><use href="#i-spark"/></svg>
             </span>
             <div className="fb">
               <div className="fk">
                 <span className="cat cat-hackathon">
-                  <svg className="i i11" aria-hidden="true"><use href="#i-code"/></svg>Featured
+                  <svg className="i i11" width={11} height={11} aria-hidden="true"><use href="#i-code"/></svg>Featured
                 </span>
                 <span className="fk-sub">Hackathon · Registration closes Friday</span>
               </div>
               <h2>Hack the Lake — 48h Genie Build Sprint</h2>
               <div className="fm">
-                <span><svg className="i i12" aria-hidden="true"><use href="#i-cal"/></svg>APR 25–26</span>
-                <span><svg className="i i12" aria-hidden="true"><use href="#i-hour"/></svg>48h</span>
-                <span><svg className="i i12" aria-hidden="true"><use href="#i-pin"/></svg>Colt Arena</span>
-                <span><svg className="i i12" aria-hidden="true"><use href="#i-users"/></svg>512 pre-registered</span>
-                <span><svg className="i i12" aria-hidden="true"><use href="#i-food"/></svg>Meals covered</span>
+                <span><svg className="i i12" width={12} height={12} aria-hidden="true"><use href="#i-cal"/></svg>APR 25–26</span>
+                <span><svg className="i i12" width={12} height={12} aria-hidden="true"><use href="#i-hour"/></svg>48h</span>
+                <span><svg className="i i12" width={12} height={12} aria-hidden="true"><use href="#i-pin"/></svg>Colt Arena</span>
+                <span><svg className="i i12" width={12} height={12} aria-hidden="true"><use href="#i-users"/></svg>512 pre-registered</span>
+                <span><svg className="i i12" width={12} height={12} aria-hidden="true"><use href="#i-food"/></svg>Meals covered</span>
               </div>
             </div>
             <div className="fa">
@@ -415,7 +429,7 @@ export default function EventsView({ onAskGenie }: { onAskGenie?: (prompt: strin
                 onClick={() => onAskGenie?.("Show me winning project tracks for Hack the Lake hackathon")}
                 className="btn-ghost"
               >
-                Tracks <svg className="i i12" aria-hidden="true"><use href="#i-ext"/></svg>
+                Tracks <svg className="i i12" width={12} height={12} aria-hidden="true"><use href="#i-ext"/></svg>
               </button>
             </div>
           </aside>
@@ -425,6 +439,7 @@ export default function EventsView({ onAskGenie }: { onAskGenie?: (prompt: strin
         <div className="toolbar">
           <div className="seg-scroll">
             <div className="seg" role="tablist" aria-label="Filter by category">
+              <span className="seg-glide" style={{ transform: glideTransform }} aria-hidden="true" />
               {[
                 { id: "all", label: "All" },
                 { id: "meeting", label: "Meetings" },
@@ -454,11 +469,11 @@ export default function EventsView({ onAskGenie }: { onAskGenie?: (prompt: strin
 
           <details className="menu">
             <summary className="menu-btn" title="Filter by date">
-              <svg className="i i13" aria-hidden="true"><use href="#i-cal"/></svg>
+              <svg className="i i13" width={13} height={13} aria-hidden="true"><use href="#i-cal"/></svg>
               <span className="menu-sum">
                 <span>{selectedWhen === "all" ? "All dates" : selectedWhen === "today" ? "Today" : selectedWhen === "week" ? "This week" : "Weekend"}</span>
               </span>
-              <svg className="i i13 chev" aria-hidden="true"><use href="#i-chev"/></svg>
+              <svg className="i i13 chev" width={13} height={13} aria-hidden="true"><use href="#i-chev"/></svg>
             </summary>
             <div className="menu-pop">
               <div className="menu-title">Date range</div>
@@ -480,7 +495,7 @@ export default function EventsView({ onAskGenie }: { onAskGenie?: (prompt: strin
                     checked={selectedWhen === w.id}
                     onChange={() => setSelectedWhen(w.id)}
                   />
-                  <svg className="i i13 mk" style={{ opacity: selectedWhen === w.id ? 1 : 0 }} aria-hidden="true"><use href="#i-check"/></svg>
+                  <svg className="i i13 mk" width={13} height={13} style={{ opacity: selectedWhen === w.id ? 1 : 0 }} aria-hidden="true"><use href="#i-check"/></svg>
                   {w.label}
                   <b>{w.count}</b>
                 </label>
@@ -489,7 +504,7 @@ export default function EventsView({ onAskGenie }: { onAskGenie?: (prompt: strin
           </details>
 
           <label className="search">
-            <svg className="i i13" aria-hidden="true"><use href="#i-search"/></svg>
+            <svg className="i i13" width={13} height={13} aria-hidden="true"><use href="#i-search"/></svg>
             <input
               type="search"
               placeholder="Search events, clubs…"
@@ -510,7 +525,7 @@ export default function EventsView({ onAskGenie }: { onAskGenie?: (prompt: strin
               checked={foodFilter}
               onChange={(e) => setFoodFilter(e.target.checked)}
             />
-            <svg className="i i12" aria-hidden="true"><use href="#i-food"/></svg>
+            <svg className="i i12" width={12} height={12} aria-hidden="true"><use href="#i-food"/></svg>
             Free food
             <b>5</b>
           </label>
@@ -521,7 +536,7 @@ export default function EventsView({ onAskGenie }: { onAskGenie?: (prompt: strin
               checked={virtualFilter}
               onChange={(e) => setVirtualFilter(e.target.checked)}
             />
-            <svg className="i i12" aria-hidden="true"><use href="#i-video"/></svg>
+            <svg className="i i12" width={12} height={12} aria-hidden="true"><use href="#i-video"/></svg>
             Virtual
             <b>6</b>
           </label>
@@ -532,12 +547,12 @@ export default function EventsView({ onAskGenie }: { onAskGenie?: (prompt: strin
               checked={goingFilter}
               onChange={(e) => setGoingFilter(e.target.checked)}
             />
-            <svg className="i i12" aria-hidden="true"><use href="#i-check"/></svg>
+            <svg className="i i12" width={12} height={12} aria-hidden="true"><use href="#i-check"/></svg>
             My RSVPs
             <b>{Object.values(rsvpEvents).filter(Boolean).length}</b>
           </label>
           <button type="button" onClick={resetFilters} className="reset">
-            <svg className="i i12" aria-hidden="true"><use href="#i-rotate"/></svg>
+            <svg className="i i12" width={12} height={12} aria-hidden="true"><use href="#i-rotate"/></svg>
             Reset
           </button>
         </div>
@@ -567,14 +582,14 @@ export default function EventsView({ onAskGenie }: { onAskGenie?: (prompt: strin
               >
                 <div className="ev-top">
                   <span className={`cat cat-${ev.cat}`}>
-                    <svg className="i i11" aria-hidden="true"><use href={`#${ev.catIcon}`}/></svg>
+                    <svg className="i i11" width={11} height={11} aria-hidden="true"><use href={`#${ev.catIcon}`}/></svg>
                     {ev.catLabel}
                   </span>
                   {ev.pill && (
                     <span className={`pill pill-${ev.pill.tone}`}>
                       {ev.pill.tone === "live" && <i className="dot" aria-hidden="true" />}
-                      {ev.pill.tone === "going" && <svg className="i i11" aria-hidden="true"><use href="#i-check"/></svg>}
-                      {ev.pill.tone === "quiet" && ev.flags.virtual && <svg className="i i11" aria-hidden="true"><use href="#i-video"/></svg>}
+                      {ev.pill.tone === "going" && <svg className="i i11" width={11} height={11} aria-hidden="true"><use href="#i-check"/></svg>}
+                      {ev.pill.tone === "quiet" && ev.flags.virtual && <svg className="i i11" width={11} height={11} aria-hidden="true"><use href="#i-video"/></svg>}
                       {ev.pill.text}
                     </span>
                   )}
@@ -590,24 +605,24 @@ export default function EventsView({ onAskGenie }: { onAskGenie?: (prompt: strin
                     <h3 title={ev.title}>{ev.title}</h3>
                     <div className="meta">
                       <span className="m">
-                        <svg className="i i13" aria-hidden="true"><use href="#i-clock"/></svg>
+                        <svg className="i i13" width={13} height={13} aria-hidden="true"><use href="#i-clock"/></svg>
                         {ev.time}
                       </span>
                       {ev.duration && (
                         <span className="m">
-                          <svg className="i i13" aria-hidden="true"><use href="#i-hour"/></svg>
+                          <svg className="i i13" width={13} height={13} aria-hidden="true"><use href="#i-hour"/></svg>
                           {ev.duration}
                         </span>
                       )}
                       <span className="m m-loc">
-                        <svg className="i i13" aria-hidden="true"><use href={ev.isVirtual ? "#i-video" : "#i-pin"}/></svg>
+                        <svg className="i i13" width={13} height={13} aria-hidden="true"><use href={ev.isVirtual ? "#i-video" : "#i-pin"}/></svg>
                         <span>{ev.loc}</span>
                       </span>
                     </div>
 
                     <div className="cap">
                       <span className="cap-n">
-                        <svg className="i i13" aria-hidden="true"><use href="#i-users"/></svg>
+                        <svg className="i i13" width={13} height={13} aria-hidden="true"><use href="#i-users"/></svg>
                         {typeof ev.registered === "number" && ev.capacity ? (
                           <><b>{ev.registered}</b>/{ev.capacity}</>
                         ) : (
@@ -629,8 +644,8 @@ export default function EventsView({ onAskGenie }: { onAskGenie?: (prompt: strin
                     <em>{ev.host}</em>
                   </span>
                   <span className="flags">
-                    {ev.flags.food && <svg className="i i13" aria-label="Free food" role="img"><use href="#i-food"/></svg>}
-                    {ev.flags.virtual && <svg className="i i13" aria-label="Virtual" role="img"><use href="#i-video"/></svg>}
+                    {ev.flags.food && <svg className="i i13" width={13} height={13} aria-label="Free food" role="img"><use href="#i-food"/></svg>}
+                    {ev.flags.virtual && <svg className="i i13" width={13} height={13} aria-label="Virtual" role="img"><use href="#i-video"/></svg>}
                   </span>
                   <button
                     type="button"
@@ -639,7 +654,7 @@ export default function EventsView({ onAskGenie }: { onAskGenie?: (prompt: strin
                     title={isSaved ? "Unsave event" : "Save event"}
                     style={{ color: isSaved ? "var(--accent)" : undefined }}
                   >
-                    <svg className="i i14" style={{ fill: isSaved ? "currentColor" : "none" }} aria-hidden="true"><use href="#i-bookm"/></svg>
+                    <svg className="i i14" width={14} height={14} style={{ fill: isSaved ? "currentColor" : "none" }} aria-hidden="true"><use href="#i-bookm"/></svg>
                   </button>
                   <button
                     type="button"
@@ -653,7 +668,7 @@ export default function EventsView({ onAskGenie }: { onAskGenie?: (prompt: strin
                   >
                     {isGoing ? (
                       <span className="inline-flex items-center gap-1.5">
-                        <svg className="i i11" aria-hidden="true"><use href="#i-check"/></svg>Going
+                        <svg className="i i11" width={11} height={11} aria-hidden="true"><use href="#i-check"/></svg>Going
                       </span>
                     ) : isFull ? (
                       "Waitlist"
@@ -669,7 +684,7 @@ export default function EventsView({ onAskGenie }: { onAskGenie?: (prompt: strin
 
         {/* Panel Footer */}
         <footer className="panel-foot">
-          <svg className="i i13" aria-hidden="true"><use href="#i-db"/></svg>
+          <svg className="i i13" width={13} height={13} aria-hidden="true"><use href="#i-db"/></svg>
           <code>campus_events.delta</code>
           <span>· synced 2 min ago</span>
           <span className="foot-right">
@@ -679,7 +694,7 @@ export default function EventsView({ onAskGenie }: { onAskGenie?: (prompt: strin
               onClick={() => onAskGenie?.("Show me all upcoming hackathons and AI workshops for the semester")}
               className="cal-link"
             >
-              Ask Genie for full calendar <svg className="i i11" aria-hidden="true"><use href="#i-arr"/></svg>
+              Ask Genie for full calendar <svg className="i i11" width={11} height={11} aria-hidden="true"><use href="#i-arr"/></svg>
             </button>
           </span>
         </footer>

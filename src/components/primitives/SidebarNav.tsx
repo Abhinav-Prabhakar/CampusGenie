@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { createPortal } from "react-dom";
+import { useRouter } from "next/navigation";
 import GlideMenu from "@/components/primitives/GlideMenu";
 
 // Clean SVG icons matching the 2px rounded stroke design
@@ -9,6 +10,43 @@ function IconHome({ size = 18 }: { size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <path d="M3 9.5L12 3l9 6.5V20a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1V9.5z" />
+    </svg>
+  );
+}
+
+function IconChat({ size = 18 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M21 11.5a8.5 8.5 0 0 1-8.5 8.5c-1.4 0-2.7-.3-3.8-1L3 20.5 5.5 15a8.5 8.5 0 1 1 15.5-3.5Z" />
+    </svg>
+  );
+}
+
+function IconCalendar({ size = 18 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+      <line x1="16" y1="2" x2="16" y2="6" />
+      <line x1="8" y1="2" x2="8" y2="6" />
+      <line x1="3" y1="10" x2="21" y2="10" />
+    </svg>
+  );
+}
+
+function IconDatabase({ size = 18 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <ellipse cx="12" cy="5" rx="9" ry="3" />
+      <path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3" />
+      <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5" />
+    </svg>
+  );
+}
+
+function IconSparkles({ size = 18 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 2.5 L14 9 l6.5 2 L14 13 l-2 6.5 L10 13 l-6.5 -2 L10 9 l2 -6.5 Z" />
     </svg>
   );
 }
@@ -62,8 +100,7 @@ function IconCrossSmall({ size = 16 }: { size?: number }) {
 function IconPopsicle2({ size = 18 }: { size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M12 2a5 5 0 0 0-5 5v7a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2V7a5 5 0 0 0-5-5z" />
-      <path d="M12 16v6" />
+      <path d="M12 2.5 L14 9 l6.5 2 L14 13 l-2 6.5 L10 13 l-6.5 -2 L10 9 l2 -6.5 Z" />
     </svg>
   );
 }
@@ -116,16 +153,16 @@ function IconArrowBoxLeft({ size = 16 }: { size?: number }) {
 
 /* ─────────────────────────────────────────────────────────
  * SIDEBAR NAV
- * Shared by the design-system preview and the harness shell:
- * compact workspace switcher, primary navigation, searchable
- * chat history, and a collapse that preserves icon alignment.
+ * Primary navigation: Chat, Events, Sources, and Gallery.
  * ───────────────────────────────────────────────────────── */
 
-const WORKSPACE = { key: "creamery", name: "Creamery Ops", monogram: "C" };
+const WORKSPACE = { key: "campus_genie", name: "Campus Genie", monogram: "CG" };
 
-const NAV_ITEMS = [
-  { key: "home", label: "Home", icon: <IconHome size={18} /> },
-  { key: "invite", label: "Invite users", icon: <IconUserAdd size={18} />, count: "3/10" },
+export const NAV_ITEMS = [
+  { key: "chat", label: "Chat", icon: <IconChat size={18} />, href: "/" },
+  { key: "events", label: "Events", icon: <IconCalendar size={18} />, count: "14", href: "/events" },
+  { key: "sources", label: "Sources", icon: <IconDatabase size={18} />, count: "5", href: "/sources" },
+  { key: "gallery", label: "Gallery", icon: <IconSparkles size={18} />, href: "/gallery" },
 ];
 
 export type SidebarRecent = {
@@ -310,12 +347,17 @@ export default function SidebarNav({
   onFooterClick,
   recents = DEFAULT_RECENTS,
 }: SidebarNavProps) {
+  const router = useRouter();
   const [collapsed, setCollapsed] = useState(false);
-  const [internalNav, setInternalNav] = useState("chats");
+  const [internalNav, setInternalNav] = useState("chat");
   const currentNav = activeNav ?? internalNav;
   const selectNav = (key: string) => {
     setInternalNav(key);
     onNavigate?.(key);
+    const targetItem = NAV_ITEMS.find((item) => item.key === key);
+    if (targetItem?.href) {
+      router.push(targetItem.href);
+    }
   };
   const [demoActiveTitle, setDemoActiveTitle] = useState<string | null>(null);
   const [workspaceOpen, setWorkspaceOpen] = useState(false);
