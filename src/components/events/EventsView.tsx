@@ -3,6 +3,7 @@
 import { useState, useMemo } from "react";
 import EventDetailModal from "./EventDetailModal";
 import EventIcons from "./EventIcons";
+import EventPassModal from "./EventPassModal";
 import "@/app/events.css";
 
 export type CampusEvent = {
@@ -11,13 +12,19 @@ export type CampusEvent = {
   catLabel: string;
   catIcon: string;
   title: string;
+  subhead?: string;
   pill?: { text: string; tone: "live" | "today" | "scarce" | "going" | "quiet" | "full" };
   month: string;
   day: string;
   dow: string;
+  date?: string;
+  dateRange?: string;
   time: string;
   duration?: string;
   loc: string;
+  room?: string;
+  entryDoor?: string;
+  floorZone?: string;
   isVirtual?: boolean;
   registered: number | "Open";
   capacity?: number;
@@ -25,6 +32,7 @@ export type CampusEvent = {
   hostCode: string;
   flags: { food?: boolean; virtual?: boolean; going?: boolean };
   when: "today" | "week" | "weekend" | "future";
+  agenda?: Array<{ time: string; title: string; desc?: string }>;
 };
 
 const EVENTS_DATA: CampusEvent[] = [
@@ -312,6 +320,7 @@ const CAT_INDICES: Record<string, number> = {
 
 export default function EventsView({ onAskGenie }: { onAskGenie?: (prompt: string) => void }) {
   const [selectedEvent, setSelectedEvent] = useState<CampusEvent | null>(null);
+  const [passEvent, setPassEvent] = useState<CampusEvent | null>(null);
   const [selectedCat, setSelectedCat] = useState<string>("all");
   const [selectedWhen, setSelectedWhen] = useState<string>("week");
   const [searchQuery, setSearchQuery] = useState<string>("");
@@ -334,7 +343,14 @@ export default function EventsView({ onAskGenie }: { onAskGenie?: (prompt: strin
   };
 
   const toggleRsvp = (id: string) => {
-    setRsvpEvents((prev) => ({ ...prev, [id]: !prev[id] }));
+    setRsvpEvents((prev) => {
+      const next = !prev[id];
+      if (next) {
+        const ev = EVENTS_DATA.find((e) => e.id === id);
+        if (ev) setPassEvent(ev);
+      }
+      return { ...prev, [id]: next };
+    });
   };
 
   const resetFilters = () => {
@@ -399,8 +415,19 @@ export default function EventsView({ onAskGenie }: { onAskGenie?: (prompt: strin
             <div className="fa">
               <button
                 type="button"
-                onClick={() => onAskGenie?.("How can I prepare my team for Hack the Lake 48h Genie Build Sprint?")}
+                onClick={() => {
+                  const ev = EVENTS_DATA.find((e) => e.title.includes("Hack the Lake") || e.id === "10") || EVENTS_DATA[0];
+                  setPassEvent(ev);
+                }}
                 className="btn-acc"
+                title="View Registration Pass"
+              >
+                <svg className="i i12" width={12} height={12} aria-hidden="true"><use href="#i-spark"/></svg> Event Pass
+              </button>
+              <button
+                type="button"
+                onClick={() => onAskGenie?.("How can I prepare my team for Hack the Lake 48h Genie Build Sprint?")}
+                className="btn-ghost"
               >
                 Ask Genie
               </button>
@@ -692,6 +719,16 @@ export default function EventsView({ onAskGenie }: { onAskGenie?: (prompt: strin
         event={selectedEvent}
         onClose={() => setSelectedEvent(null)}
         onAskGenie={onAskGenie}
+      />
+
+      {/* Event Pass ID Modal */}
+      <EventPassModal
+        isOpen={!!passEvent}
+        onClose={() => setPassEvent(null)}
+        event={passEvent}
+        studentName="Ava Kimura"
+        studentId="STU-84213 · 3RD YR CS"
+        studentInitials="AK"
       />
     </div>
   );

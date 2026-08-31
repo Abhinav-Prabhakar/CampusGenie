@@ -1,0 +1,633 @@
+/* ──────────────────────────────────────────────────────────
+ * Campus Genie — Event Pass · design tokens (Beautiful UI)
+ * Chrome = Inter + JetBrains Mono. Ticket interior switches
+ * to Space Grotesk + Space Mono for the printed-pass vibe.
+ * ────────────────────────────────────────────────────────── */
+
+.pass-scope {
+  --font-sans: var(--font-inter), "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-mono-face), "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --font-tick: var(--font-tick), "Space Grotesk", ui-sans-serif, system-ui, sans-serif;
+  --font-pass: var(--font-pass), "Space Mono", ui-monospace, "SF Mono", Menlo, monospace;
+
+  --page: oklch(0.209 0.004 264.477);
+  --canvas: oklch(0.231 0.004 264.487);
+  --surface: oklch(0.26 0.006 271.191);
+  --inset: oklch(0.243 0.004 264.492);
+  --hover: oklch(0.289 0.006 271.22);
+  --hover-2: oklch(0.318 0.007 274.747);
+  --field: oklch(0.293 0.006 271.223);
+
+  --ink: oklch(0.964 0.002 247.839);
+  --ink-2: oklch(0.731 0.008 260.731);
+  --ink-3: oklch(0.541 0.01 264.484);
+
+  --line: oklch(0.308 0.006 258.354);
+  --line-strong: oklch(0.356 0.007 264.474);
+  --line-soft: oklch(0.278 0.006 258.354);
+  --stripe: oklch(1 0 0 / 0.055);
+  --stripe-bg: oklch(0.226 0.004 264.485);
+
+  --accent: oklch(0.68 0.173 253.301);
+  --accent-ink: oklch(0.788 0.113 248.33);
+  --accent-tint: oklch(0.68 0.173 253.301 / 0.16);
+  --green: oklch(0.705 0.154 153.814);
+  --green-tint: oklch(0.705 0.154 153.814 / 0.14);
+  --orange: oklch(0.746 0.156 55.642);
+  --orange-tint: oklch(0.746 0.156 55.642 / 0.14);
+
+  --hue-hack: oklch(0.66 0.17 300);
+  --stub: 212px;
+
+  --ease-out-strong: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out-strong: cubic-bezier(0.77, 0, 0.175, 1);
+
+  --shadow-btn: 0 0 0 1px oklch(1 0 0 / 0.1), 0 1px 2px oklch(0 0 0 / 0.3);
+  --shadow-card: 0 0 0 1px oklch(1 0 0 / 0.11), 0 1px 2px oklch(0 0 0 / 0.2), 0 2px 6px oklch(0 0 0 / 0.2);
+  --shadow-raised: 0 0 0 1px oklch(1 0 0 / 0.13), 0 2px 10px oklch(0 0 0 / 0.22);
+  --shadow-overlay: 0 0 0 1px oklch(1 0 0 / 0.15), 0 8px 28px oklch(0 0 0 / 0.34);
+  --shadow-inset-field: inset 0 1px 2px oklch(0 0 0 / 0.4);
+}
+
+/* light theme tokens */
+html:not(.dark) .pass-scope {
+  --page: oklch(0.985 0.001 286.376);
+  --canvas: oklch(0.961 0.002 247.84);
+  --surface: oklch(1 0 0);
+  --inset: oklch(0.979 0.002 247.839);
+  --hover: oklch(0.97 0.002 247.839);
+  --hover-2: oklch(0.933 0.003 247.86);
+  --field: oklch(0.961 0.001 286.375);
+  --ink: oklch(0.247 0.006 258.361);
+  --ink-2: oklch(0.506 0.01 264.477);
+  --ink-3: oklch(0.695 0.009 264.505);
+  --line: oklch(0.946 0.003 264.542);
+  --line-strong: oklch(0.912 0.005 258.326);
+  --line-soft: oklch(0.966 0.002 264.542);
+  --stripe: oklch(0.405 0 0 / 0.075);
+  --stripe-bg: oklch(0.97 0 0);
+  --accent: oklch(0.626 0.205 254.947);
+  --accent-ink: oklch(0.556 0.187 255.617);
+  --accent-tint: oklch(0.96 0.019 252.878);
+  --green: oklch(0.603 0.155 150.883);
+  --green-tint: oklch(0.958 0.017 159.118);
+  --orange: oklch(0.689 0.179 49.902);
+  --orange-tint: oklch(0.964 0.021 67.581);
+  --shadow-btn: 0 0 0 1px var(--line-strong), 0 1px 2px oklch(0 0 0 / 0.06);
+  --shadow-card: 0 0 0 1px var(--line), 0 1px 2px oklch(0 0 0 / 0.05), 0 2px 6px oklch(0 0 0 / 0.05);
+  --shadow-raised: 0 0 0 1px var(--line), 0 2px 10px oklch(0 0 0 / 0.07);
+  --shadow-overlay: 0 0 0 1px var(--line), 0 8px 28px oklch(0 0 0 / 0.12);
+  --shadow-inset-field: inset 0 1px 2px oklch(0 0 0 / 0.12);
+}
+
+.pass-scope .vh {
+  position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0;
+  overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; border: 0;
+}
+
+.pass-scope .i,
+.pass-scope svg.i {
+  width: 14px !important; height: 14px !important; flex-shrink: 0 !important;
+  fill: none !important; stroke: currentColor !important; stroke-width: 2 !important;
+  stroke-linecap: round !important; stroke-linejoin: round !important;
+  display: inline-block !important; vertical-align: middle !important;
+}
+.pass-scope .i11, .pass-scope svg.i11 { width: 11px !important; height: 11px !important; stroke-width: 2.4 !important; }
+.pass-scope .i12, .pass-scope svg.i12 { width: 12px !important; height: 12px !important; stroke-width: 2.2 !important; }
+.pass-scope .i13, .pass-scope svg.i13 { width: 13px !important; height: 13px !important; stroke-width: 2.1 !important; }
+.pass-scope .i14, .pass-scope svg.i14 { width: 14px !important; height: 14px !important; stroke-width: 2 !important; }
+.pass-scope .i16, .pass-scope svg.i16 { width: 16px !important; height: 16px !important; }
+
+/* ── Modal Overlay & Dialog ────────────────────────────── */
+.pass-overlay {
+  position: fixed; inset: 0; z-index: 100;
+  display: flex; align-items: center; justify-content: center;
+  padding: 16px; overflow-y: auto;
+}
+.pass-scrim {
+  position: fixed; inset: 0; background: oklch(0 0 0 / 0.65);
+  backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+  animation: pass-fade-in 200ms ease-out forwards;
+}
+
+.pass-scope .pass-window {
+  position: relative; z-index: 1;
+  width: 100%; max-width: 780px; margin: auto;
+  overflow: clip; border: 1px solid var(--line); border-radius: 14px;
+  background: var(--canvas); box-shadow: var(--shadow-overlay);
+  animation: fade-up 340ms var(--ease-out-strong) both;
+}
+
+/* ── panel head ────────────────────────────────────────── */
+.pass-scope .panel-head {
+  display: flex; align-items: center; gap: 10px;
+  height: 54px; padding: 0 14px; background: var(--surface);
+  border-bottom: 1px solid var(--line-strong);
+}
+.pass-scope .logo {
+  display: inline-flex; width: 26px; height: 26px;
+  align-items: center; justify-content: center;
+  border-radius: 8px; background: var(--accent); color: oklch(1 0 0);
+}
+.pass-scope .crumb { display: inline-flex; align-items: baseline; gap: 7px; min-width: 0; }
+.pass-scope .crumb b { font-size: 13.5px; font-weight: 600; color: var(--ink); white-space: nowrap; }
+.pass-scope .crumb .sep { color: var(--ink-3); }
+.pass-scope .crumb span { font-size: 13px; font-weight: 500; color: var(--ink-2); white-space: nowrap; }
+.pass-scope .wk {
+  margin-left: 6px; padding: 3px 9px;
+  border: 1px solid var(--line); border-radius: 9999px;
+  color: var(--ink-3); background: var(--inset);
+  font-family: var(--font-mono); font-size: 10px; font-weight: 500;
+  letter-spacing: 0.06em; font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+.pass-scope .head-right { margin-left: auto; display: flex; align-items: center; gap: 7px; }
+.pass-scope .theme-btn {
+  display: inline-flex; width: 28px; height: 28px;
+  align-items: center; justify-content: center;
+  border-radius: 8px; color: var(--ink-3); cursor: pointer;
+  transition: background-color 120ms ease-out, color 120ms ease-out;
+}
+.pass-scope .theme-btn:hover { background: var(--hover); color: var(--ink); }
+.pass-scope .avatar {
+  display: inline-flex; width: 26px; height: 26px;
+  align-items: center; justify-content: center;
+  border: 1px solid var(--line); border-radius: 9999px;
+  background: var(--field); color: var(--ink-2);
+  font-size: 10px; font-weight: 600; letter-spacing: 0.02em;
+}
+.pass-scope .close-btn {
+  display: inline-flex; width: 28px; height: 28px;
+  align-items: center; justify-content: center;
+  border: 0; border-radius: 8px; background: transparent;
+  color: var(--ink-3); cursor: pointer;
+  transition: background-color 120ms ease-out, color 120ms ease-out;
+}
+.pass-scope .close-btn:hover { background: var(--hover); color: var(--ink); }
+
+/* ── confirmation block ────────────────────────────────── */
+.pass-scope .confirm { padding: 18px 16px 4px; }
+.pass-scope .pill-ok {
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 3px 11px 3px 3px; border-radius: 9999px;
+  background: var(--green-tint); color: var(--green);
+  font-size: 12.5px; font-weight: 500;
+  animation: pop-in 260ms var(--ease-out-strong) 80ms both;
+}
+.pass-scope .ok-disc {
+  display: inline-flex; width: 18px; height: 18px;
+  align-items: center; justify-content: center;
+  border-radius: 9999px; background: var(--green); color: oklch(1 0 0);
+}
+.pass-scope .ok-disc svg { width: 11px; height: 11px; }
+.pass-scope .ok-disc circle { stroke-dasharray: 60; stroke-dashoffset: 60; animation: draw 420ms var(--ease-out-strong) 180ms forwards; }
+.pass-scope .ok-disc path   { stroke-dasharray: 14; stroke-dashoffset: 14; animation: draw 240ms var(--ease-out-strong) 540ms forwards; }
+.pass-scope .confirm h1 { margin-top: 11px; font-size: 20px; font-weight: 600; letter-spacing: -0.02em; color: var(--ink); }
+.pass-scope .confirm .sub {
+  display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+  margin-top: 5px; color: var(--ink-2); font-size: 13px;
+}
+.pass-scope .confirm .sub .i { color: var(--ink-3); }
+.pass-scope .confirm .sub b { color: var(--ink); font-weight: 600; }
+
+/* ── ticket 3D stage ───────────────────────────────────── */
+.pass-scope .stage { padding: 16px 16px 6px; perspective: 1500px; }
+.pass-scope .flipper {
+  display: block; cursor: pointer;
+  transition: transform 300ms var(--ease-out-strong);
+  animation: ticket-in 520ms var(--ease-out-strong) 160ms both;
+}
+.pass-scope .flipper:hover { transform: translateY(-3px); }
+.pass-scope .ticket {
+  position: relative;
+  display: grid;
+  transform-style: preserve-3d;
+  transition: transform 660ms var(--ease-in-out-strong);
+}
+.pass-scope .ticket.is-flipped { transform: rotateY(180deg); }
+
+.pass-scope .face {
+  position: relative;
+  display: grid;
+  grid-area: 1 / 1;
+  grid-template-columns: 1fr var(--stub);
+  min-height: 288px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: var(--shadow-card);
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  transition: box-shadow 200ms var(--ease-out-strong);
+}
+.pass-scope .flipper:hover .face { box-shadow: var(--shadow-raised); }
+.pass-scope .face.back { transform: rotateY(180deg); }
+
+/* guilloche security print + watermark */
+.pass-scope .face::before {
+  content: ""; position: absolute; inset: 0; z-index: 0;
+  border-radius: inherit; pointer-events: none;
+  background-image:
+    repeating-radial-gradient(circle at 118% -22%, color-mix(in srgb, var(--event-hue, var(--hue-hack)) 6%, transparent) 0 1px, transparent 1px 8px),
+    repeating-radial-gradient(circle at -14% 118%, color-mix(in srgb, var(--event-hue, var(--hue-hack)) 5%, transparent) 0 1px, transparent 1px 10px);
+}
+.pass-scope .face > * { position: relative; z-index: 1; }
+.pass-scope .wm {
+  position: absolute; z-index: 0;
+  top: 50%; left: calc((100% - var(--stub)) / 2);
+  width: 148px; height: 148px; margin: -74px 0 0 -74px;
+  color: var(--ink); opacity: 0.045; pointer-events: none;
+}
+.pass-scope .wm svg { width: 100%; height: 100%; }
+
+/* glossy sweep on hover */
+.pass-scope .sheen {
+  position: absolute; inset: 0; z-index: 3; border-radius: inherit;
+  overflow: hidden; pointer-events: none;
+}
+.pass-scope .sheen::after {
+  content: ""; position: absolute; inset: -20%;
+  background: linear-gradient(105deg, transparent 42%, oklch(1 0 0 / 0.07) 50%, transparent 58%);
+  transform: translateX(-70%);
+  transition: transform 900ms var(--ease-out-strong);
+}
+.pass-scope .flipper:hover .sheen::after { transform: translateX(70%); }
+
+/* ── ticket shared type (Space Grotesk / Space Mono) ───── */
+.pass-scope .t-strip {
+  display: flex; align-items: center; gap: 7px;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--line-soft);
+  background: var(--inset);
+  border-radius: 11px 0 0 0;
+  color: var(--ink-3);
+  font-family: var(--font-pass); font-size: 9px; font-weight: 700;
+  letter-spacing: 0.16em; font-variant-numeric: tabular-nums;
+}
+.pass-scope .t-strip .i { color: var(--accent); }
+.pass-scope .t-strip .rt { margin-left: auto; letter-spacing: 0.12em; }
+
+/* ── main half (front) ─────────────────────────────────── */
+.pass-scope .t-main { display: flex; flex-direction: column; min-width: 0; }
+.pass-scope .t-body { padding: 14px 16px 12px; flex: 1; }
+.pass-scope .t-title {
+  margin-right: 118px;
+  font-family: var(--font-tick);
+  font-size: 21px; font-weight: 700; line-height: 1.12;
+  letter-spacing: 0.015em; color: var(--ink); text-transform: uppercase;
+}
+.pass-scope .t-sub {
+  margin-top: 5px;
+  font-family: var(--font-pass); font-size: 9.5px; font-weight: 400;
+  letter-spacing: 0.14em; color: var(--ink-3); font-variant-numeric: tabular-nums; text-transform: uppercase;
+}
+
+/* REGISTERED ink stamp */
+.pass-scope .stamp {
+  position: absolute; top: 44px; right: 14px; z-index: 2;
+  display: flex; flex-direction: column; align-items: center; gap: 2px;
+  padding: 6px 11px;
+  border: 1.5px solid color-mix(in srgb, var(--green) 80%, transparent);
+  border-radius: 8px;
+  color: var(--green);
+  font-family: var(--font-pass); text-align: center;
+  animation: stamp-in 460ms var(--ease-out-strong) 680ms both;
+}
+.pass-scope .stamp::after {
+  content: ""; position: absolute; inset: 2.5px;
+  border: 1px dashed color-mix(in srgb, var(--green) 55%, transparent);
+  border-radius: 5px;
+}
+.pass-scope .stamp b { font-size: 10.5px; font-weight: 700; letter-spacing: 0.16em; }
+.pass-scope .stamp em { font-size: 8px; font-style: normal; letter-spacing: 0.1em; opacity: 0.8; font-variant-numeric: tabular-nums; }
+
+/* fields — icon + caps label + mono value */
+.pass-scope .t-fields {
+  display: grid; grid-template-columns: repeat(3, 1fr);
+  gap: 12px 14px; margin-top: 16px;
+}
+.pass-scope .f { min-width: 0; }
+.pass-scope .f-l {
+  display: flex; align-items: center; gap: 5px;
+  color: var(--ink-3);
+  font-family: var(--font-pass); font-size: 8px; font-weight: 400;
+  letter-spacing: 0.15em;
+}
+.pass-scope .f-l .i { color: color-mix(in srgb, var(--event-hue, var(--hue-hack)) 72%, var(--ink-2)); }
+.pass-scope .f-v {
+  display: block; margin-top: 3px;
+  color: var(--ink);
+  font-family: var(--font-pass); font-size: 12.5px; font-weight: 700;
+  letter-spacing: 0.01em; font-variant-numeric: tabular-nums;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+/* holder row */
+.pass-scope .t-holder {
+  display: flex; align-items: center; gap: 9px;
+  margin-top: auto; padding: 9px 16px;
+  border-top: 1px solid var(--line-soft);
+}
+.pass-scope .mark {
+  display: inline-flex; width: 24px; height: 24px; flex-shrink: 0;
+  align-items: center; justify-content: center;
+  border: 1px solid var(--line); border-radius: 7px;
+  background: color-mix(in srgb, var(--event-hue, var(--hue-hack)) 20%, var(--surface));
+  color: color-mix(in srgb, var(--event-hue, var(--hue-hack)) 78%, var(--ink));
+  font-family: var(--font-pass); font-size: 9.5px; font-weight: 700;
+}
+.pass-scope .who { min-width: 0; }
+.pass-scope .who b {
+  display: block;
+  font-family: var(--font-pass); font-size: 11.5px; font-weight: 700;
+  letter-spacing: 0.04em; color: var(--ink); white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis;
+}
+.pass-scope .who span {
+  display: block;
+  font-family: var(--font-pass); font-size: 8.5px;
+  letter-spacing: 0.1em; color: var(--ink-3); font-variant-numeric: tabular-nums;
+}
+.pass-scope .t-holder .rt {
+  margin-left: auto; display: flex; align-items: center; gap: 12px;
+  color: var(--ink-3);
+  font-family: var(--font-pass); font-size: 8.5px; font-weight: 700;
+  letter-spacing: 0.12em; white-space: nowrap;
+}
+.pass-scope .t-holder .rt .i { color: var(--ink-3); }
+
+/* barcode strip */
+.pass-scope .t-bar {
+  display: flex; align-items: center; gap: 12px;
+  padding: 9px 16px 11px;
+  border-top: 1px solid var(--line-soft);
+}
+.pass-scope .barcode {
+  flex: 1; height: 30px; opacity: 0.85;
+  background: repeating-linear-gradient(90deg,
+    var(--ink) 0 2px, transparent 2px 4px,
+    var(--ink) 4px 5px, transparent 5px 9px,
+    var(--ink) 9px 12px, transparent 12px 13px,
+    var(--ink) 13px 14px, transparent 14px 18px,
+    var(--ink) 18px 20px, transparent 20px 22px);
+}
+.pass-scope .bcode {
+  color: var(--ink-2);
+  font-family: var(--font-pass); font-size: 10px; font-weight: 700;
+  letter-spacing: 0.18em; font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+
+/* ── stub half (front) — QR ────────────────────────────── */
+.pass-scope .t-stub {
+  position: relative;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 10px; padding: 14px 14px;
+  border-left: 1.5px dashed color-mix(in srgb, var(--line) 85%, transparent);
+  border-radius: 0 11px 11px 0;
+}
+
+/* punched notches on the perforation */
+.pass-scope .notch {
+  position: absolute; z-index: 4;
+  width: 17px; height: 17px; border-radius: 9999px;
+  background: var(--canvas);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+.pass-scope .n-t { top: -9px; left: -9px; }
+.pass-scope .n-b { bottom: -9px; left: -9px; }
+
+.pass-scope .stub-cap {
+  display: flex; align-items: center; gap: 8px; width: 100%;
+  color: var(--ink-3);
+  font-family: var(--font-pass); font-size: 9px; font-weight: 700;
+  letter-spacing: 0.3em; white-space: nowrap;
+}
+.pass-scope .stub-cap::before, .pass-scope .stub-cap::after { content: ""; flex: 1; height: 1px; background: var(--line-soft); }
+
+/* QR sticker — always light for scanner contrast */
+.pass-scope .qr-frame {
+  position: relative;
+  padding: 11px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: oklch(0.985 0.001 286.376);
+  box-shadow: var(--shadow-btn);
+  transition: transform 220ms var(--ease-out-strong);
+}
+.pass-scope .flipper:hover .qr-frame { transform: scale(1.02); }
+.pass-scope .qr { display: block; width: 116px; height: 116px; }
+.pass-scope .qr-d { fill: oklch(0.209 0.004 264.477); }
+.pass-scope .qr-l { fill: oklch(0.985 0.001 286.376); }
+
+/* corner brackets — bloom outward on hover */
+.pass-scope .qbr { position: absolute; width: 13px; height: 13px; border: 0 solid var(--accent); transition: transform 220ms var(--ease-out-strong); }
+.pass-scope .q1 { top: -4px; left: -4px; border-top-width: 2px; border-left-width: 2px; border-top-left-radius: 4px; }
+.pass-scope .q2 { top: -4px; right: -4px; border-top-width: 2px; border-right-width: 2px; border-top-right-radius: 4px; }
+.pass-scope .q3 { bottom: -4px; left: -4px; border-bottom-width: 2px; border-left-width: 2px; border-bottom-left-radius: 4px; }
+.pass-scope .q4 { bottom: -4px; right: -4px; border-bottom-width: 2px; border-right-width: 2px; border-bottom-right-radius: 4px; }
+.pass-scope .flipper:hover .q1 { transform: translate(-2px, -2px); }
+.pass-scope .flipper:hover .q2 { transform: translate(2px, -2px); }
+.pass-scope .flipper:hover .q3 { transform: translate(-2px, 2px); }
+.pass-scope .flipper:hover .q4 { transform: translate(2px, 2px); }
+
+/* scan line sweep */
+.pass-scope .qr-scan {
+  position: absolute; left: 8px; right: 8px; top: 9px; z-index: 2;
+  height: 14px; border-radius: 3px; pointer-events: none;
+  background: linear-gradient(to bottom, transparent, oklch(0.705 0.154 153.814 / 0.28));
+  border-bottom: 1.5px solid var(--green);
+  animation: scan 2.8s var(--ease-in-out-strong) 1s infinite;
+}
+.pass-scope .stub-meta {
+  color: var(--ink-2);
+  font-family: var(--font-pass); font-size: 9px; font-weight: 700;
+  letter-spacing: 0.22em;
+}
+.pass-scope .stub-foot {
+  display: flex; align-items: center; gap: 5px;
+  color: var(--ink-3);
+  font-family: var(--font-pass); font-size: 8px; font-weight: 700;
+  letter-spacing: 0.14em; white-space: nowrap;
+}
+.pass-scope .stub-foot .i { color: var(--ink-3); }
+
+/* ── back face ─────────────────────────────────────────── */
+.pass-scope .b-grid { display: grid; grid-template-columns: 1.15fr 1fr; gap: 0; flex: 1; min-height: 0; }
+.pass-scope .b-col { padding: 13px 16px 12px; min-width: 0; }
+.pass-scope .b-col + .b-col { border-left: 1px solid var(--line-soft); }
+.pass-scope .b-h {
+  display: flex; align-items: center; gap: 6px;
+  color: var(--ink-3);
+  font-family: var(--font-pass); font-size: 8.5px; font-weight: 700;
+  letter-spacing: 0.18em; margin-bottom: 11px;
+}
+.pass-scope .b-h .i { color: var(--ink-3); }
+
+.pass-scope .k { display: flex; gap: 9px; align-items: flex-start; padding: 6px 0; }
+.pass-scope .k + .k { border-top: 1px dashed var(--line-soft); }
+.pass-scope .k .i { margin-top: 2px; color: color-mix(in srgb, var(--event-hue, var(--hue-hack)) 72%, var(--ink-2)); }
+.pass-scope .k b {
+  display: block;
+  font-family: var(--font-pass); font-size: 10.5px; font-weight: 700;
+  letter-spacing: 0.06em; color: var(--ink);
+}
+.pass-scope .k span {
+  display: block; margin-top: 1px;
+  font-family: var(--font-tick); font-size: 11.5px; color: var(--ink-2);
+  letter-spacing: 0;
+}
+
+/* day-of timeline */
+.pass-scope .tl { position: relative; padding-left: 4px; }
+.pass-scope .tl-r { display: flex; align-items: center; gap: 9px; padding: 5.5px 0; }
+.pass-scope .tl-ico {
+  display: inline-flex; width: 24px; height: 24px; flex-shrink: 0;
+  align-items: center; justify-content: center;
+  border: 1px solid var(--line); border-radius: 7px;
+  background: var(--inset); color: var(--ink-2);
+  position: relative; z-index: 1;
+}
+.pass-scope .tl::before {
+  content: ""; position: absolute; top: 12px; bottom: 12px; left: 15.5px;
+  width: 1px; background: var(--line-soft);
+}
+.pass-scope .tl-t {
+  font-family: var(--font-pass); font-size: 10.5px; font-weight: 700;
+  color: var(--ink); font-variant-numeric: tabular-nums; width: 44px; flex-shrink: 0;
+}
+.pass-scope .tl-x {
+  font-family: var(--font-tick); font-size: 11.5px; color: var(--ink-2);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+/* back micro footer */
+.pass-scope .b-foot {
+  display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+  padding: 9px 16px 11px;
+  border-top: 1px solid var(--line-soft);
+  color: var(--ink-3);
+  font-family: var(--font-pass); font-size: 8.5px; font-weight: 700;
+  letter-spacing: 0.12em; font-variant-numeric: tabular-nums;
+}
+.pass-scope .b-foot .m { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+
+/* back stub — vertical barcode */
+.pass-scope .t-stub.back { gap: 12px; }
+.pass-scope .vbar {
+  width: 34px; flex: 1; min-height: 90px; opacity: 0.85;
+  background: repeating-linear-gradient(180deg,
+    var(--ink) 0 2px, transparent 2px 4px,
+    var(--ink) 4px 5px, transparent 5px 9px,
+    var(--ink) 9px 12px, transparent 12px 13px,
+    var(--ink) 13px 14px, transparent 14px 18px,
+    var(--ink) 18px 20px, transparent 20px 22px);
+}
+.pass-scope .vtext {
+  writing-mode: vertical-rl;
+  color: var(--ink-3);
+  font-family: var(--font-pass); font-size: 9px; font-weight: 700;
+  letter-spacing: 0.3em; white-space: nowrap;
+}
+.pass-scope .stub-wrap { display: flex; align-items: center; gap: 12px; align-self: stretch; }
+
+/* ── actions row ───────────────────────────────────────── */
+.pass-scope .actions {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  padding: 14px 16px 6px;
+}
+.pass-scope .btn-acc, .pass-scope .btn-sec, .pass-scope .btn-pill {
+  display: inline-flex; align-items: center; gap: 7px;
+  height: 32px; padding: 0 13px; border-radius: 8px;
+  font-size: 12.5px; font-weight: 500; white-space: nowrap; cursor: pointer;
+  transition: filter 140ms var(--ease-out-strong), transform 140ms var(--ease-out-strong),
+              background-color 140ms var(--ease-out-strong), color 140ms var(--ease-out-strong),
+              border-color 140ms var(--ease-out-strong);
+}
+.pass-scope .btn-acc { border: 0; background: var(--accent); color: oklch(1 0 0); }
+.pass-scope .btn-acc:hover { filter: saturate(0.9) brightness(1.05); }
+.pass-scope .btn-acc:active, .pass-scope .btn-sec:active, .pass-scope .btn-pill:active { transform: scale(0.96); }
+.pass-scope .btn-sec { border: 1px solid var(--line); background: var(--surface); color: var(--ink-2); }
+.pass-scope .btn-sec:hover { background: var(--hover); color: var(--ink); }
+.pass-scope .btn-pill {
+  margin-left: auto; border: 1px dashed var(--line-strong);
+  background: transparent; color: var(--ink-2);
+}
+.pass-scope .btn-pill:hover { background: var(--hover); color: var(--ink); border-style: solid; }
+.pass-scope .btn-pill.active { background: var(--accent-tint); color: var(--accent-ink); border-color: transparent; }
+.pass-scope .actions .hint {
+  display: inline-flex; align-items: center; gap: 5px;
+  color: var(--ink-3); font-size: 11.5px; font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+.pass-scope .actions .hint .i { color: var(--green); }
+
+/* ── panel footer ──────────────────────────────────────── */
+.pass-scope .panel-foot {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  margin-top: 10px; padding: 10px 14px;
+  border-top: 1px solid var(--line);
+  background: var(--inset); color: var(--ink-3);
+  font-size: 11.5px; font-weight: 500; font-variant-numeric: tabular-nums;
+}
+.pass-scope .panel-foot .i { color: var(--green); }
+.pass-scope .panel-foot code { font-family: var(--font-mono); font-size: 11px; color: var(--ink-3); }
+.pass-scope .foot-right { margin-left: auto; display: inline-flex; align-items: center; gap: 5px; }
+.pass-scope .foot-right b { color: var(--ink-2); font-weight: 600; }
+.pass-scope .cal-link {
+  display: inline-flex; align-items: center; gap: 4px;
+  color: var(--accent-ink); font-size: 11.5px; font-weight: 500; text-decoration: none; cursor: pointer;
+  background: transparent; border: 0;
+}
+.pass-scope .cal-link:hover { color: var(--ink); }
+
+/* ── keyframes ─────────────────────────────────────────── */
+@keyframes pass-fade-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes fade-up {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes pop-in {
+  from { opacity: 0; transform: scale(0.95); }
+  to   { opacity: 1; transform: scale(1); }
+}
+@keyframes ticket-in {
+  from { opacity: 0; transform: translateY(14px) rotateX(-7deg); }
+  to   { opacity: 1; transform: translateY(0) rotateX(0); }
+}
+@keyframes stamp-in {
+  0%   { opacity: 0; transform: rotate(3deg) scale(1.55); }
+  62%  { opacity: 1; transform: rotate(-8.5deg) scale(0.94); }
+  100% { opacity: 1; transform: rotate(-7deg) scale(1); }
+}
+@keyframes draw { to { stroke-dashoffset: 0; } }
+@keyframes scan {
+  0%    { top: 9px;  opacity: 0; }
+  10%   { opacity: 1; }
+  52%   { top: 108px; opacity: 1; }
+  64%   { opacity: 0; }
+  100%  { top: 9px;  opacity: 0; }
+}
+
+/* ── responsive ────────────────────────────────────────── */
+@media (max-width: 620px) {
+  .pass-scope .face { grid-template-columns: 1fr; }
+  .pass-scope .t-stub { border-left: 0; border-top: 1.5px dashed color-mix(in srgb, var(--line) 85%, transparent); border-radius: 0 0 11px 11px; }
+  .pass-scope .n-t { top: -9px; left: -9px; }
+  .pass-scope .n-b { top: -9px; bottom: auto; left: auto; right: -9px; }
+  .pass-scope .t-fields { grid-template-columns: repeat(2, 1fr); }
+  .pass-scope .t-title { margin-right: 96px; font-size: 18px; }
+  .pass-scope .stamp { top: 52px; padding: 5px 8px; transform-origin: center; }
+  .pass-scope .stamp b { font-size: 9px; }
+  .pass-scope .b-grid { grid-template-columns: 1fr; }
+  .pass-scope .b-col + .b-col { border-left: 0; border-top: 1px solid var(--line-soft); }
+  .pass-scope .btn-pill { margin-left: 0; }
+  .pass-scope .wk, .pass-scope .crumb span:last-of-type { display: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pass-scope *, .pass-scope *::before, .pass-scope *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+  .pass-scope .flipper, .pass-scope .face, .pass-scope .stamp, .pass-scope .qr-scan { animation: none !important; }
+}

@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import type { CampusEvent } from "./EventsView";
 import EventIcons from "./EventIcons";
+import EventPassModal from "./EventPassModal";
 
 type EventDetailModalProps = {
   event: CampusEvent | null;
@@ -14,6 +15,7 @@ export default function EventDetailModal({ event, onClose, onAskGenie }: EventDe
   const [activeTab, setActiveTab] = useState<"overview" | "agenda" | "extra">("overview");
   const [isSaved, setIsSaved] = useState<boolean>(false);
   const [isRsvpd, setIsRsvpd] = useState<boolean>(false);
+  const [passModalOpen, setPassModalOpen] = useState<boolean>(false);
   const [isCalAdded, setIsCalAdded] = useState<boolean>(false);
   const [isFollowing, setIsFollowing] = useState<boolean>(false);
   const [selectedSlot, setSelectedSlot] = useState<string | null>(null);
@@ -592,7 +594,14 @@ export default function EventDetailModal({ event, onClose, onAskGenie }: EventDe
 
             <button
               type="button"
-              onClick={() => setIsRsvpd((prev) => !prev)}
+              onClick={() => {
+                if (!isRsvpd) {
+                  setIsRsvpd(true);
+                  setPassModalOpen(true);
+                } else {
+                  setPassModalOpen(true);
+                }
+              }}
               className={`rsvp ${isCareer && !selectedSlot ? "book" : ""}`}
               style={{
                 background: isRsvpd ? "var(--green-tint)" : undefined,
@@ -601,7 +610,7 @@ export default function EventDetailModal({ event, onClose, onAskGenie }: EventDe
             >
               {isRsvpd ? (
                 <span className="inline-flex items-center gap-1.5">
-                  <svg className="i i11" width={11} height={11} aria-hidden="true"><use href="#i-check"/></svg>Going
+                  <svg className="i i11" width={11} height={11} aria-hidden="true"><use href="#i-check"/></svg>View Pass
                 </span>
               ) : isCareer ? (
                 selectedSlot ? `Confirm (${selectedSlot})` : "Choose a slot"
@@ -612,6 +621,16 @@ export default function EventDetailModal({ event, onClose, onAskGenie }: EventDe
           </div>
         </footer>
       </section>
+
+      {/* Event Pass ID Modal */}
+      <EventPassModal
+        isOpen={passModalOpen}
+        onClose={() => setPassModalOpen(false)}
+        event={event}
+        studentName="Ava Kimura"
+        studentId="STU-84213 · 3RD YR CS"
+        studentInitials="AK"
+      />
     </div>
   );
 }
