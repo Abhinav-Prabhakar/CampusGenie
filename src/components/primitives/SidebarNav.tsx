@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useRef, useState, useMemo, type CSSProperties, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import GlideMenu from "@/components/primitives/GlideMenu";
+import { useChatStore, INITIAL_SUGGESTIONS } from "@/lib/chatStore";
 
 // Clean SVG icons matching the 2px rounded stroke design
 function IconHome({ size = 18 }: { size?: number }) {
@@ -141,6 +142,14 @@ function IconSettingsGear1({ size = 16 }: { size?: number }) {
   );
 }
 
+function IconShield({ size = 18 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z" />
+    </svg>
+  );
+}
+
 function IconArrowBoxLeft({ size = 16 }: { size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -153,7 +162,7 @@ function IconArrowBoxLeft({ size = 16 }: { size?: number }) {
 
 /* ─────────────────────────────────────────────────────────
  * SIDEBAR NAV
- * Primary navigation: Chat, Events, Sources, and Gallery.
+ * Primary navigation: Chat, Events, Admin, Sources, and Gallery.
  * ───────────────────────────────────────────────────────── */
 
 const WORKSPACE = { key: "campus_genie", name: "Campus Genie", monogram: "CG" };
@@ -161,6 +170,7 @@ const WORKSPACE = { key: "campus_genie", name: "Campus Genie", monogram: "CG" };
 export const NAV_ITEMS = [
   { key: "chat", label: "Chat", icon: <IconChat size={18} />, href: "/" },
   { key: "events", label: "Events", icon: <IconCalendar size={18} />, count: "14", href: "/events" },
+  { key: "admin", label: "Student Admin", icon: <IconShield size={18} />, count: "Admin", href: "/admin" },
   { key: "sources", label: "Sources", icon: <IconDatabase size={18} />, count: "5", href: "/sources" },
   { key: "gallery", label: "Gallery", icon: <IconSparkles size={18} />, href: "/gallery" },
 ];
@@ -366,9 +376,26 @@ export default function SidebarNav({
   const [query, setQuery] = useState("");
   const workspaceButtonRef = useRef<HTMLButtonElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
-
   const selectedTitle = activeTitle === undefined ? demoActiveTitle : activeTitle;
-  const visibleRecents = recents.filter((item) => item.label.toLowerCase().includes(query.trim().toLowerCase()));
+  const { threads, setActiveThreadId } = useChatStore();
+
+  const combinedRecents: SidebarRecent[] = useMemo(() => {
+    const threadItems: SidebarRecent[] = threads.map((t) => ({
+      id: t.id,
+      label: t.title,
+      prompt: t.messages.find((m) => m.role === "user")?.content || t.title,
+    }));
+    const suggestionItems: SidebarRecent[] = INITIAL_SUGGESTIONS.map((s, i) => ({
+      id: `sug-${i}`,
+      label: s.title,
+      prompt: s.prompt,
+    }));
+    // If threads exist, show them first, followed by suggestions
+    return [...threadItems, ...suggestionItems];
+  }, [threads]);
+
+  const listToDisplay = recents === DEFAULT_RECENTS ? combinedRecents : recents;
+  const visibleRecents = listToDisplay.filter((item) => item.label.toLowerCase().includes(query.trim().toLowerCase()));
 
   useEffect(() => {
     if (!workspaceOpen) return;
@@ -553,11 +580,16 @@ export default function SidebarNav({
                   type="button"
                   title={item.label}
                   onClick={() => {
-                    selectNav("chats");
+                    selectNav("chat");
                     if (activeTitle === undefined) setDemoActiveTitle(item.label);
+                    setActiveThreadId(item.id);
                     onPick?.(item.id, item.label, item.prompt);
+                    if (typeof window !== "undefined" && window.location.pathname !== "/") {
+                      sessionStorage.setItem("cg_active_chat_id", item.id);
+                      router.push("/");
+                    }
                   }}
-                  className={`sidebar-row relative z-10 mx-2 flex h-8 items-center rounded-[8px] px-2 text-left transition-[width,background-color,color,transform] duration-150 active:scale-[0.98] ${
+                  className={`sidebar-row relative z-10 mx-2 flex h-8 items-center rounded-[8px] px-2 text-left transition-[width,background-color,color,transform] duration-150 active:scale-[0.98] animate-fade-in ${
                     active ? "bg-hover-2 group-hover/glide:bg-transparent" : ""
                   }`}
                 >

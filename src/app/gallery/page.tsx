@@ -36,19 +36,12 @@ import { TextRow } from "@/components/atoms/TextRow";
 import { ValuePill } from "@/components/atoms/ValuePill";
 import KeyboardShortcutsModal from "@/components/shortcuts/KeyboardShortcutsModal";
 import EventIcons from "@/components/events/EventIcons";
+import { useTheme } from "@/lib/theme";
 import Link from "next/link";
-
-const CAMPUS_RECENTS: SidebarRecent[] = [
-  { id: "waste-week", label: "Don't let me waste my week" },
-  { id: "find-tribe", label: "Find my AI research tribe" },
-  { id: "city-meetups", label: "Bengaluru weekend tech meetups" },
-  { id: "alumni-paths", label: "Alumni pathways: ML vs Systems" },
-  { id: "hackathon-plan", label: "HackBangalore preparation roadmap" },
-];
 
 export default function GalleryPage() {
   const [activeNav, setActiveNav] = useState<string>("tables");
-  const [isDark, setIsDark] = useState<boolean>(true);
+  const { isDark, toggleTheme } = useTheme();
   const [shortcutsOpen, setShortcutsOpen] = useState<boolean>(false);
   const [thinkingVariant, setThinkingVariant] = useState<"Steps" | "Reasoning" | "Search">("Steps");
   const [loadingVariant, setLoadingVariant] = useState<"Drive" | "Dots" | "Orbit">("Drive");
@@ -57,26 +50,11 @@ export default function GalleryPage() {
   const [alertsEnabled, setAlertsEnabled] = useState<boolean>(false);
   const [selectedPeriod, setSelectedPeriod] = useState<"Day" | "Week" | "Semester">("Week");
 
-  useEffect(() => {
-    const saved = localStorage.getItem("bui-theme");
-    const darkActive = saved !== "light";
-    setIsDark(darkActive);
-    document.documentElement.classList.toggle("dark", darkActive);
-  }, []);
-
-  const toggleTheme = () => {
-    const next = !isDark;
-    setIsDark(next);
-    localStorage.setItem("bui-theme", next ? "dark" : "light");
-    document.documentElement.classList.toggle("dark", next);
-  };
-
   return (
     <main className="flex h-[100dvh] w-full gap-0 bg-canvas p-2.5 text-ink lg:pl-0 select-none">
       <SidebarNav
         fill
         className="hidden lg:flex"
-        recents={CAMPUS_RECENTS}
         activeTitle="UI Components Gallery"
         activeNav="gallery"
         footerLabel="Campus Genie v1.0"

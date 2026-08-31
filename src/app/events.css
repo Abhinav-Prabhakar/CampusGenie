@@ -55,6 +55,44 @@
   --shadow-inset-field: inset 0 1px 2px oklch(0 0 0 / 0.4);
 }
 
+html:not(.dark) {
+  --page: oklch(0.985 0.001 286.376);
+  --canvas: oklch(0.961 0.002 247.84);
+  --surface: oklch(1 0 0);
+  --inset: oklch(0.979 0.002 247.839);
+  --hover: oklch(0.97 0.002 247.839);
+  --hover-2: oklch(0.933 0.003 247.86);
+  --field: oklch(0.961 0.001 286.375);
+  --ink: oklch(0.247 0.006 258.361);
+  --ink-2: oklch(0.506 0.01 264.477);
+  --ink-3: oklch(0.695 0.009 264.505);
+  --line: oklch(0.946 0.003 264.542);
+  --line-strong: oklch(0.912 0.005 258.326);
+  --line-soft: oklch(0.966 0.002 264.542);
+  --stripe: oklch(0.405 0 0 / 0.075);
+  --stripe-bg: oklch(0.97 0 0);
+  --accent: oklch(0.626 0.205 254.947);
+  --accent-ink: oklch(0.556 0.187 255.617);
+  --accent-tint: oklch(0.96 0.019 252.878);
+  --green: oklch(0.603 0.155 150.883);
+  --green-tint: oklch(0.958 0.017 159.118);
+  --orange: oklch(0.689 0.179 49.902);
+  --orange-tint: oklch(0.964 0.021 67.581);
+  --red: oklch(0.621 0.192 23.042);
+  --red-tint: oklch(0.956 0.017 17.462);
+  --shadow-btn: 0 0 0 1px var(--line-strong), 0 1px 2px oklch(0 0 0 / 0.06);
+  --shadow-card: 0 0 0 1px var(--line), 0 1px 2px oklch(0 0 0 / 0.05), 0 2px 6px oklch(0 0 0 / 0.05);
+  --shadow-raised: 0 0 0 1px var(--line), 0 2px 10px oklch(0 0 0 / 0.07);
+  --shadow-overlay: 0 0 0 1px var(--line), 0 8px 28px oklch(0 0 0 / 0.12);
+  --shadow-inset-field: inset 0 1px 2px oklch(0 0 0 / 0.12);
+  color-scheme: light;
+}
+
+html:not(.dark) .cat {
+  color: color-mix(in srgb, var(--tag) 76%, var(--ink)) !important;
+  background: color-mix(in srgb, var(--tag) 14%, var(--surface)) !important;
+}
+
 /* ── icon sprite styles with strict dimensions ─────────── */
 .events-scope .i,
 .events-scope svg.i {

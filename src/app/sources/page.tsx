@@ -1,43 +1,21 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import SidebarNav, { type SidebarRecent } from "@/components/primitives/SidebarNav";
+import { useState } from "react";
+import SidebarNav from "@/components/primitives/SidebarNav";
 import KeyboardShortcutsModal from "@/components/shortcuts/KeyboardShortcutsModal";
 import EventIcons from "@/components/events/EventIcons";
+import { useTheme } from "@/lib/theme";
 import Link from "next/link";
 
-const CAMPUS_RECENTS: SidebarRecent[] = [
-  { id: "waste-week", label: "Don't let me waste my week" },
-  { id: "find-tribe", label: "Find my AI research tribe" },
-  { id: "city-meetups", label: "Bengaluru weekend tech meetups" },
-  { id: "alumni-paths", label: "Alumni pathways: ML vs Systems" },
-  { id: "hackathon-plan", label: "HackBangalore preparation roadmap" },
-];
-
 export default function SourcesPage() {
-  const [isDark, setIsDark] = useState<boolean>(true);
+  const { isDark, toggleTheme } = useTheme();
   const [shortcutsOpen, setShortcutsOpen] = useState<boolean>(false);
-
-  useEffect(() => {
-    const saved = localStorage.getItem("bui-theme");
-    const darkActive = saved !== "light";
-    setIsDark(darkActive);
-    document.documentElement.classList.toggle("dark", darkActive);
-  }, []);
-
-  const toggleTheme = () => {
-    const next = !isDark;
-    setIsDark(next);
-    localStorage.setItem("bui-theme", next ? "dark" : "light");
-    document.documentElement.classList.toggle("dark", next);
-  };
 
   return (
     <main className="flex h-[100dvh] w-full gap-0 bg-canvas p-2.5 text-ink lg:pl-0 select-none">
       <SidebarNav
         fill
         className="hidden lg:flex"
-        recents={CAMPUS_RECENTS}
         activeTitle="Knowledge Sources"
         activeNav="sources"
         footerLabel="Campus Genie v1.0"

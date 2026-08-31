@@ -1,31 +1,23 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import SidebarNav from "@/components/primitives/SidebarNav";
-import EventsView from "@/components/events/EventsView";
+import EventAdminView from "@/components/admin/EventAdminView";
 import KeyboardShortcutsModal from "@/components/shortcuts/KeyboardShortcutsModal";
 import EventIcons from "@/components/events/EventIcons";
 import { useTheme } from "@/lib/theme";
-import Link from "next/link";
-import { useRouter } from "next/navigation";
 
-export default function EventsPage() {
-  const router = useRouter();
+export default function AdminPage() {
   const { isDark, toggleTheme } = useTheme();
   const [shortcutsOpen, setShortcutsOpen] = useState<boolean>(false);
-
-  const handleAskGenie = (prompt: string) => {
-    sessionStorage.setItem("cg_initial_prompt", prompt);
-    router.push("/");
-  };
 
   return (
     <main className="flex h-[100dvh] w-full gap-0 bg-canvas p-2.5 text-ink lg:pl-0 select-none">
       <SidebarNav
         fill
         className="hidden lg:flex"
-        activeTitle="Campus Events"
-        activeNav="events"
+        activeTitle="Student Admin"
+        activeNav="admin"
         footerLabel="Campus Genie v1.0"
       />
 
@@ -34,7 +26,7 @@ export default function EventsPage() {
           {/* Minimal Top Header */}
           <header className="flex h-11 shrink-0 items-center justify-between px-3 sm:px-4 bg-transparent">
             <div className="flex items-center gap-2">
-              <span className="text-[14px] font-semibold text-ink">Campus Events</span>
+              <span className="text-[14px] font-semibold text-ink">Student Admin · Event Manager</span>
             </div>
 
             <div className="flex items-center gap-2">
@@ -71,7 +63,7 @@ export default function EventsPage() {
 
           <div className="min-h-0 flex-1 overflow-y-auto p-1 sm:p-2 bg-transparent">
             <div className="max-w-[1152px] mx-auto">
-              <EventsView onAskGenie={handleAskGenie} />
+              <EventAdminView />
             </div>
           </div>
         </section>

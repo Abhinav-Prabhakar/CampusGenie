@@ -18,9 +18,11 @@ import { Button } from "@/components/atoms/Button";
 import { AVAILABLE_MODELS, type LLMModelConfig, type LLMProvider } from "@/lib/llm";
 import KeyboardShortcutsModal from "@/components/shortcuts/KeyboardShortcutsModal";
 import EventIcons from "@/components/events/EventIcons";
+import { useTheme } from "@/lib/theme";
+import { useChatStore, createThreadTitle, type ChatThread } from "@/lib/chatStore";
 import Link from "next/link";
 
-type ChatMessage = {
+export type ChatMessage = {
   id: string;
   role: "user" | "assistant";
   content: string;
@@ -57,19 +59,14 @@ const SUGGESTIONS = [
   },
 ];
 
-const CAMPUS_RECENTS: SidebarRecent[] = [
-  { id: "waste-week", label: "Don't let me waste my week", prompt: SUGGESTIONS[0].prompt },
-  { id: "restock-order", label: "Place restock order", prompt: SUGGESTIONS[1].prompt },
-  { id: "flavor-launch", label: "Flavor launch simulation", prompt: SUGGESTIONS[2].prompt },
-  { id: "find-tribe", label: "Find my AI research tribe", prompt: SUGGESTIONS[3].prompt },
-  { id: "alumni-paths", label: "Alumni pathways: ML vs Systems", prompt: SUGGESTIONS[4].prompt },
-];
-
 export default function CampusGenieChatPage() {
+  const { isDark, toggleTheme } = useTheme();
+  const { threads, activeThreadId, saveThread, setActiveThreadId } = useChatStore();
+
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [activeTitle, setActiveTitle] = useState<string | null>(null);
+  const [currentThreadId, setCurrentThreadId] = useState<string | null>(null);
   const [selectedModel, setSelectedModel] = useState<LLMModelConfig>(AVAILABLE_MODELS[0]);
-  const [isDark, setIsDark] = useState<boolean>(true);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState<boolean>(false);
@@ -81,36 +78,38 @@ export default function CampusGenieChatPage() {
 
   const scrollAnchorRef = useRef<HTMLDivElement>(null);
 
-  // Initialize theme and load session prompts if any
+  // Initialize settings and load active thread or prompt
   useEffect(() => {
-    const savedTheme = localStorage.getItem("bui-theme");
-    const darkActive = savedTheme !== "light";
-    setIsDark(darkActive);
-    document.documentElement.classList.toggle("dark", darkActive);
-
     const savedKey = localStorage.getItem("cg_api_key");
     const savedUrl = localStorage.getItem("cg_base_url");
     if (savedKey) setCustomApiKey(savedKey);
     if (savedUrl) setCustomBaseUrl(savedUrl);
 
-    // Initial prompt from events page redirect
+    // Initial thread or prompt from redirect
+    const activeChatId = sessionStorage.getItem("cg_active_chat_id");
     const initPrompt = sessionStorage.getItem("cg_initial_prompt");
+
+    if (activeChatId) {
+      sessionStorage.removeItem("cg_active_chat_id");
+      const found = threads.find((t) => t.id === activeChatId);
+      if (found) {
+        setMessages(found.messages);
+        setActiveTitle(found.title);
+        setCurrentThreadId(found.id);
+        setActiveThreadId(found.id);
+        return;
+      }
+    }
+
     if (initPrompt) {
       sessionStorage.removeItem("cg_initial_prompt");
       handleSend(initPrompt);
     }
-  }, []);
+  }, [threads]);
 
   useEffect(() => {
     scrollAnchorRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, isLoading]);
-
-  const toggleTheme = () => {
-    const next = !isDark;
-    setIsDark(next);
-    localStorage.setItem("bui-theme", next ? "dark" : "light");
-    document.documentElement.classList.toggle("dark", next);
-  };
 
   const handleSaveSettings = () => {
     localStorage.setItem("cg_api_key", customApiKey);
@@ -130,10 +129,26 @@ export default function CampusGenieChatPage() {
       timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
     };
 
+    const targetThreadId = currentThreadId || `th_${Date.now()}`;
+    const targetTitle = activeTitle || createThreadTitle(text);
+    if (!currentThreadId) {
+      setCurrentThreadId(targetThreadId);
+      setActiveThreadId(targetThreadId);
+    }
+    setActiveTitle(targetTitle);
+
     const newMessages = [...messages, userMsg];
     setMessages(newMessages);
-    setActiveTitle(text.slice(0, 32) + (text.length > 32 ? "..." : ""));
     setIsLoading(true);
+
+    // Save user message immediately to thread
+    saveThread({
+      id: targetThreadId,
+      title: targetTitle,
+      messages: newMessages,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    });
 
     // Determine special cards to display based on prompt context
     const lower = text.toLowerCase();
@@ -203,11 +218,11 @@ export default function CampusGenieChatPage() {
 
               setMessages((prev) => {
                 const filtered = prev.filter((m) => m.id !== assistantMsgId);
-                return [
+                const updated = [
                   ...filtered,
                   {
                     id: assistantMsgId,
-                    role: "assistant",
+                    role: "assistant" as const,
                     content: assistantContent || "Synthesizing recommendations from Databricks Lakehouse...",
                     thinking: assistantThinking || (selectedModel.isReasoning ? "Analyzing Unity Catalog Delta tables & student persona constraints..." : undefined),
                     toolCalls: toolInvocations.length > 0 ? toolInvocations : undefined,
@@ -220,6 +235,7 @@ export default function CampusGenieChatPage() {
                     timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
                   },
                 ];
+                return updated;
               });
             } catch (pErr) {
               // Non-JSON delta
@@ -230,27 +246,34 @@ export default function CampusGenieChatPage() {
 
       // If empty response
       if (!assistantContent) {
-        assistantContent = `Campus Genie queried **campus_explorer.campus_events** and matched your 3rd-year student profile with top events and high-yield activities for this week.`;
-        setMessages((prev) => {
-          const filtered = prev.filter((m) => m.id !== assistantMsgId);
-          return [
-            ...filtered,
-            {
-              id: assistantMsgId,
-              role: "assistant",
-              content: assistantContent,
-              thinking: selectedModel.isReasoning ? "Scanning Unity Catalog schema for category = 'AI' and start_time >= CURRENT_DATE()..." : undefined,
-              cards: [
-                isRestock ? "approval" : null,
-                isFlavor ? "finetune" : null,
-                isEvent ? "recommendation" : null,
-                "context",
-              ].filter(Boolean) as any[],
-              timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-            },
-          ];
-        });
+        assistantContent = `Campus Genie queried **campus_explorer.campus_events** and matched your student profile with top events and high-yield activities for this week.`;
       }
+
+      const finalAssistantMsg: ChatMessage = {
+        id: assistantMsgId,
+        role: "assistant",
+        content: assistantContent,
+        thinking: selectedModel.isReasoning ? "Scanning Unity Catalog schema for category = 'AI' and start_time >= CURRENT_DATE()..." : undefined,
+        cards: [
+          isRestock ? "approval" : null,
+          isFlavor ? "finetune" : null,
+          isEvent ? "recommendation" : null,
+          "context",
+        ].filter(Boolean) as any[],
+        timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+      };
+
+      const finalMessagesList = [...newMessages, finalAssistantMsg];
+      setMessages(finalMessagesList);
+
+      // Save complete thread to localStorage
+      saveThread({
+        id: targetThreadId,
+        title: targetTitle,
+        messages: finalMessagesList,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      });
     } catch (err: any) {
       console.error("Chat Error:", err);
       setErrorMessage(err.message || "Failed to communicate with LLM provider API.");
@@ -260,8 +283,20 @@ export default function CampusGenieChatPage() {
   };
 
   const handlePickRecent = (id: string, label: string, prompt?: string) => {
-    setActiveTitle(label);
-    if (prompt) handleSend(prompt);
+    const existing = threads.find((t) => t.id === id);
+    if (existing) {
+      setMessages(existing.messages);
+      setActiveTitle(existing.title);
+      setCurrentThreadId(existing.id);
+      setActiveThreadId(existing.id);
+    } else {
+      setCurrentThreadId(null);
+      setActiveTitle(label);
+      if (prompt) {
+        setMessages([]);
+        handleSend(prompt);
+      }
+    }
   };
 
   return (
@@ -270,13 +305,14 @@ export default function CampusGenieChatPage() {
       <SidebarNav
         fill
         className="hidden lg:flex"
-        recents={CAMPUS_RECENTS}
         activeTitle={activeTitle}
         activeNav="chat"
         onPick={handlePickRecent}
         onNewChat={() => {
           setMessages([]);
           setActiveTitle(null);
+          setCurrentThreadId(null);
+          setActiveThreadId(null);
           setErrorMessage(null);
         }}
         footerLabel="Campus Genie v1.0"
