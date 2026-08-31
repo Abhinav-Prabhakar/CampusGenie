@@ -168,7 +168,6 @@ function IconArrowBoxLeft({ size = 16 }: { size?: number }) {
 const WORKSPACE = { key: "campus_genie", name: "Campus Genie", monogram: "CG" };
 
 export const NAV_ITEMS = [
-  { key: "chat", label: "Chat", icon: <IconChat size={18} />, href: "/" },
   { key: "events", label: "Events", icon: <IconCalendar size={18} />, count: "14", href: "/events" },
   { key: "admin", label: "Student Admin", icon: <IconShield size={18} />, count: "Admin", href: "/admin" },
   { key: "sources", label: "Sources", icon: <IconDatabase size={18} />, count: "5", href: "/sources" },
@@ -491,10 +490,13 @@ export default function SidebarNav({
           <RailButton
             icon={<IconEditBig size={18} />}
             label="New chat"
+            active={currentNav === "chat" && !activeTitle}
             onClick={() => {
               if (activeTitle === undefined) setDemoActiveTitle(null);
-              selectNav("chats");
+              setInternalNav("chat");
+              onNavigate?.("chat");
               onNewChat?.();
+              router.push("/");
             }}
           />
           {NAV_ITEMS.map((item) => (
