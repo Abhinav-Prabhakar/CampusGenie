@@ -439,10 +439,26 @@ export default function CampusGenieChatPage() {
                   }}
                   className="h-7 rounded-[7px] border border-line bg-surface px-2 text-[12px] font-medium text-ink outline-none cursor-pointer hover:border-line-strong transition-colors"
                 >
-                  <optgroup label="Available Models">
-                    {models.map((m) => (
+                  <optgroup label="Environment Default">
+                    {models.filter((m) => m.id === "env-default").map((m) => (
                       <option key={m.id} value={m.id}>
-                        {m.name} {m.isReasoning ? "🧠" : ""} {m.isCustom ? "★" : ""}
+                        ⚡ {m.name} {m.isReasoning ? "🧠" : ""}
+                      </option>
+                    ))}
+                  </optgroup>
+                  {models.some((m) => m.isCustom) && (
+                    <optgroup label="Custom Models">
+                      {models.filter((m) => m.isCustom).map((m) => (
+                        <option key={m.id} value={m.id}>
+                          ★ {m.name} ({m.provider}) {m.isReasoning ? "🧠" : ""}
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
+                  <optgroup label="Preset Providers">
+                    {models.filter((m) => m.id !== "env-default" && !m.isCustom).map((m) => (
+                      <option key={m.id} value={m.id}>
+                        {m.name} {m.isReasoning ? "🧠" : ""}
                       </option>
                     ))}
                   </optgroup>

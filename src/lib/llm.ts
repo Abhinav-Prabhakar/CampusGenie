@@ -14,6 +14,7 @@ export type LLMModelConfig = {
 };
 
 export const DEFAULT_AVAILABLE_MODELS: LLMModelConfig[] = [
+  { id: "env-default", name: "Default API & Model (.env)", provider: "custom", isReasoning: false },
   { id: "gpt-4o", name: "OpenAI GPT-4o", provider: "openai", isReasoning: false },
   { id: "o3-mini", name: "OpenAI o3-mini (Reasoning)", provider: "openai", isReasoning: true },
   { id: "deepseek/deepseek-r1", name: "DeepSeek R1 (Reasoning)", provider: "openai", isReasoning: true },

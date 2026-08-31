@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { AVAILABLE_MODELS, type LLMModelConfig } from "@/lib/llm";
+import { DEFAULT_AVAILABLE_MODELS, type LLMModelConfig } from "@/lib/llm";
 
 export async function GET() {
   const envModel = process.env.LLM_MODEL || process.env.NEXT_PUBLIC_DEFAULT_MODEL;
@@ -12,23 +12,31 @@ export async function GET() {
       process.env.DATABRICKS_TOKEN
   );
 
-  let models: LLMModelConfig[] = [...AVAILABLE_MODELS];
+  const isReasoning = Boolean(
+    envModel &&
+      (envModel.toLowerCase().includes("r1") ||
+        envModel.toLowerCase().includes("thinking") ||
+        envModel.toLowerCase().includes("o3") ||
+        envModel.toLowerCase().includes("o1") ||
+        envModel.toLowerCase().includes("reason"))
+  );
 
-  if (envModel) {
-    const existing = models.find((m) => m.id === envModel);
-    if (!existing) {
-      models.unshift({
-        id: envModel,
-        name: `Custom (${envModel})`,
-        provider: "custom",
-        isReasoning: envModel.toLowerCase().includes("r1") || envModel.toLowerCase().includes("thinking") || envModel.toLowerCase().includes("o3") || envModel.toLowerCase().includes("o1"),
-      });
-    }
-  }
+  const envEntry: LLMModelConfig = {
+    id: "env-default",
+    name: envModel ? `Default: ${envModel} (.env)` : "Default API & Model (.env)",
+    provider: "custom",
+    isReasoning: isReasoning,
+  };
+
+  const models: LLMModelConfig[] = [
+    envEntry,
+    ...DEFAULT_AVAILABLE_MODELS.filter((m) => m.id !== "env-default"),
+  ];
 
   return NextResponse.json({
     models,
-    defaultModel: envModel || AVAILABLE_MODELS[0].id,
+    defaultModel: "env-default",
+    envModel: envModel || null,
     hasApiKey,
     envBaseUrl: envBaseUrl || null,
   });

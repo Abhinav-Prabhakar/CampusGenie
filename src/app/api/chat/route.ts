@@ -24,11 +24,26 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const {
       messages = [],
-      model = "gpt-4o",
-      provider = "openai",
+      model: inputModel,
+      provider: inputProvider = "openai",
       customApiKey,
       customBaseUrl,
     } = body;
+
+    // Resolve actual model name (defaults to .env LLM_MODEL)
+    const model = (!inputModel || inputModel === "env-default")
+      ? (process.env.LLM_MODEL || process.env.NEXT_PUBLIC_DEFAULT_MODEL || "gpt-4o")
+      : inputModel;
+
+    let provider = inputProvider;
+    if (provider === "custom" && !customBaseUrl && !process.env.LLM_BASE_URL) {
+      const lower = model.toLowerCase();
+      if (lower.includes("gemini")) provider = "gemini";
+      else if (lower.includes("claude")) provider = "anthropic";
+      else if (lower.includes("databricks") || lower.includes("dbrx")) provider = "databricks";
+      else if (lower.includes("llama") && !process.env.LLM_API_KEY && !process.env.OPENAI_API_KEY) provider = "ollama";
+      else provider = "openai";
+    }
 
     // Resolve API Key from custom input or environment variables
     const apiKey =
