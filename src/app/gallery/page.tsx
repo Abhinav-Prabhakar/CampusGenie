@@ -83,12 +83,6 @@ export default function GalleryPage() {
         <section className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-[14px] border border-line bg-canvas shadow-card">
           <header className="flex h-11 shrink-0 items-center justify-between border-b border-line px-3 sm:px-4 bg-canvas">
             <div className="flex items-center gap-1 overflow-x-auto">
-              <Link
-                href="/"
-                className="flex h-7 shrink-0 items-center gap-1.5 rounded-[7px] px-2.5 text-[12.5px] font-medium text-ink-2 hover:bg-hover hover:text-ink transition-colors mr-2 border border-line-soft"
-              >
-                <span>← Back to Chat</span>
-              </Link>
               {[
                 { key: "tables", label: "Lakehouse Tables", icon: "📊" },
                 { key: "analytics", label: "Campus Pulse", icon: "📈" },
@@ -114,9 +108,6 @@ export default function GalleryPage() {
             </div>
 
             <div className="flex items-center gap-2">
-              <span className="hidden md:inline-flex items-center gap-1.5 rounded-full bg-accent-tint/60 px-2.5 py-0.5 text-[11.5px] font-medium text-accent-ink border border-accent/20">
-                Component Showcase
-              </span>
               <button
                 type="button"
                 onClick={toggleTheme}

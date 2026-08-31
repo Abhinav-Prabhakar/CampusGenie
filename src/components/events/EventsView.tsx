@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useMemo } from "react";
+import EventDetailModal from "./EventDetailModal";
 import "@/app/events.css";
 
 export type CampusEvent = {
@@ -309,6 +310,7 @@ const CAT_INDICES: Record<string, number> = {
 };
 
 export default function EventsView({ onAskGenie }: { onAskGenie?: (prompt: string) => void }) {
+  const [selectedEvent, setSelectedEvent] = useState<CampusEvent | null>(null);
   const [selectedCat, setSelectedCat] = useState<string>("all");
   const [selectedWhen, setSelectedWhen] = useState<string>("week");
   const [searchQuery, setSearchQuery] = useState<string>("");
@@ -578,8 +580,15 @@ export default function EventsView({ onAskGenie }: { onAskGenie?: (prompt: strin
               <article
                 key={ev.id}
                 className={`ev ${isScarce ? "is-scarce" : ""} ${isFull ? "is-full" : ""}`}
-                style={{ ["--i" as string]: index }}
+                style={{ ["--i" as string]: index, position: "relative" }}
               >
+                {/* Click target to open dialog */}
+                <div
+                  className="ev-hit"
+                  onClick={() => setSelectedEvent(ev)}
+                  aria-label={`View details for ${ev.title}`}
+                />
+
                 <div className="ev-top">
                   <span className={`cat cat-${ev.cat}`}>
                     <svg className="i i11" width={11} height={11} aria-hidden="true"><use href={`#${ev.catIcon}`}/></svg>
@@ -638,7 +647,7 @@ export default function EventsView({ onAskGenie }: { onAskGenie?: (prompt: strin
                   </div>
                 </div>
 
-                <div className="ev-foot">
+                <div className="ev-foot" style={{ position: "relative", zIndex: 1 }}>
                   <span className="host">
                     <span className="mark">{ev.hostCode}</span>
                     <em>{ev.host}</em>
@@ -699,6 +708,13 @@ export default function EventsView({ onAskGenie }: { onAskGenie?: (prompt: strin
           </span>
         </footer>
       </div>
+
+      {/* Event Detail Dialog Modal */}
+      <EventDetailModal
+        event={selectedEvent}
+        onClose={() => setSelectedEvent(null)}
+        onAskGenie={onAskGenie}
+      />
     </div>
   );
 }

@@ -43,37 +43,11 @@ export default function SourcesPage() {
       <div className="flex min-w-0 flex-1 flex-col gap-2.5">
         <section className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-[14px] border border-line bg-canvas shadow-card">
           <header className="flex h-11 shrink-0 items-center justify-between border-b border-line px-3 sm:px-4 bg-canvas">
-            <div className="flex items-center gap-1 overflow-x-auto">
-              <Link
-                href="/"
-                className="flex h-7 shrink-0 items-center gap-1.5 rounded-[7px] px-2.5 text-[12.5px] font-medium text-ink-2 hover:bg-hover hover:text-ink transition-colors"
-              >
-                <span>💬 Genie Chat</span>
-              </Link>
-              <Link
-                href="/events"
-                className="flex h-7 shrink-0 items-center gap-1.5 rounded-[7px] px-2.5 text-[12.5px] font-medium text-ink-2 hover:bg-hover hover:text-ink transition-colors"
-              >
-                <span>📅 Events</span>
-              </Link>
-              <Link
-                href="/sources"
-                className="flex h-7 shrink-0 items-center gap-1.5 rounded-[7px] px-2.5 text-[12.5px] font-medium bg-hover-2 text-ink shadow-hairline transition-colors"
-              >
-                <span>📚 Sources</span>
-              </Link>
-              <Link
-                href="/gallery"
-                className="flex h-7 shrink-0 items-center gap-1.5 rounded-[7px] px-2.5 text-[12.5px] font-medium text-ink-2 hover:bg-hover hover:text-ink transition-colors"
-              >
-                <span>✨ Primitives Gallery</span>
-              </Link>
+            <div className="flex items-center gap-2">
+              <span className="text-[13.5px] font-semibold text-ink">Knowledge Sources</span>
             </div>
 
             <div className="flex items-center gap-2">
-              <span className="hidden md:inline-flex items-center gap-1.5 rounded-full bg-accent-tint/60 px-2.5 py-0.5 text-[11.5px] font-medium text-accent-ink border border-accent/20">
-                Unity Catalog Knowledge
-              </span>
               <button
                 type="button"
                 onClick={toggleTheme}

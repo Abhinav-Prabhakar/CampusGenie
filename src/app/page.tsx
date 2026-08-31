@@ -290,32 +290,9 @@ export default function CampusGenieChatPage() {
         <section className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-[14px] border border-line bg-canvas shadow-card">
           {/* Header Tab Bar */}
           <header className="flex h-11 shrink-0 items-center justify-between border-b border-line px-3 sm:px-4 bg-canvas">
-            {/* Primary Nav Links */}
-            <div className="flex items-center gap-1 overflow-x-auto">
-              <Link
-                href="/"
-                className="flex h-7 shrink-0 items-center gap-1.5 rounded-[7px] px-2.5 text-[12.5px] font-medium bg-hover-2 text-ink shadow-hairline transition-colors"
-              >
-                <span>💬 Genie Chat</span>
-              </Link>
-              <Link
-                href="/events"
-                className="flex h-7 shrink-0 items-center gap-1.5 rounded-[7px] px-2.5 text-[12.5px] font-medium text-ink-2 hover:bg-hover hover:text-ink transition-colors"
-              >
-                <span>📅 Events</span>
-              </Link>
-              <Link
-                href="/sources"
-                className="flex h-7 shrink-0 items-center gap-1.5 rounded-[7px] px-2.5 text-[12.5px] font-medium text-ink-2 hover:bg-hover hover:text-ink transition-colors"
-              >
-                <span>📚 Sources</span>
-              </Link>
-              <Link
-                href="/gallery"
-                className="flex h-7 shrink-0 items-center gap-1.5 rounded-[7px] px-2.5 text-[12.5px] font-medium text-ink-2 hover:bg-hover hover:text-ink transition-colors"
-              >
-                <span>✨ Primitives Gallery</span>
-              </Link>
+            <div className="flex items-center gap-2">
+              <span className="text-[13.5px] font-semibold text-ink">Campus Genie</span>
+              <span className="text-[11px] text-ink-3">· Lakehouse Agent</span>
             </div>
 
             {/* Right Controls: Model Picker, Settings, Theme */}

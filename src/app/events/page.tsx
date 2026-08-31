@@ -49,45 +49,19 @@ export default function EventsPage() {
       />
 
       <div className="flex min-w-0 flex-1 flex-col gap-2.5">
-        <section className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-[14px] border border-line bg-canvas shadow-card">
-          <header className="flex h-11 shrink-0 items-center justify-between border-b border-line px-3 sm:px-4 bg-canvas">
-            <div className="flex items-center gap-1 overflow-x-auto">
-              <Link
-                href="/"
-                className="flex h-7 shrink-0 items-center gap-1.5 rounded-[7px] px-2.5 text-[12.5px] font-medium text-ink-2 hover:bg-hover hover:text-ink transition-colors"
-              >
-                <span>💬 Genie Chat</span>
-              </Link>
-              <Link
-                href="/events"
-                className="flex h-7 shrink-0 items-center gap-1.5 rounded-[7px] px-2.5 text-[12.5px] font-medium bg-hover-2 text-ink shadow-hairline transition-colors"
-              >
-                <span>📅 Events</span>
-              </Link>
-              <Link
-                href="/sources"
-                className="flex h-7 shrink-0 items-center gap-1.5 rounded-[7px] px-2.5 text-[12.5px] font-medium text-ink-2 hover:bg-hover hover:text-ink transition-colors"
-              >
-                <span>📚 Sources</span>
-              </Link>
-              <Link
-                href="/gallery"
-                className="flex h-7 shrink-0 items-center gap-1.5 rounded-[7px] px-2.5 text-[12.5px] font-medium text-ink-2 hover:bg-hover hover:text-ink transition-colors"
-              >
-                <span>✨ Primitives Gallery</span>
-              </Link>
+        <section className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-[14px] bg-transparent">
+          {/* Minimal Top Header */}
+          <header className="flex h-11 shrink-0 items-center justify-between px-3 sm:px-4 bg-transparent">
+            <div className="flex items-center gap-2">
+              <span className="text-[14px] font-semibold text-ink">Campus Events</span>
             </div>
 
             <div className="flex items-center gap-2">
-              <span className="hidden md:inline-flex items-center gap-1.5 rounded-full bg-accent-tint/60 px-2.5 py-0.5 text-[11.5px] font-medium text-accent-ink border border-accent/20">
-                <span className="size-1.5 rounded-full bg-accent animate-pulse" />
-                Unity Catalog: campus_events.delta
-              </span>
               <button
                 type="button"
                 onClick={toggleTheme}
                 title="Toggle Theme"
-                className="flex size-7 items-center justify-center rounded-[7px] border border-line bg-canvas text-ink-2 hover:bg-hover hover:text-ink transition-colors duration-100"
+                className="flex size-7 items-center justify-center rounded-[7px] border border-line bg-surface text-ink-2 hover:bg-hover hover:text-ink transition-colors duration-100"
               >
                 {isDark ? (
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -102,7 +76,7 @@ export default function EventsPage() {
             </div>
           </header>
 
-          <div className="min-h-0 flex-1 overflow-y-auto p-3 sm:p-4 bg-canvas">
+          <div className="min-h-0 flex-1 overflow-y-auto p-1 sm:p-2 bg-transparent">
             <div className="max-w-[1152px] mx-auto">
               <EventsView onAskGenie={handleAskGenie} />
             </div>
