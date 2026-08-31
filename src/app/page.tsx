@@ -16,6 +16,8 @@ import { EntityChip } from "@/components/atoms/EntityChip";
 import { StreamText } from "@/components/atoms/StreamText";
 import { Button } from "@/components/atoms/Button";
 import { AVAILABLE_MODELS, type LLMModelConfig, type LLMProvider } from "@/lib/llm";
+import KeyboardShortcutsModal from "@/components/shortcuts/KeyboardShortcutsModal";
+import EventIcons from "@/components/events/EventIcons";
 import Link from "next/link";
 
 type ChatMessage = {
@@ -71,6 +73,7 @@ export default function CampusGenieChatPage() {
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState<boolean>(false);
+  const [shortcutsOpen, setShortcutsOpen] = useState<boolean>(false);
   
   // Custom API settings
   const [customApiKey, setCustomApiKey] = useState<string>("");
@@ -314,6 +317,19 @@ export default function CampusGenieChatPage() {
                   ))}
                 </select>
               </div>
+
+              {/* Keyboard Shortcuts Trigger */}
+              <button
+                type="button"
+                onClick={() => setShortcutsOpen(true)}
+                title="Keyboard Shortcuts (⌘K)"
+                className="flex size-7 items-center justify-center rounded-[7px] border border-line bg-surface text-ink-2 hover:bg-hover hover:text-ink transition-colors duration-100"
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <rect x="2.5" y="6" width="19" height="12" rx="2" />
+                  <path d="M6.2 10h.01M10 10h.01M13.8 10h.01M17.6 10h.01M6.2 14h.01M17.6 14h.01M9.2 14h5.6" />
+                </svg>
+              </button>
 
               {/* API Settings Trigger */}
               <button
@@ -597,6 +613,15 @@ export default function CampusGenieChatPage() {
           </div>
         </div>
       )}
+
+      {/* Global SVG Icons Sprite */}
+      <EventIcons />
+
+      {/* Keyboard Shortcuts Dialog Modal */}
+      <KeyboardShortcutsModal
+        isOpen={shortcutsOpen}
+        onClose={() => setShortcutsOpen(false)}
+      />
     </main>
   );
 }

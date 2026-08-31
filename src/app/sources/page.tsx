@@ -2,6 +2,8 @@
 
 import { useState, useEffect } from "react";
 import SidebarNav, { type SidebarRecent } from "@/components/primitives/SidebarNav";
+import KeyboardShortcutsModal from "@/components/shortcuts/KeyboardShortcutsModal";
+import EventIcons from "@/components/events/EventIcons";
 import Link from "next/link";
 
 const CAMPUS_RECENTS: SidebarRecent[] = [
@@ -14,6 +16,7 @@ const CAMPUS_RECENTS: SidebarRecent[] = [
 
 export default function SourcesPage() {
   const [isDark, setIsDark] = useState<boolean>(true);
+  const [shortcutsOpen, setShortcutsOpen] = useState<boolean>(false);
 
   useEffect(() => {
     const saved = localStorage.getItem("bui-theme");
@@ -50,6 +53,18 @@ export default function SourcesPage() {
             <div className="flex items-center gap-2">
               <button
                 type="button"
+                onClick={() => setShortcutsOpen(true)}
+                title="Keyboard Shortcuts (⌘K)"
+                className="flex size-7 items-center justify-center rounded-[7px] border border-line bg-surface text-ink-2 hover:bg-hover hover:text-ink transition-colors duration-100"
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <rect x="2.5" y="6" width="19" height="12" rx="2" />
+                  <path d="M6.2 10h.01M10 10h.01M13.8 10h.01M17.6 10h.01M6.2 14h.01M17.6 14h.01M9.2 14h5.6" />
+                </svg>
+              </button>
+
+              <button
+                type="button"
                 onClick={toggleTheme}
                 title="Toggle Theme"
                 className="flex size-7 items-center justify-center rounded-[7px] border border-line bg-canvas text-ink-2 hover:bg-hover hover:text-ink transition-colors duration-100"
@@ -84,6 +99,15 @@ export default function SourcesPage() {
           </div>
         </section>
       </div>
+
+      {/* Global SVG Icons Sprite */}
+      <EventIcons />
+
+      {/* Keyboard Shortcuts Dialog Modal */}
+      <KeyboardShortcutsModal
+        isOpen={shortcutsOpen}
+        onClose={() => setShortcutsOpen(false)}
+      />
     </main>
   );
 }

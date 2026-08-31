@@ -89,10 +89,10 @@
 
 .events-scope .window {
   overflow: clip;
-  border: 1px solid var(--line);
+  border: 0 !important;
   border-radius: 14px;
-  background: var(--canvas);
-  box-shadow: var(--shadow-overlay);
+  background: transparent !important;
+  box-shadow: none !important;
 }
 
 /* ── panel head ────────────────────────────────────────── */
@@ -103,7 +103,9 @@
   height: 54px;
   padding: 0 14px;
   background: var(--surface);
-  border-bottom: 1px solid var(--line-strong);
+  border: 1px solid var(--line-soft);
+  border-radius: 12px;
+  margin-bottom: 12px;
 }
 .events-scope .logo {
   display: inline-flex;
@@ -186,7 +188,7 @@
 }
 
 /* ── featured banner ───────────────────────────────────── */
-.events-scope .banner-wrap { padding: 12px 12px 0; }
+.events-scope .banner-wrap { padding: 0 0 12px 0; }
 .events-scope .feature {
   --tag: var(--hue-hack);
   display: flex;
@@ -840,12 +842,14 @@
   gap: 8px;
   flex-wrap: wrap;
   padding: 10px 14px;
-  border-top: 1px solid var(--line);
+  border: 1px solid var(--line-soft);
+  border-radius: 12px;
   background: var(--inset);
   color: var(--ink-3);
   font-size: 11.5px;
   font-weight: 500;
   font-variant-numeric: tabular-nums;
+  margin-top: 12px;
 }
 .events-scope .panel-foot .i { color: var(--green); }
 .events-scope .panel-foot code {
