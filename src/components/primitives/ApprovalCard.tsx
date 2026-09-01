@@ -14,9 +14,22 @@ import GlideMenu from "@/components/primitives/GlideMenu";
  * ───────────────────────────────────────────────────────── */
 
 export type ApprovalQuestion = {
+  id?: string;
   q: string;
   type: "radio" | "check";
   options: string[];
+  allowCustom?: boolean;
+};
+
+export type SurveySubmissionResult = {
+  answers: Record<number, number[]>;
+  custom: Record<number, string>;
+  formattedText: string;
+  detailed: Array<{
+    question: string;
+    selectedOptions: string[];
+    customAnswer?: string;
+  }>;
 };
 
 const QUESTIONS: ApprovalQuestion[] = [
@@ -148,7 +161,7 @@ export default function ApprovalCard({
 }: {
   questions?: ApprovalQuestion[];
   labels?: Partial<ApprovalLabels>;
-  onSubmitted?: (answers: Record<number, number[]>) => void;
+  onSubmitted?: (answers: Record<number, number[]>, result?: SurveySubmissionResult) => void;
   onAnswerChange?: (questionIndex: number, answer: number[]) => void;
   resettable?: boolean;
   variant?: string;
@@ -208,7 +221,33 @@ export default function ApprovalCard({
   const send = () => {
     if (advanceTimer.current) clearTimeout(advanceTimer.current);
     setSent(true);
-    onSubmitted?.(answers);
+
+    const detailed = questions.map((question, qIdx) => {
+      const selectedIndices = answers[qIdx] ?? [];
+      const selectedOptions = selectedIndices.map((i) => question.options[i]).filter(Boolean);
+      const customAns = custom[qIdx]?.trim();
+      return {
+        question: question.q,
+        selectedOptions,
+        customAnswer: customAns || undefined,
+      };
+    });
+
+    const lines = detailed.map((d, i) => {
+      const parts = [...d.selectedOptions];
+      if (d.customAnswer) parts.push(`"${d.customAnswer}"`);
+      const answerStr = parts.length > 0 ? parts.join(", ") : "Skipped";
+      return `${i + 1}. ${d.question}\n   ↳ Answer: ${answerStr}`;
+    });
+
+    const formattedText = `Survey Responses:\n${lines.join("\n")}`;
+
+    onSubmitted?.(answers, {
+      answers,
+      custom,
+      formattedText,
+      detailed,
+    });
   };
 
   const advance = () => {

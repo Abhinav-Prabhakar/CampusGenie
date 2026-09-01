@@ -74,10 +74,34 @@ const SUGGESTIONS = [
     prompt: "Compare career trajectories and club involvement of alumni who landed AI research roles vs Big Tech SDE.",
   },
   {
+    title: "Preference & Track Survey",
+    prompt: "Guide me through choosing a hackathon track or campus club by asking me clarifying questions about my interests and tech stack.",
+  },
+  {
     title: "Check cafe inventory & supplies",
     prompt: "Check campus cafe dairy and waffle cones inventory levels in Databricks Lakehouse.",
   },
 ];
+
+function normalizeQuestions(raw: any): ApprovalQuestion[] | null {
+  if (!raw) return null;
+  const list = Array.isArray(raw) ? raw : Array.isArray(raw.questions) ? raw.questions : Array.isArray(raw.survey) ? raw.survey : null;
+  if (!list || list.length === 0) return null;
+
+  return list.map((item: any, idx: number) => {
+    const rawOptions = Array.isArray(item.options) ? item.options : Array.isArray(item.choices) ? item.choices : ["Yes", "No"];
+    const options = rawOptions.map((opt: any) => (typeof opt === "string" ? opt : opt?.label || opt?.text || String(opt)));
+    const rawType = String(item.type || item.selectionType || "").toLowerCase();
+    const type: "radio" | "check" = rawType.includes("check") || rawType.includes("multi") ? "check" : "radio";
+    return {
+      id: item.id || `q_${idx}`,
+      q: item.q || item.question || item.title || item.prompt || `Question ${idx + 1}`,
+      type,
+      options,
+      allowCustom: item.allowCustom !== false,
+    };
+  });
+}
 
 function resolveRelevantEvents(
   toolEventIds: string[],
@@ -410,8 +434,11 @@ export default function CampusGenieChatPage() {
               for (const ti of toolInvocations) {
                 try {
                   const parsedArgs = JSON.parse(ti.args);
-                  if (ti.name === "ask_questions" && parsedArgs.questions) {
-                    parsedQuestions = parsedArgs.questions;
+                  if (
+                    (ti.name === "ask_questions" || ti.name === "trigger_survey" || ti.name === "ask_survey") &&
+                    (parsedArgs.questions || Array.isArray(parsedArgs) || parsedArgs.survey)
+                  ) {
+                    parsedQuestions = normalizeQuestions(parsedArgs);
                   } else if (ti.name === "show_approval_card") {
                     parsedApproval = parsedArgs;
                   } else if (ti.name === "show_recommendation_card") {
@@ -479,8 +506,11 @@ export default function CampusGenieChatPage() {
       for (const ti of finalToolInvocations) {
         try {
           const parsedArgs = JSON.parse(ti.args);
-          if (ti.name === "ask_questions" && parsedArgs.questions) {
-            finalQuestions = parsedArgs.questions;
+          if (
+            (ti.name === "ask_questions" || ti.name === "trigger_survey" || ti.name === "ask_survey") &&
+            (parsedArgs.questions || Array.isArray(parsedArgs) || parsedArgs.survey)
+          ) {
+            finalQuestions = normalizeQuestions(parsedArgs);
           } else if (ti.name === "show_approval_card") {
             finalApproval = parsedArgs;
           } else if (ti.name === "show_recommendation_card") {
@@ -799,7 +829,7 @@ export default function CampusGenieChatPage() {
                           </div>
                         )}
 
-                        {/* Interactive Question Card from LLM (ask_questions tool) */}
+                        {/* Interactive Multi-Step MCQ Survey from LLM (ask_questions tool) */}
                         {msg.questions && msg.questions.length > 0 && (
                           <div className="w-full animate-fade-in">
                             <ApprovalCard
@@ -809,13 +839,24 @@ export default function CampusGenieChatPage() {
                                 continue: "Continue",
                                 send: "Submit Answers",
                                 customPlaceholder: "Other details…",
-                                sentMessage: "Answers sent",
+                                sentMessage: "Answers sent to Genie",
                               }}
-                              onSubmitted={(answers) => {
-                                const formatted = Object.entries(answers)
-                                  .map(([q, a]) => `${q}: ${Array.isArray(a) ? a.join(", ") : a}`)
-                                  .join("; ");
-                                handleSend(`My answers: ${formatted}`);
+                              onSubmitted={(_answers, result) => {
+                                if (result?.formattedText) {
+                                  handleSend(result.formattedText);
+                                } else {
+                                  const summary = Object.entries(_answers)
+                                    .map(([qIdx, optionIndices]) => {
+                                      const questionObj = msg.questions?.[Number(qIdx)];
+                                      const qTitle = questionObj?.q || `Question ${Number(qIdx) + 1}`;
+                                      const selected = Array.isArray(optionIndices)
+                                        ? optionIndices.map((i) => questionObj?.options?.[i] || i).join(", ")
+                                        : optionIndices;
+                                      return `${qTitle} -> ${selected}`;
+                                    })
+                                    .join("\n");
+                                  handleSend(`Survey Responses:\n${summary}`);
+                                }
                               }}
                             />
                           </div>

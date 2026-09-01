@@ -75,14 +75,18 @@ Governed Unity Catalog Delta Tables in schema 'workspace.campus_explorer':
 7. workspace.campus_explorer.procurement_inventory (item_id, item_name, category, current_stock, min_reorder_threshold, preferred_supplier, unit_price_inr, lead_time_days, last_restock_date)
 
 Available Governed Tools:
-- search_events: Search and display campus events by keyword, category ('hackathon' | 'workshop' | 'meeting' | 'social' | 'career' | 'sports'), food availability, or tags. Automatically triggers interactive event cards in the chat UI.
+- ask_questions: Trigger an interactive multi-step MCQ survey in the chat to collect student preferences, interests, experience level, dietary restrictions, event tracks, or schedule availability. Use this tool autonomously whenever the student asks for recommendations, asks to be guided, or when you need structured inputs.
+- search_events: Search and display campus events by keyword, category ('hackathon' | 'workshop' | 'meeting' | 'social' | 'career' | 'sports'), food availability, or tags.
 - query_lakehouse_sql: Execute SQL on Unity Catalog tables (e.g. SELECT * FROM workspace.campus_explorer.campus_events ORDER BY event_date ASC).
 - search_knowledge_sources: Search documents and policies.
 - show_events_grid: Render interactive campus event cards in the chat UI. Parameter: { eventIds: string[] } e.g. ["EV-10", "EV-08", "EV-01"].
-- ask_questions: Present interactive clarifying questions (ApprovalCard with radio/checkbox choices).
 - show_approval_card, show_fine_tune_card, show_recommendation_card.
 
 Instructions:
+- Autonomous Multi-Step MCQ Survey ('ask_questions'):
+  1. Whenever the student wants recommendations (e.g. "Recommend a hackathon or club for me", "Help me find events for my major", "Help me choose a track"), or when multiple clarifying questions are needed, CALL 'ask_questions' with 2 to 4 structured MCQ questions.
+  2. Each question must include 'q' (the question text), 'type' ('radio' for single-choice or 'check' for multi-select), and 'options' (array of choice strings).
+  3. When the student completes the survey, their answers will be automatically forwarded back to you in the chat so you can provide personalized Lakehouse recommendations.
 - Event Card Rules:
   1. ONLY call "show_events_grid" when the student specifically asks to view, discover, or recommend campus events, hackathons, workshops, or activities.
   2. Only provide the exact, well-matched event IDs (e.g. ['EV-10', 'EV-08']).
@@ -90,26 +94,6 @@ Instructions:
 - When an event query is received, call "search_events" or "query_lakehouse_sql" first, then call "show_events_grid" with the filtered IDs.
 - Format responses in clean GitHub-flavored markdown.
 `;
-
-function fallbackLakehouseQuery(prompt: string): string {
-  const lower = prompt.toLowerCase();
-  if (/(inventory|stock|cafe|dairy|waffle|supply|supplies)/.test(lower)) {
-    return "SELECT * FROM workspace.campus_explorer.procurement_inventory ORDER BY current_stock ASC LIMIT 25";
-  }
-  if (/(lab|labs|club|clubs|recruit|research)/.test(lower)) {
-    return "SELECT * FROM workspace.campus_explorer.clubs_and_labs WHERE recruitment_open = true LIMIT 25";
-  }
-  if (/(alumni|career|trajectory|sde|research role)/.test(lower)) {
-    return "SELECT * FROM workspace.campus_explorer.alumni_career_pathways LIMIT 25";
-  }
-  if (/(meetup|meetups|bengaluru|city|indiranagar|koramangala)/.test(lower)) {
-    return "SELECT * FROM workspace.campus_explorer.city_tech_events ORDER BY event_date ASC LIMIT 25";
-  }
-  if (/(event|events|hackathon|workshop|activity|activities|mixer|social|sports|fest|ideathon)/.test(lower)) {
-    return "SELECT * FROM workspace.campus_explorer.campus_events ORDER BY event_date ASC LIMIT 25";
-  }
-  return "";
-}
 
 export async function POST(req: NextRequest) {
   try {
@@ -221,11 +205,6 @@ export async function POST(req: NextRequest) {
             // run a query") and then stop when tool choice is left entirely
             // to them. Data-backed prompts need an actual governed lookup on
             // the first pass; after that, let the model choose how to finish.
-            const latestUserPrompt = [...messages]
-              .reverse()
-              .find((message: { role?: string }) => message.role === "user")?.content || "";
-            const needsLakehouseTool = loopCount === 1 && /\b(event|events|club|clubs|lab|labs|alumni|career|meetup|meetups|inventory|stock|cafe|food|workshop|hackathon|schedule|campus|lakehouse|sql|delta)\b/i.test(latestUserPrompt);
-
             const payload = {
               model,
               messages: conversationMessages,
@@ -309,22 +288,7 @@ export async function POST(req: NextRequest) {
               }
             }
 
-            let toolCalls = Array.from(toolCallsMap.values());
-
-            // Some providers acknowledge the lookup in reasoning but stop
-            // without emitting a function call. Complete that intent through
-            // the same safe, read-only SQL tool path, then use the next model
-            // pass to turn the result into a user-facing answer.
-            if (needsLakehouseTool && toolCalls.length === 0) {
-              toolCalls = [{
-                id: `fallback_sql_${loopCount}`,
-                name: "query_lakehouse_sql",
-                args: JSON.stringify({
-                  query: fallbackLakehouseQuery(latestUserPrompt),
-                  explanation: "Provider did not emit its requested SQL tool call.",
-                }),
-              }];
-            }
+            const toolCalls = Array.from(toolCallsMap.values());
             
             // Check if any server-executable tools were called (query_lakehouse_sql, search_events, search_knowledge_sources)
             const serverToolCalls = toolCalls.filter(
