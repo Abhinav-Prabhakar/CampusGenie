@@ -82,79 +82,44 @@ const SUGGESTIONS = [
 function resolveRelevantEvents(
   toolEventIds: string[],
   content: string,
-  thinking: string,
-  userPrompt: string,
   allEvents: EventRecord[]
 ): EventRecord[] {
   const matched = new Map<string, EventRecord>();
 
-  // 1. Explicit tool call IDs
-  for (const id of toolEventIds) {
-    const ev = allEvents.find(
-      (e) =>
-        e.id.toLowerCase() === id.toLowerCase() ||
-        e.id.replace("-", "").toLowerCase() === id.replace("-", "").toLowerCase()
-    );
-    if (ev) matched.set(ev.id, ev);
-  }
-
-  // 2. Mentioned event IDs in content or thinking (e.g. EV-01, EV-10)
-  const combined = `${content} ${thinking} ${userPrompt}`;
-  const idMatches = combined.match(/EV-?\d+/gi) || [];
-  for (const raw of idMatches) {
-    const norm = raw.toUpperCase().replace(/^EV(\d+)$/, "EV-$1");
-    const ev = allEvents.find((e) => e.id === norm || e.id.replace("-", "") === norm.replace("-", ""));
-    if (ev) matched.set(ev.id, ev);
-  }
-
-  // 3. Title matches in content
-  for (const ev of allEvents) {
-    if (
-      combined.toLowerCase().includes(ev.title.toLowerCase()) ||
-      content.toLowerCase().includes(ev.title.toLowerCase())
-    ) {
-      matched.set(ev.id, ev);
+  // 1. Explicit tool call IDs (from show_events_grid or search_events)
+  if (Array.isArray(toolEventIds)) {
+    for (const id of toolEventIds) {
+      if (!id || typeof id !== "string") continue;
+      const cleanId = id.trim().toUpperCase().replace(/^EV(\d+)$/, "EV-$1");
+      const ev = allEvents.find(
+        (e) =>
+          e.id.toUpperCase() === cleanId ||
+          e.id.replace("-", "").toUpperCase() === cleanId.replace("-", "")
+      );
+      if (ev) matched.set(ev.id, ev);
     }
   }
 
-  // 4. Keyword matches if query asked about specific domains
-  const q = (userPrompt + " " + combined).toLowerCase();
-  const isEventQuery = /\b(event|events|hackathon|workshop|meeting|mixer|social|career|sports|fest|ideathon|talk|pizza|food)\b/i.test(q);
-
-  if (isEventQuery) {
-    if (q.includes("hackathon") || q.includes("hack") || q.includes("build") || q.includes("ideathon")) {
-      allEvents.filter((e) => e.cat === "hackathon").forEach((e) => matched.set(e.id, e));
-    }
-    if (
-      q.includes("free food") ||
-      q.includes("pizza") ||
-      q.includes("snacks") ||
-      q.includes("food provided") ||
-      q.includes("food")
-    ) {
-      allEvents.filter((e) => e.flags?.food).forEach((e) => matched.set(e.id, e));
-    }
-    if (q.includes("career") || q.includes("resume") || q.includes("internship")) {
-      allEvents.filter((e) => e.cat === "career").forEach((e) => matched.set(e.id, e));
-    }
-    if (q.includes("workshop") || q.includes("design") || q.includes("figma") || q.includes("delta lake")) {
-      allEvents.filter((e) => e.cat === "workshop").forEach((e) => matched.set(e.id, e));
-    }
-    if (q.includes("social") || q.includes("mixer") || q.includes("firepit") || q.includes("music") || q.includes("jam")) {
-      allEvents.filter((e) => e.cat === "social").forEach((e) => matched.set(e.id, e));
-    }
-    if (q.includes("sports") || q.includes("basketball") || q.includes("yoga") || q.includes("hoops")) {
-      allEvents.filter((e) => e.cat === "sports").forEach((e) => matched.set(e.id, e));
-    }
-    if (q.includes("systems") || q.includes("robotics") || q.includes("ai") || q.includes("acm")) {
-      allEvents.filter((e) => e.id === "EV-01" || e.id === "EV-05" || e.id === "EV-10").forEach((e) => matched.set(e.id, e));
+  // 2. Mentioned event IDs in the assistant's final response text (e.g. EV-01, EV-10)
+  if (content && typeof content === "string") {
+    const idMatches = content.match(/\bEV-?\d+\b/gi) || [];
+    for (const raw of idMatches) {
+      const norm = raw.toUpperCase().replace(/^EV(\d+)$/, "EV-$1");
+      const ev = allEvents.find((e) => e.id === norm || e.id.replace("-", "") === norm.replace("-", ""));
+      if (ev) matched.set(ev.id, ev);
     }
 
-    if (matched.size === 0 && (q.includes("event") || q.includes("schedule") || q.includes("happening") || q.includes("upcoming"))) {
-      allEvents.slice(0, 4).forEach((e) => matched.set(e.id, e));
+    // 3. Exact full title match in the assistant's response text
+    for (const ev of allEvents) {
+      if (ev.title && ev.title.length > 6) {
+        if (content.toLowerCase().includes(ev.title.toLowerCase())) {
+          matched.set(ev.id, ev);
+        }
+      }
     }
   }
 
+  // Return strictly matching events; if none explicitly referenced, return empty array (no random cards)
   return Array.from(matched.values());
 }
 
@@ -474,8 +439,6 @@ export default function CampusGenieChatPage() {
               const currentMatchedEvents = resolveRelevantEvents(
                 explicitToolEventIds,
                 assistantContent,
-                assistantThinking,
-                text,
                 lakehouseEvents
               );
 
@@ -536,8 +499,6 @@ export default function CampusGenieChatPage() {
       const finalMatchedEvents = resolveRelevantEvents(
         finalToolEventIds,
         assistantContent,
-        assistantThinking,
-        text,
         availableEvents
       );
 

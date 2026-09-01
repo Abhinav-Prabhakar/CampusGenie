@@ -83,10 +83,11 @@ Available Governed Tools:
 - show_approval_card, show_fine_tune_card, show_recommendation_card.
 
 Instructions:
-- When a student asks about events, hackathons, workshops, meetings, clubs, or campus activities:
-  1. Call "search_events" or "query_lakehouse_sql" to query live governed records.
-  2. ALWAYS call "show_events_grid" with the relevant event_ids (e.g. ['EV-10', 'EV-08']) so the interactive event cards render directly in chat.
-  3. Include a concise, helpful markdown summary with dates, venues, food availability, and key highlights.
+- Event Card Rules:
+  1. ONLY call "show_events_grid" when the student specifically asks to view, discover, or recommend campus events, hackathons, workshops, or activities.
+  2. Only provide the exact, well-matched event IDs (e.g. ['EV-10', 'EV-08']).
+  3. Never call "show_events_grid" for general questions, database schemas, inventory, attendance, surveys, or unrelated topics.
+- When an event query is received, call "search_events" or "query_lakehouse_sql" first, then call "show_events_grid" with the filtered IDs.
 - Format responses in clean GitHub-flavored markdown.
 `;
 
@@ -104,7 +105,10 @@ function fallbackLakehouseQuery(prompt: string): string {
   if (/(meetup|meetups|bengaluru|city|indiranagar|koramangala)/.test(lower)) {
     return "SELECT * FROM workspace.campus_explorer.city_tech_events ORDER BY event_date ASC LIMIT 25";
   }
-  return "SELECT * FROM workspace.campus_explorer.campus_events ORDER BY event_date ASC LIMIT 25";
+  if (/(event|events|hackathon|workshop|activity|activities|mixer|social|sports|fest|ideathon)/.test(lower)) {
+    return "SELECT * FROM workspace.campus_explorer.campus_events ORDER BY event_date ASC LIMIT 25";
+  }
+  return "";
 }
 
 export async function POST(req: NextRequest) {
@@ -434,31 +438,6 @@ export async function POST(req: NextRequest) {
                       ? records
                       : { error: queryRes.error || `SQL execution ended with state: ${queryRes.state}` }
                   );
-
-                  // If this query was on campus_events, extract matching event IDs for the UI
-                  if (typeof parsedArgs.query === "string" && /campus_events/i.test(parsedArgs.query)) {
-                    const eventIds = (Array.isArray(records) ? records : [])
-                      .map((r: any) => r.event_id || r.id)
-                      .filter((id: any) => typeof id === "string" && /^EV-?\d+$/i.test(id))
-                      .map((id: string) => id.toUpperCase().replace(/^EV(\d+)$/, "EV-$1"));
-
-                    if (eventIds.length > 0) {
-                      sendEvent({
-                        choices: [{
-                          delta: {
-                            tool_calls: [{
-                              index: 0,
-                              id: `events_grid_${Date.now()}`,
-                              function: {
-                                name: "show_events_grid",
-                                arguments: JSON.stringify({ eventIds }),
-                              },
-                            }],
-                          },
-                        }],
-                      });
-                    }
-                  }
 
                   sendEvent({
                     type: "tool_status",

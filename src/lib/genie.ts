@@ -137,57 +137,37 @@ export async function streamGenieConversation(
     send({ choices: [{ delta: { reasoning_content: `\n\`\`\`sql\n${query}\n\`\`\`\n` } }] });
   }
 
-  // Map of known seed events in case Genie outputs title text instead of IDs
-  const KNOWN_EVENTS = [
-    { id: "EV-01", title: "ACM Weekly — Systems & Pizza", cat: "meeting", keywords: ["acm", "systems", "pizza"] },
-    { id: "EV-02", title: "Figma 101 — Campus Design Systems", cat: "workshop", keywords: ["figma", "design"] },
-    { id: "EV-03", title: "Transfer Student Firepit Mixer", cat: "social", keywords: ["firepit", "mixer", "transfer"] },
-    { id: "EV-04", title: "Databricks Coffee Chats & Career AMA", cat: "career", keywords: ["databricks", "coffee", "career"] },
-    { id: "EV-05", title: "Robotics Lab Open House", cat: "meeting", keywords: ["robotics", "quadrupeds", "ros2"] },
-    { id: "EV-06", title: "Resume Lab — Drop-in Review", cat: "career", keywords: ["resume", "interview"] },
-    { id: "EV-07", title: "Debate Society — Practice Rounds", cat: "meeting", keywords: ["debate"] },
-    { id: "EV-08", title: "Lightning Blitz Mini-Hack", cat: "hackathon", keywords: ["lightning", "mini-hack", "blitz"] },
-    { id: "EV-09", title: "Moonlight Jam on the Quad", cat: "social", keywords: ["moonlight", "jam", "music"] },
-    { id: "EV-10", title: "HackDavis 36 — Build for Good", cat: "hackathon", keywords: ["hackdavis", "hackathon", "build for good"] },
-    { id: "EV-11", title: "Intramural 3v3 Hoops Blitz", cat: "sports", keywords: ["hoops", "basketball", "3v3"] },
-    { id: "EV-12", title: "Sunrise Yoga — Library Terrace", cat: "sports", keywords: ["yoga", "sunrise", "wellness"] },
-    { id: "EV-13", title: "Genie Ideathon — 48h Virtual Build", cat: "hackathon", keywords: ["ideathon", "genie ideathon"] },
-    { id: "EV-14", title: "Delta Lake Deep-Dive with Genie", cat: "workshop", keywords: ["delta lake", "sql"] },
-  ];
-
-  // Match IDs from answer text
+  // Strictly match event IDs or exact titles if explicitly mentioned in Genie's answer
   if (answer) {
-    for (const raw of answer.match(/EV-?\d+/gi) || []) {
+    for (const raw of answer.match(/\bEV-?\d+\b/gi) || []) {
       eventIds.add(raw.toUpperCase().replace(/^EV(\d+)$/, "EV-$1"));
     }
 
-    // Match titles in answer or prompt
-    const fullText = (answer + " " + prompt).toLowerCase();
+    const KNOWN_EVENTS = [
+      { id: "EV-01", title: "ACM Weekly — Systems & Pizza" },
+      { id: "EV-02", title: "Figma 101 — Campus Design Systems" },
+      { id: "EV-03", title: "Transfer Student Firepit Mixer" },
+      { id: "EV-04", title: "Databricks Coffee Chats & Career AMA" },
+      { id: "EV-05", title: "Robotics Lab Open House" },
+      { id: "EV-06", title: "Resume Lab — Drop-in Review" },
+      { id: "EV-07", title: "Debate Society — Practice Rounds" },
+      { id: "EV-08", title: "Lightning Blitz Mini-Hack" },
+      { id: "EV-09", title: "Moonlight Jam on the Quad" },
+      { id: "EV-10", title: "HackDavis 36 — Build for Good" },
+      { id: "EV-11", title: "Intramural 3v3 Hoops Blitz" },
+      { id: "EV-12", title: "Sunrise Yoga — Library Terrace" },
+      { id: "EV-13", title: "Genie Ideathon — 48h Virtual Build" },
+      { id: "EV-14", title: "Delta Lake Deep-Dive with Genie" },
+    ];
+
     for (const ke of KNOWN_EVENTS) {
-      if (
-        fullText.includes(ke.title.toLowerCase()) ||
-        ke.keywords.some((kw) => fullText.includes(kw))
-      ) {
+      if (answer.toLowerCase().includes(ke.title.toLowerCase())) {
         eventIds.add(ke.id);
       }
     }
   }
 
-  // If query is specifically about hackathons/events and none matched yet
-  if (eventIds.size === 0) {
-    const q = prompt.toLowerCase();
-    if (q.includes("hackathon") || q.includes("hack") || q.includes("coding")) {
-      eventIds.add("EV-10");
-      eventIds.add("EV-08");
-      eventIds.add("EV-13");
-    } else if (q.includes("event") || q.includes("activities") || q.includes("happening")) {
-      eventIds.add("EV-01");
-      eventIds.add("EV-10");
-      eventIds.add("EV-08");
-      eventIds.add("EV-04");
-    }
-  }
-
+  // Only emit show_events_grid if specific verified events were matched
   if (eventIds.size > 0) {
     send({
       choices: [{
@@ -197,7 +177,7 @@ export async function streamGenieConversation(
             id: "genie_events",
             function: {
               name: "show_events_grid",
-              arguments: JSON.stringify({ eventIds: Array.from(eventIds), summary: "Events selected by Campus Genie." }),
+              arguments: JSON.stringify({ eventIds: Array.from(eventIds), summary: `Matched ${eventIds.size} events` }),
             },
           }],
         },
