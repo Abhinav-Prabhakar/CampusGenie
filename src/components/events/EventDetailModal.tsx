@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import type { CampusEvent } from "./EventsView";
 import EventIcons from "./EventIcons";
 import EventPassModal from "./EventPassModal";
+import "@/app/events.css";
 
 type EventDetailModalProps = {
   event: CampusEvent | null;

@@ -25,6 +25,7 @@ import { useChatStore, createThreadTitle, type ChatThread } from "@/lib/chatStor
 import ChatEventCards from "@/components/events/ChatEventCards";
 import type { EventRecord } from "@/app/api/events/route";
 import type { ApprovalQuestion } from "@/components/primitives/ApprovalCard";
+import "@/app/events.css";
 
 export type ChatMessage = {
   id: string;
