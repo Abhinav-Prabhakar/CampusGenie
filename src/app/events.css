@@ -1427,3 +1427,99 @@ html:not(.dark) .cat {
   .events-scope .dfoot { flex-wrap: wrap; }
 }
 
+/* ── Avatar Initial Badges (.mark) Alignment Fixes ────── */
+.events-scope .mark,
+.events-scope mark {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  min-width: 20px !important;
+  height: 20px !important;
+  padding: 0 5px !important;
+  border-radius: 5px !important;
+  background: var(--surface) !important;
+  border: 1px solid var(--line-strong) !important;
+  color: var(--ink) !important;
+  font-family: var(--font-mono) !important;
+  font-size: 10px !important;
+  font-weight: 600 !important;
+  line-height: 1 !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.03em !important;
+  flex-shrink: 0 !important;
+  box-shadow: 0 1px 2px oklch(0 0 0 / 0.15) !important;
+  vertical-align: middle !important;
+}
+
+.events-scope .host {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+}
+
+.events-scope .dmeta .host .mark {
+  height: 19px !important;
+  min-width: 19px !important;
+  font-size: 9.5px !important;
+  background: color-mix(in srgb, var(--tag) 15%, var(--surface)) !important;
+  border-color: color-mix(in srgb, var(--tag) 30%, var(--line)) !important;
+  color: color-mix(in srgb, var(--tag) 85%, var(--ink)) !important;
+}
+
+.events-scope .org {
+  display: flex !important;
+  align-items: center !important;
+  gap: 10px !important;
+}
+
+.events-scope .org .mark {
+  width: 32px !important;
+  height: 32px !important;
+  min-width: 32px !important;
+  font-size: 11px !important;
+  border-radius: 8px !important;
+  background: color-mix(in srgb, var(--tag) 18%, var(--inset)) !important;
+  border: 1px solid color-mix(in srgb, var(--tag) 35%, var(--line-strong)) !important;
+  color: var(--ink) !important;
+}
+
+.events-scope .avs {
+  display: inline-flex !important;
+  align-items: center !important;
+}
+
+.events-scope .avs .mark {
+  width: 22px !important;
+  height: 22px !important;
+  min-width: 22px !important;
+  padding: 0 !important;
+  border-radius: 6px !important;
+  border: 2px solid var(--canvas) !important;
+}
+
+.events-scope .avs .mark + .mark {
+  margin-left: -5px !important;
+}
+
+.events-scope .ringcap .avs {
+  margin-top: 5px !important;
+}
+
+.events-scope .ringcap .avs .mark {
+  width: 19px !important;
+  height: 19px !important;
+  min-width: 19px !important;
+  font-size: 8.5px !important;
+  border-radius: 5px !important;
+}
+
+.events-scope .g-tile .mark {
+  width: 24px !important;
+  height: 24px !important;
+  min-width: 24px !important;
+  font-size: 10px !important;
+  border-radius: 6px !important;
+  background: var(--inset) !important;
+}
+
+
