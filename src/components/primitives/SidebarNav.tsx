@@ -165,10 +165,20 @@ function IconArrowBoxLeft({ size = 16 }: { size?: number }) {
  * Primary navigation: Chat, Events, Admin, Sources, and Gallery.
  * ───────────────────────────────────────────────────────── */
 
+function IconCalCheck({ size = 18 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="4.5" width="18" height="17" rx="2.5" />
+      <path d="M8 2.5v4M16 2.5v4M3 10h18M9 15.5l2 2 4-4.5" />
+    </svg>
+  );
+}
+
 const WORKSPACE = { key: "campus_genie", name: "Campus Genie", monogram: "CG" };
 
 export const NAV_ITEMS = [
   { key: "events", label: "Events", icon: <IconCalendar size={18} />, count: "14", href: "/events" },
+  { key: "attendance", label: "Attendance", icon: <IconCalCheck size={18} />, count: "86%", href: "/attendance" },
   { key: "admin", label: "Student Admin", icon: <IconShield size={18} />, count: "Admin", href: "/admin" },
   { key: "sources", label: "Sources", icon: <IconDatabase size={18} />, count: "5", href: "/sources" },
   { key: "gallery", label: "Gallery", icon: <IconSparkles size={18} />, href: "/gallery" },
