@@ -102,6 +102,15 @@ Instructions:
 - Format responses in clean GitHub-flavored markdown.
 `;
 
+function isEventDiscoveryRequest(prompt: unknown): boolean {
+  if (typeof prompt !== "string") return false;
+  const value = prompt.toLowerCase();
+  const mentionsEvents = /\b(events?|hackathons?|workshops?|activities|meetups?|mixers?)\b/.test(value);
+  const asksToDiscover = /\b(show|find|list|discover|recommend|suggest|browse|explore|upcoming|happening|available|attend|calendar|this week|weekend|today|tomorrow)\b/.test(value);
+  const requestsMutation = /\b(create|update|edit|delete|cancel|set|rsvp|register|submit|approve)\b/.test(value);
+  return mentionsEvents && asksToDiscover && !requestsMutation;
+}
+
 export async function POST(req: NextRequest) {
   try {
     // 1. Quota & Rate Limiter Check (RPM & RPD)
@@ -233,19 +242,24 @@ export async function POST(req: NextRequest) {
         try {
           let loopCount = 0;
           const maxLoops = 3;
+          const requireEventSearch = isEventDiscoveryRequest(latestPrompt);
 
           while (loopCount < maxLoops) {
             loopCount++;
 
-            // Some reasoning models emit a natural-language preamble ("I'll
-            // run a query") and then stop when tool choice is left entirely
-            // to them. Data-backed prompts need an actual governed lookup on
-            // the first pass; after that, let the model choose how to finish.
+            // Qwen's reasoning stream can end after a tool-intent preamble when
+            // the first tool is optional. Event discovery always needs a live,
+            // governed lookup, so require that first search instead of relying
+            // on the model to transition from reasoning to an auto tool call.
+            const toolChoice = requireEventSearch && loopCount === 1
+              ? { type: "function" as const, function: { name: "search_events" } }
+              : "auto";
             const payload = {
               model,
               messages: conversationMessages,
               tools: LLM_TOOLS,
-              tool_choice: "auto",
+              tool_choice: toolChoice,
+              parallel_tool_calls: false,
               stream: true,
               temperature: 0.3,
             };
@@ -334,24 +348,6 @@ export async function POST(req: NextRequest) {
               (tc) => tc.name === "query_lakehouse_sql" || tc.name === "search_events" || tc.name === "search_knowledge_sources"
             );
 
-            // Forward UI tool calls to client if present
-            const uiToolCalls = toolCalls.filter(
-              (tc) => tc.name !== "query_lakehouse_sql" && tc.name !== "search_events" && tc.name !== "search_knowledge_sources"
-            );
-            if (uiToolCalls.length > 0) {
-              sendEvent({
-                choices: [{
-                  delta: {
-                    tool_calls: uiToolCalls.map((tc, idx) => ({
-                      index: idx,
-                      id: tc.id || `call_${idx}`,
-                      function: { name: tc.name, arguments: tc.args },
-                    })),
-                  },
-                }],
-              });
-            }
-
             if (serverToolCalls.length === 0) {
               // No server tools to execute; turn is complete!
               break;
@@ -383,7 +379,10 @@ export async function POST(req: NextRequest) {
                   });
 
                   const queryTerm = (parsedArgs.query || "").replace(/'/g, "''").toLowerCase();
-                  let whereClause = `LOWER(title) LIKE '%${queryTerm}%' OR LOWER(category) LIKE '%${queryTerm}%' OR LOWER(tags) LIKE '%${queryTerm}%' OR LOWER(description) LIKE '%${queryTerm}%'`;
+                  // `tags` is ARRAY<STRING> in Unity Catalog. Calling LOWER on
+                  // it made every Qwen event search fail before cards could be
+                  // rendered, even when the title itself matched.
+                  let whereClause = `(COALESCE(LOWER(title), '') LIKE '%${queryTerm}%' OR COALESCE(LOWER(category), '') LIKE '%${queryTerm}%' OR COALESCE(LOWER(array_join(tags, ' ')), '') LIKE '%${queryTerm}%' OR COALESCE(LOWER(description), '') LIKE '%${queryTerm}%')`;
                   if (parsedArgs.category && parsedArgs.category !== "all") {
                     whereClause += ` AND LOWER(category) = '${parsedArgs.category.toLowerCase()}'`;
                   }

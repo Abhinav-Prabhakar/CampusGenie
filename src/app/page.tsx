@@ -449,7 +449,8 @@ export default function CampusGenieChatPage() {
       const decoder = new TextDecoder();
       let assistantContent = "";
       let assistantThinking = "";
-      const toolMap = new Map<number, { name: string; args: string }>();
+      const toolMap = new Map<string, { name: string; args: string }>();
+      const toolIndexMap = new Map<number, string>();
       let lineBuffer = "";
       let streamError: string | null = null;
 
@@ -501,10 +502,12 @@ export default function CampusGenieChatPage() {
               if (delta?.tool_calls) {
                 for (const tc of delta.tool_calls) {
                   const idx = tc.index ?? 0;
-                  const current = toolMap.get(idx) || { name: "", args: "" };
+                  const toolKey = tc.id || toolIndexMap.get(idx) || `tool_${idx}`;
+                  if (tc.id) toolIndexMap.set(idx, tc.id);
+                  const current = toolMap.get(toolKey) || { name: "", args: "" };
                   if (tc.function?.name) current.name = tc.function.name;
                   if (tc.function?.arguments) current.args += tc.function.arguments;
-                  toolMap.set(idx, current);
+                  toolMap.set(toolKey, current);
                 }
               }
 
