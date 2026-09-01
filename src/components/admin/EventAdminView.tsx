@@ -162,26 +162,20 @@ type SurveyQuestion = {
 const INITIAL_QUESTIONS: SurveyQuestion[] = [
   {
     id: "q1",
-    type: "text",
-    title: "What should we call your team?",
-    required: true,
-  },
-  {
-    id: "q2",
     type: "radio",
     title: "Which track do you want to build in?",
     required: true,
     options: ["Campus Genie agents", "Lakehouse analytics", "Open theme"],
   },
   {
-    id: "q3",
+    id: "q2",
     type: "checkbox",
     title: "Any dietary needs? (meals are covered)",
     required: false,
     options: ["Vegetarian", "Vegan", "Gluten-free"],
   },
   {
-    id: "q4",
+    id: "q3",
     type: "scale",
     title: "How prepared do you feel for a 48h sprint?",
     required: false,
@@ -189,9 +183,15 @@ const INITIAL_QUESTIONS: SurveyQuestion[] = [
     scaleMax: "Fully",
   },
   {
-    id: "q5",
+    id: "q4",
     type: "star",
     title: "Rate last year's Hack the Lake",
+    required: false,
+  },
+  {
+    id: "q5",
+    type: "text",
+    title: "What topics or tools are you most excited to explore?",
     required: false,
   },
 ];
@@ -1686,9 +1686,9 @@ export default function EventAdminView() {
                       </div>
 
                       <div className="pq">
-                        <h4>What should we call your team? <span className="pv-req">*</span></h4>
+                        <h4>What topics or tools are you most excited to explore?</h4>
                         <p className="pq-hint"><svg className="i i11" aria-hidden="true" style={{ verticalAlign: -1 }}><use href="#i-type"/></svg> Short-answer text</p>
-                        <input type="text" placeholder="Your answer" aria-label="Team name" />
+                        <input type="text" placeholder="e.g. AI Agents, Delta Lake, Unity Catalog" aria-label="Topics of interest" />
                       </div>
 
                       <div className="pq">
@@ -1843,13 +1843,13 @@ export default function EventAdminView() {
 
                     {/* Card 5: Keywords */}
                     <div className="rc">
-                      <div className="rc-h"><span className="qt"><svg className="i i12" aria-hidden="true"><use href="#i-type"/></svg></span><h4>What should we call your team?</h4><span className="n">top terms</span></div>
+                      <div className="rc-h"><span className="qt"><svg className="i i12" aria-hidden="true"><use href="#i-type"/></svg></span><h4>What topics or tools are you most excited to explore?</h4><span className="n">top terms</span></div>
                       <div className="kw">
-                        <span>lakehouse<b>14</b></span>
-                        <span>genie<b>11</b></span>
-                        <span>delta-duck<b>7</b></span>
-                        <span>oklch-owls<b>6</b></span>
-                        <span>blue-bars<b>4</b></span>
+                        <span>lakehouse<b>24</b></span>
+                        <span>genie<b>19</b></span>
+                        <span>agents<b>16</b></span>
+                        <span>delta<b>12</b></span>
+                        <span>governance<b>8</b></span>
                       </div>
                     </div>
 
