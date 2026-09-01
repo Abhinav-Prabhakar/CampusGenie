@@ -281,6 +281,9 @@ export async function POST(req: NextRequest) {
                       if (tc.function?.arguments) cur.args += tc.function.arguments;
                       toolCallsMap.set(idx, cur);
                     }
+                    sendEvent({
+                      choices: [{ delta: { tool_calls: delta.tool_calls } }],
+                    });
                   }
                 } catch {
                   // ignore partial JSON parse during stream

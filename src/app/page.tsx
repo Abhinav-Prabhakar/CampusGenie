@@ -85,19 +85,55 @@ const SUGGESTIONS = [
 
 function normalizeQuestions(raw: any): ApprovalQuestion[] | null {
   if (!raw) return null;
-  const list = Array.isArray(raw) ? raw : Array.isArray(raw.questions) ? raw.questions : Array.isArray(raw.survey) ? raw.survey : null;
+  let parsed = raw;
+  if (typeof raw === "string") {
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      return null;
+    }
+  }
+  const list = Array.isArray(parsed)
+    ? parsed
+    : Array.isArray(parsed.questions)
+      ? parsed.questions
+      : Array.isArray(parsed.survey)
+        ? parsed.survey
+        : Array.isArray(parsed.items)
+          ? parsed.items
+          : Array.isArray(parsed.data)
+            ? parsed.data
+            : null;
   if (!list || list.length === 0) return null;
 
   return list.map((item: any, idx: number) => {
-    const rawOptions = Array.isArray(item.options) ? item.options : Array.isArray(item.choices) ? item.choices : ["Yes", "No"];
-    const options = rawOptions.map((opt: any) => (typeof opt === "string" ? opt : opt?.label || opt?.text || String(opt)));
-    const rawType = String(item.type || item.selectionType || "").toLowerCase();
-    const type: "radio" | "check" = rawType.includes("check") || rawType.includes("multi") ? "check" : "radio";
+    if (typeof item === "string") {
+      return {
+        id: `q_${idx}`,
+        q: item,
+        type: "radio",
+        options: ["Yes", "No", "Maybe"],
+        allowCustom: true,
+      };
+    }
+    const rawOptions = Array.isArray(item.options)
+      ? item.options
+      : Array.isArray(item.choices)
+        ? item.choices
+        : Array.isArray(item.answers)
+          ? item.answers
+          : ["Yes", "No"];
+    const options = rawOptions.map((opt: any) =>
+      typeof opt === "string" ? opt : opt?.label || opt?.text || opt?.title || String(opt)
+    );
+    const rawType = String(item.type || item.selectionType || item.mode || "").toLowerCase();
+    const type: "radio" | "check" =
+      rawType.includes("check") || rawType.includes("multi") ? "check" : "radio";
     return {
       id: item.id || `q_${idx}`,
       q: item.q || item.question || item.title || item.prompt || `Question ${idx + 1}`,
       type,
-      options,
+      options: options.length > 0 ? options : ["Yes", "No"],
       allowCustom: item.allowCustom !== false,
     };
   });
