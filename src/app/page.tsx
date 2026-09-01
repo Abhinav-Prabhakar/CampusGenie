@@ -98,7 +98,7 @@ function resolveRelevantEvents(
   }
 
   // 2. Mentioned event IDs in content or thinking (e.g. EV-01, EV-10)
-  const combined = `${content} ${thinking}`;
+  const combined = `${content} ${thinking} ${userPrompt}`;
   const idMatches = combined.match(/EV-?\d+/gi) || [];
   for (const raw of idMatches) {
     const norm = raw.toUpperCase().replace(/^EV(\d+)$/, "EV-$1");
@@ -117,11 +117,14 @@ function resolveRelevantEvents(
   }
 
   // 4. Keyword matches if query asked about specific domains
-  if (matched.size === 0) {
-    const q = (userPrompt + " " + combined).toLowerCase();
-    if (q.includes("hackathon") || q.includes("hack") || q.includes("build")) {
+  const q = (userPrompt + " " + combined).toLowerCase();
+  const isEventQuery = /\b(event|events|hackathon|workshop|meeting|mixer|social|career|sports|fest|ideathon|talk|pizza|food)\b/i.test(q);
+
+  if (isEventQuery) {
+    if (q.includes("hackathon") || q.includes("hack") || q.includes("build") || q.includes("ideathon")) {
       allEvents.filter((e) => e.cat === "hackathon").forEach((e) => matched.set(e.id, e));
-    } else if (
+    }
+    if (
       q.includes("free food") ||
       q.includes("pizza") ||
       q.includes("snacks") ||
@@ -129,25 +132,24 @@ function resolveRelevantEvents(
       q.includes("food")
     ) {
       allEvents.filter((e) => e.flags?.food).forEach((e) => matched.set(e.id, e));
-    } else if (q.includes("career") || q.includes("resume") || q.includes("internship")) {
+    }
+    if (q.includes("career") || q.includes("resume") || q.includes("internship")) {
       allEvents.filter((e) => e.cat === "career").forEach((e) => matched.set(e.id, e));
-    } else if (
-      q.includes("systems") ||
-      q.includes("robotics") ||
-      q.includes("ai") ||
-      q.includes("design") ||
-      q.includes("workshop")
-    ) {
-      allEvents
-        .filter((e) => e.cat === "workshop" || e.cat === "meeting")
-        .slice(0, 4)
-        .forEach((e) => matched.set(e.id, e));
-    } else if (
-      q.includes("event") ||
-      q.includes("happening") ||
-      q.includes("schedule") ||
-      q.includes("this week")
-    ) {
+    }
+    if (q.includes("workshop") || q.includes("design") || q.includes("figma") || q.includes("delta lake")) {
+      allEvents.filter((e) => e.cat === "workshop").forEach((e) => matched.set(e.id, e));
+    }
+    if (q.includes("social") || q.includes("mixer") || q.includes("firepit") || q.includes("music") || q.includes("jam")) {
+      allEvents.filter((e) => e.cat === "social").forEach((e) => matched.set(e.id, e));
+    }
+    if (q.includes("sports") || q.includes("basketball") || q.includes("yoga") || q.includes("hoops")) {
+      allEvents.filter((e) => e.cat === "sports").forEach((e) => matched.set(e.id, e));
+    }
+    if (q.includes("systems") || q.includes("robotics") || q.includes("ai") || q.includes("acm")) {
+      allEvents.filter((e) => e.id === "EV-01" || e.id === "EV-05" || e.id === "EV-10").forEach((e) => matched.set(e.id, e));
+    }
+
+    if (matched.size === 0 && (q.includes("event") || q.includes("schedule") || q.includes("happening") || q.includes("upcoming"))) {
       allEvents.slice(0, 4).forEach((e) => matched.set(e.id, e));
     }
   }
@@ -450,6 +452,18 @@ export default function CampusGenieChatPage() {
                     parsedRecommendation = parsedArgs;
                   } else if (ti.name === "show_events_grid" && Array.isArray(parsedArgs.eventIds)) {
                     explicitToolEventIds.push(...parsedArgs.eventIds);
+                  } else if (ti.name === "search_events") {
+                    const q = (parsedArgs.query || "").toLowerCase();
+                    for (const ev of lakehouseEvents) {
+                      if (
+                        ev.title.toLowerCase().includes(q) ||
+                        ev.cat.toLowerCase().includes(q) ||
+                        (ev.subhead && ev.subhead.toLowerCase().includes(q)) ||
+                        (ev.description && ev.description.toLowerCase().includes(q))
+                      ) {
+                        explicitToolEventIds.push(ev.id);
+                      }
+                    }
                   }
                 } catch {
                   // Arguments still streaming

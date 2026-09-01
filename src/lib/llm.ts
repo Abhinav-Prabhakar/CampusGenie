@@ -94,6 +94,32 @@ export const LLM_TOOLS = [
   {
     type: "function",
     function: {
+      name: "search_events",
+      description: "Search campus events by keyword, topic, or category (hackathon, meeting, workshop, social, career, sports) to find and display interactive event cards in the chat.",
+      parameters: {
+        type: "object",
+        properties: {
+          query: {
+            type: "string",
+            description: "Search query or keywords (e.g. 'hackathon', 'systems', 'AI', 'free food', 'mixer')",
+          },
+          category: {
+            type: "string",
+            enum: ["all", "hackathon", "workshop", "meeting", "social", "career", "sports"],
+            description: "Optional category filter",
+          },
+          foodOnly: {
+            type: "boolean",
+            description: "Filter only events with free food provided",
+          },
+        },
+        required: ["query"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "show_events_grid",
       description: "Render interactive campus event cards in the chat UI with click-to-open detail modal and event pass registration.",
       parameters: {

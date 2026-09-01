@@ -75,6 +75,7 @@ Governed Unity Catalog Delta Tables in schema 'workspace.campus_explorer':
 7. workspace.campus_explorer.procurement_inventory (item_id, item_name, category, current_stock, min_reorder_threshold, preferred_supplier, unit_price_inr, lead_time_days, last_restock_date)
 
 Available Governed Tools:
+- search_events: Search and display campus events by keyword, category ('hackathon' | 'workshop' | 'meeting' | 'social' | 'career' | 'sports'), food availability, or tags. Automatically triggers interactive event cards in the chat UI.
 - query_lakehouse_sql: Execute SQL on Unity Catalog tables (e.g. SELECT * FROM workspace.campus_explorer.campus_events ORDER BY event_date ASC).
 - search_knowledge_sources: Search documents and policies.
 - show_events_grid: Render interactive campus event cards in the chat UI. Parameter: { eventIds: string[] } e.g. ["EV-10", "EV-08", "EV-01"].
@@ -82,9 +83,11 @@ Available Governed Tools:
 - show_approval_card, show_fine_tune_card, show_recommendation_card.
 
 Instructions:
-- When a student asks about events, research labs, alumni paths, cafe inventory, or meetups, call "query_lakehouse_sql" to fetch the live governed Delta records.
-- When presenting event recommendations, ALWAYS call "show_events_grid" with their event_ids (e.g. ['EV-01', 'EV-10']) so the interactive event cards render directly in chat.
-- Format responses in clean GitHub-flavored markdown with dates, venues, food availability, and bold key points.
+- When a student asks about events, hackathons, workshops, meetings, clubs, or campus activities:
+  1. Call "search_events" or "query_lakehouse_sql" to query live governed records.
+  2. ALWAYS call "show_events_grid" with the relevant event_ids (e.g. ['EV-10', 'EV-08']) so the interactive event cards render directly in chat.
+  3. Include a concise, helpful markdown summary with dates, venues, food availability, and key highlights.
+- Format responses in clean GitHub-flavored markdown.
 `;
 
 function fallbackLakehouseQuery(prompt: string): string {
@@ -222,11 +225,8 @@ export async function POST(req: NextRequest) {
             const payload = {
               model,
               messages: conversationMessages,
-              // Keep the first forced data lookup focused. A few OpenAI-
-              // compatible reasoning backends ignore a forced function when
-              // it is sent alongside a large mixed UI-tool catalog.
-              tools: needsLakehouseTool ? [LLM_TOOLS[0]] : LLM_TOOLS,
-              tool_choice: needsLakehouseTool ? "required" : "auto",
+              tools: LLM_TOOLS,
+              tool_choice: "auto",
               stream: true,
               temperature: 0.3,
             };
@@ -322,14 +322,14 @@ export async function POST(req: NextRequest) {
               }];
             }
             
-            // Check if any server-executable tools were called (query_lakehouse_sql, search_knowledge_sources)
+            // Check if any server-executable tools were called (query_lakehouse_sql, search_events, search_knowledge_sources)
             const serverToolCalls = toolCalls.filter(
-              (tc) => tc.name === "query_lakehouse_sql" || tc.name === "search_knowledge_sources"
+              (tc) => tc.name === "query_lakehouse_sql" || tc.name === "search_events" || tc.name === "search_knowledge_sources"
             );
 
             // Forward UI tool calls to client if present
             const uiToolCalls = toolCalls.filter(
-              (tc) => tc.name !== "query_lakehouse_sql" && tc.name !== "search_knowledge_sources"
+              (tc) => tc.name !== "query_lakehouse_sql" && tc.name !== "search_events" && tc.name !== "search_knowledge_sources"
             );
             if (uiToolCalls.length > 0) {
               sendEvent({
@@ -367,7 +367,59 @@ export async function POST(req: NextRequest) {
               try {
                 const parsedArgs = JSON.parse(stc.args || "{}");
 
-                if (stc.name === "query_lakehouse_sql") {
+                if (stc.name === "search_events") {
+                  sendEvent({
+                    type: "tool_status",
+                    toolName: "search_events",
+                    label: `Searching campus events for "${parsedArgs.query || "events"}"…`,
+                    active: true,
+                  });
+
+                  const queryTerm = (parsedArgs.query || "").replace(/'/g, "''").toLowerCase();
+                  let whereClause = `LOWER(title) LIKE '%${queryTerm}%' OR LOWER(category) LIKE '%${queryTerm}%' OR LOWER(tags) LIKE '%${queryTerm}%' OR LOWER(description) LIKE '%${queryTerm}%'`;
+                  if (parsedArgs.category && parsedArgs.category !== "all") {
+                    whereClause += ` AND LOWER(category) = '${parsedArgs.category.toLowerCase()}'`;
+                  }
+                  if (parsedArgs.foodOnly) {
+                    whereClause += ` AND food_provided = true`;
+                  }
+
+                  const sql = `SELECT * FROM workspace.campus_explorer.campus_events WHERE ${whereClause} ORDER BY event_date ASC LIMIT 10`;
+                  const queryRes = await executeLakehouseSql(sql);
+                  const records = queryRes.records || [];
+                  toolResultContent = JSON.stringify(records.length > 0 ? records : queryRes);
+
+                  // Extract event IDs and immediately emit show_events_grid for the UI
+                  const eventIds = records
+                    .map((r: any) => r.event_id || r.id)
+                    .filter((id: any) => typeof id === "string" && /^EV-?\d+$/i.test(id))
+                    .map((id: string) => id.toUpperCase().replace(/^EV(\d+)$/, "EV-$1"));
+
+                  if (eventIds.length > 0) {
+                    sendEvent({
+                      choices: [{
+                        delta: {
+                          tool_calls: [{
+                            index: 0,
+                            id: `events_grid_${Date.now()}`,
+                            function: {
+                              name: "show_events_grid",
+                              arguments: JSON.stringify({ eventIds, summary: `Matched ${eventIds.length} campus events` }),
+                            },
+                          }],
+                        },
+                      }],
+                    });
+                  }
+
+                  sendEvent({
+                    type: "tool_status",
+                    toolName: "search_events",
+                    label: `Found ${records.length} campus events`,
+                    active: false,
+                    rowsCount: records.length,
+                  });
+                } else if (stc.name === "query_lakehouse_sql") {
                   sendEvent({
                     type: "tool_status",
                     toolName: "query_lakehouse_sql",
@@ -376,17 +428,43 @@ export async function POST(req: NextRequest) {
                   });
 
                   const queryRes = await executeLakehouseSql(parsedArgs.query);
+                  const records = queryRes.records ?? queryRes.rows ?? [];
                   toolResultContent = JSON.stringify(
                     queryRes.state === "SUCCEEDED"
-                      ? (queryRes.records ?? queryRes.rows ?? [])
+                      ? records
                       : { error: queryRes.error || `SQL execution ended with state: ${queryRes.state}` }
                   );
+
+                  // If this query was on campus_events, extract matching event IDs for the UI
+                  if (typeof parsedArgs.query === "string" && /campus_events/i.test(parsedArgs.query)) {
+                    const eventIds = (Array.isArray(records) ? records : [])
+                      .map((r: any) => r.event_id || r.id)
+                      .filter((id: any) => typeof id === "string" && /^EV-?\d+$/i.test(id))
+                      .map((id: string) => id.toUpperCase().replace(/^EV(\d+)$/, "EV-$1"));
+
+                    if (eventIds.length > 0) {
+                      sendEvent({
+                        choices: [{
+                          delta: {
+                            tool_calls: [{
+                              index: 0,
+                              id: `events_grid_${Date.now()}`,
+                              function: {
+                                name: "show_events_grid",
+                                arguments: JSON.stringify({ eventIds }),
+                              },
+                            }],
+                          },
+                        }],
+                      });
+                    }
+                  }
 
                   sendEvent({
                     type: "tool_status",
                     toolName: "query_lakehouse_sql",
                     label: queryRes.state === "SUCCEEDED"
-                      ? `Lakehouse SQL succeeded (${queryRes.rowCount ?? queryRes.records?.length ?? 0} rows)`
+                      ? `Lakehouse SQL succeeded (${queryRes.rowCount ?? (Array.isArray(records) ? records.length : 0)} rows)`
                       : `Lakehouse SQL failed: ${queryRes.error || queryRes.state}`,
                     active: false,
                     rowsCount: queryRes.rowCount,
