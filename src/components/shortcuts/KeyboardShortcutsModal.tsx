@@ -384,11 +384,20 @@ export default function KeyboardShortcutsModal({
       const isTyping = !!target?.closest("input, textarea, select, [contenteditable=\"true\"]");
       const isMac = typeof navigator !== "undefined" && /mac/i.test(navigator.platform);
       const modifier = isMac ? e.metaKey : e.ctrlKey;
-      const click = (selector: string) => (document.querySelector(selector) as HTMLElement | null)?.click();
-      const focus = (selector: string) => (document.querySelector(selector) as HTMLElement | null)?.focus();
-      const run = (action: () => void) => {
-        e.preventDefault();
-        action();
+      const click = (selector: string) => {
+        const element = document.querySelector(selector) as HTMLElement | null;
+        if (!element) return false;
+        element.click();
+        return true;
+      };
+      const focus = (selector: string) => {
+        const element = document.querySelector(selector) as HTMLElement | null;
+        if (!element) return false;
+        element.focus();
+        return true;
+      };
+      const run = (action: () => void | boolean) => {
+        if (action() !== false) e.preventDefault();
       };
 
       if (modifier && e.key.toLowerCase() === "k") {
@@ -416,7 +425,9 @@ export default function KeyboardShortcutsModal({
         }
         return;
       }
-      if (isTyping && !(modifier && e.key === "Enter")) return;
+      // Plain letters/arrows must remain native text-editing behavior, while
+      // explicit platform-modified bindings still work from the composer.
+      if (isTyping && !modifier && !e.altKey) return;
 
       const key = e.key.toLowerCase();
       if (modifier && key === "n") run(() => click("[data-shortcut-new-thread]"));

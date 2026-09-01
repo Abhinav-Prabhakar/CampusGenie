@@ -269,6 +269,7 @@ function RailButton({
   return (
     <button
       data-row
+      data-shortcut-new-thread={label === "New chat" ? "true" : undefined}
       type="button"
       onClick={onClick}
       className={`sidebar-row relative z-10 mx-2 flex h-8 items-center rounded-[8px] px-2 text-left
