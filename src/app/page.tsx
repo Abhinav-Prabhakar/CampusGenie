@@ -183,6 +183,7 @@ export default function CampusGenieChatPage() {
   const [newModelApiKey, setNewModelApiKey] = useState<string>("");
   const [lakehouseEvents, setLakehouseEvents] = useState<EventRecord[]>([]);
   const [toolActivity, setToolActivity] = useState<{ label: string; active: boolean } | null>(null);
+  const requestAbortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     fetch("/api/events")
@@ -328,6 +329,9 @@ export default function CampusGenieChatPage() {
     setMessages(newMessages);
     setIsLoading(true);
     setErrorMessage(null);
+    setToolActivity(null);
+    const abortController = new AbortController();
+    requestAbortRef.current = abortController;
 
     // Save user message immediately to thread
     saveThread({
@@ -345,6 +349,7 @@ export default function CampusGenieChatPage() {
       const response = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        signal: abortController.signal,
         body: JSON.stringify({
           messages: newMessages.map((m) => ({ role: m.role, content: m.content })),
           model: selectedModel.id,
@@ -533,11 +538,20 @@ export default function CampusGenieChatPage() {
         updatedAt: Date.now(),
       });
     } catch (err: any) {
+      if (abortController.signal.aborted) return;
       console.error("Chat Error:", err);
       setErrorMessage(err.message || "Failed to communicate with LLM provider API.");
     } finally {
+      if (requestAbortRef.current === abortController) requestAbortRef.current = null;
       setIsLoading(false);
+      setToolActivity(null);
     }
+  };
+
+  const handleStop = () => {
+    requestAbortRef.current?.abort();
+    setIsLoading(false);
+    setToolActivity(null);
   };
 
   const handleDeleteChat = (id: string) => {
@@ -898,6 +912,8 @@ export default function CampusGenieChatPage() {
                 placeholder="Ask Campus Genie anything"
                 onSend={handleSend}
                 demo={false}
+                isWorking={isLoading}
+                onStop={handleStop}
               />
             </div>
           </div>

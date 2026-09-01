@@ -29,6 +29,23 @@ Instructions:
 - Format responses in clean GitHub-flavored markdown with dates, venues, food availability, and bold key points.
 `;
 
+function fallbackLakehouseQuery(prompt: string): string {
+  const lower = prompt.toLowerCase();
+  if (/(inventory|stock|cafe|dairy|waffle|supply|supplies)/.test(lower)) {
+    return "SELECT * FROM workspace.campus_explorer.procurement_inventory ORDER BY current_stock ASC LIMIT 25";
+  }
+  if (/(lab|labs|club|clubs|recruit|research)/.test(lower)) {
+    return "SELECT * FROM workspace.campus_explorer.clubs_and_labs WHERE recruitment_open = true LIMIT 25";
+  }
+  if (/(alumni|career|trajectory|sde|research role)/.test(lower)) {
+    return "SELECT * FROM workspace.campus_explorer.alumni_career_pathways LIMIT 25";
+  }
+  if (/(meetup|meetups|bengaluru|city|indiranagar|koramangala)/.test(lower)) {
+    return "SELECT * FROM workspace.campus_explorer.city_tech_events ORDER BY event_date ASC LIMIT 25";
+  }
+  return "SELECT * FROM workspace.campus_explorer.campus_events ORDER BY event_date ASC LIMIT 25";
+}
+
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
@@ -116,6 +133,7 @@ export async function POST(req: NextRequest) {
         const decoder = new TextDecoder();
 
         const sendEvent = (data: any) => {
+          if (req.signal.aborted) return;
           controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
         };
 
@@ -126,11 +144,23 @@ export async function POST(req: NextRequest) {
           while (loopCount < maxLoops) {
             loopCount++;
 
+            // Some reasoning models emit a natural-language preamble ("I'll
+            // run a query") and then stop when tool choice is left entirely
+            // to them. Data-backed prompts need an actual governed lookup on
+            // the first pass; after that, let the model choose how to finish.
+            const latestUserPrompt = [...messages]
+              .reverse()
+              .find((message: { role?: string }) => message.role === "user")?.content || "";
+            const needsLakehouseTool = loopCount === 1 && /\b(event|events|club|clubs|lab|labs|alumni|career|meetup|meetups|inventory|stock|cafe|food|workshop|hackathon|schedule|campus|lakehouse|sql|delta)\b/i.test(latestUserPrompt);
+
             const payload = {
               model,
               messages: conversationMessages,
-              tools: LLM_TOOLS,
-              tool_choice: "auto",
+              // Keep the first forced data lookup focused. A few OpenAI-
+              // compatible reasoning backends ignore a forced function when
+              // it is sent alongside a large mixed UI-tool catalog.
+              tools: needsLakehouseTool ? [LLM_TOOLS[0]] : LLM_TOOLS,
+              tool_choice: needsLakehouseTool ? "required" : "auto",
               stream: true,
               temperature: 0.3,
             };
@@ -139,6 +169,7 @@ export async function POST(req: NextRequest) {
               method: "POST",
               headers,
               body: JSON.stringify(payload),
+              signal: req.signal,
             });
 
             if (!upstreamRes.ok || !upstreamRes.body) {
@@ -156,6 +187,10 @@ export async function POST(req: NextRequest) {
             const toolCallsMap = new Map<number, { id?: string; name: string; args: string }>();
 
             while (true) {
+              if (req.signal.aborted) {
+                await reader.cancel();
+                return;
+              }
               const { done, value } = await reader.read();
               if (done) break;
 
@@ -204,7 +239,22 @@ export async function POST(req: NextRequest) {
               }
             }
 
-            const toolCalls = Array.from(toolCallsMap.values());
+            let toolCalls = Array.from(toolCallsMap.values());
+
+            // Some providers acknowledge the lookup in reasoning but stop
+            // without emitting a function call. Complete that intent through
+            // the same safe, read-only SQL tool path, then use the next model
+            // pass to turn the result into a user-facing answer.
+            if (needsLakehouseTool && toolCalls.length === 0) {
+              toolCalls = [{
+                id: `fallback_sql_${loopCount}`,
+                name: "query_lakehouse_sql",
+                args: JSON.stringify({
+                  query: fallbackLakehouseQuery(latestUserPrompt),
+                  explanation: "Provider did not emit its requested SQL tool call.",
+                }),
+              }];
+            }
             
             // Check if any server-executable tools were called (query_lakehouse_sql, search_knowledge_sources)
             const serverToolCalls = toolCalls.filter(
@@ -246,6 +296,7 @@ export async function POST(req: NextRequest) {
             });
 
             for (const stc of serverToolCalls) {
+              if (req.signal.aborted) return;
               let toolResultContent = "";
               try {
                 const parsedArgs = JSON.parse(stc.args || "{}");
@@ -259,12 +310,18 @@ export async function POST(req: NextRequest) {
                   });
 
                   const queryRes = await executeLakehouseSql(parsedArgs.query);
-                  toolResultContent = JSON.stringify(queryRes.records || queryRes.rows || queryRes);
+                  toolResultContent = JSON.stringify(
+                    queryRes.state === "SUCCEEDED"
+                      ? (queryRes.records ?? queryRes.rows ?? [])
+                      : { error: queryRes.error || `SQL execution ended with state: ${queryRes.state}` }
+                  );
 
                   sendEvent({
                     type: "tool_status",
                     toolName: "query_lakehouse_sql",
-                    label: `Lakehouse SQL succeeded (${queryRes.rowCount ?? queryRes.records?.length ?? 0} rows)`,
+                    label: queryRes.state === "SUCCEEDED"
+                      ? `Lakehouse SQL succeeded (${queryRes.rowCount ?? queryRes.records?.length ?? 0} rows)`
+                      : `Lakehouse SQL failed: ${queryRes.error || queryRes.state}`,
                     active: false,
                     rowsCount: queryRes.rowCount,
                   });

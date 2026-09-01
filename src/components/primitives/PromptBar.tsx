@@ -149,6 +149,8 @@ export default function PromptBar({
   tall = false,
   placeholder,
   onSend,
+  isWorking = false,
+  onStop,
 }: {
   variant?: string;
   /** the self-running walkthrough; turn off when embedding in a real surface */
@@ -157,6 +159,8 @@ export default function PromptBar({
   tall?: boolean;
   placeholder?: string;
   onSend?: (text: string) => void;
+  isWorking?: boolean;
+  onStop?: () => void;
 }) {
   const pill = variant === "Pill";
   const [draft, setDraft] = useState("");
@@ -393,6 +397,10 @@ export default function PromptBar({
 
   const canSend = draft.trim().length > 0 || attachments.length > 0;
   const send = () => {
+    if (isWorking) {
+      onStop?.();
+      return;
+    }
     if (!canSend) return;
     onSend?.(draft.trim());
     setDraft("");
@@ -688,21 +696,26 @@ export default function PromptBar({
             )}
           </button>
 
-          {/* send — tactile square (round in the pill variant) */}
+          {/* send/stop — the same control cancels an in-flight agent run */}
           <button
             type="button"
-            aria-label="Send"
-            disabled={!canSend}
+            aria-label={isWorking ? "Stop response" : "Send"}
+            title={isWorking ? "Stop response" : "Send"}
+            disabled={!isWorking && !canSend}
             onClick={send}
             className={`flex size-7 shrink-0 items-center justify-center transition-[background-color,color,transform] duration-200 enabled:active:scale-[0.94] ${
               pill ? "rounded-full" : "rounded-[8px]"
             } ${wide ? "col-start-5 row-start-2" : "col-start-5 row-start-1"}`}
             style={{
-              background: canSend ? "var(--ink)" : "var(--line-strong)",
-              color: canSend ? "var(--surface)" : "var(--ink-2)",
+              background: isWorking || canSend ? "var(--ink)" : "var(--line-strong)",
+              color: isWorking || canSend ? "var(--surface)" : "var(--ink-2)",
             }}
           >
-            <Icon size={16} strokeWidth={2.4}><path d="M12 19V5M5 12l7-7 7 7" /></Icon>
+            {isWorking ? (
+              <Icon size={14} strokeWidth={2.5}><rect x="7" y="7" width="10" height="10" rx="1.5" /></Icon>
+            ) : (
+              <Icon size={16} strokeWidth={2.4}><path d="M12 19V5M5 12l7-7 7 7" /></Icon>
+            )}
           </button>
         </div>
       </div>

@@ -262,6 +262,7 @@ export async function fetchWithAutoRetry(
 
       return response;
     } catch (err: any) {
+      if (options.signal?.aborted || err?.name === "AbortError") throw err;
       if (attempt < maxRetries) {
         attempt++;
         console.warn(`[Auto-Retry] Network error on ${url}: ${err?.message}. Retrying in ${delay}ms (Attempt ${attempt}/${maxRetries})...`);
