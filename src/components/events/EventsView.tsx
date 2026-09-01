@@ -319,10 +319,7 @@ const CAT_INDICES: Record<string, number> = {
 };
 
 export default function EventsView({ onAskGenie }: { onAskGenie?: (prompt: string) => void }) {
-  const [lakehouseEvents, setLakehouseEvents] = useState<CampusEvent[]>(EVENTS_DATA);
-  const [lumaEvents, setLumaEvents] = useState<CampusEvent[]>([]);
-  const [selectedSource, setSelectedSource] = useState<"all" | "lakehouse" | "luma">("lakehouse");
-  const [isSyncingLuma, setIsSyncingLuma] = useState<boolean>(false);
+  const [eventsList, setEventsList] = useState<CampusEvent[]>(EVENTS_DATA);
   const [featuredSurveys, setFeaturedSurveys] = useState<any[]>([]);
   const [activeSurvey, setActiveSurvey] = useState<any | null>(null);
   const [surveyAnswers, setSurveyAnswers] = useState<Record<string, any>>({});
@@ -354,36 +351,16 @@ export default function EventsView({ onAskGenie }: { onAskGenie?: (prompt: strin
     "EV-14": true,
   });
 
-  // Fetch Luma events from /api/events/luma
-  const fetchLumaEvents = async () => {
-    setIsSyncingLuma(true);
-    try {
-      const res = await fetch("/api/events/luma");
-      if (res.ok) {
-        const data = await res.json();
-        if (data.events && Array.isArray(data.events)) {
-          setLumaEvents(data.events);
-        }
-      }
-    } catch (err) {
-      console.warn("Failed to fetch Luma events:", err);
-    } finally {
-      setIsSyncingLuma(false);
-    }
-  };
-
-  // Fetch live events from Lakehouse API and Luma API
+  // Fetch live events from Lakehouse API
   useEffect(() => {
     fetch("/api/events")
       .then((r) => r.json())
       .then((data) => {
         if (data.events && data.events.length > 0) {
-          setLakehouseEvents(data.events);
+          setEventsList(data.events);
         }
       })
       .catch((err) => console.warn("Failed to fetch live events, using cached seed data:", err));
-
-    fetchLumaEvents();
 
     // Fetch featured surveys
     fetch("/api/surveys?featured=true")
@@ -425,8 +402,7 @@ export default function EventsView({ onAskGenie }: { onAskGenie?: (prompt: strin
     setRsvpEvents((prev) => {
       const next = !prev[id];
       if (next) {
-        const allEvts = [...lakehouseEvents, ...lumaEvents];
-        const ev = allEvts.find((e) => e.id === id) || EVENTS_DATA.find((e) => e.id === id);
+        const ev = eventsList.find((e) => e.id === id) || EVENTS_DATA.find((e) => e.id === id);
         if (ev) setPassEvent(ev);
       }
       return { ...prev, [id]: next };
@@ -434,7 +410,6 @@ export default function EventsView({ onAskGenie }: { onAskGenie?: (prompt: strin
   };
 
   const resetFilters = () => {
-    setSelectedSource("lakehouse");
     setSelectedCat("all");
     setSelectedWhen("all");
     setSearchQuery("");
@@ -443,19 +418,8 @@ export default function EventsView({ onAskGenie }: { onAskGenie?: (prompt: strin
     setGoingFilter(false);
   };
 
-  // Base list depending on selected source
-  const sourceEvents = useMemo(() => {
-    if (selectedSource === "luma") return lumaEvents;
-    if (selectedSource === "lakehouse") return lakehouseEvents;
-    // Unified All: deduplicate by id
-    const map = new Map<string, CampusEvent>();
-    lakehouseEvents.forEach((e) => map.set(e.id, e));
-    lumaEvents.forEach((e) => map.set(e.id, e));
-    return Array.from(map.values());
-  }, [selectedSource, lakehouseEvents, lumaEvents]);
-
   const filteredEvents = useMemo(() => {
-    return sourceEvents.filter((ev) => {
+    return eventsList.filter((ev) => {
       if (selectedCat !== "all" && ev.cat !== selectedCat) return false;
       if (selectedWhen === "today" && ev.when !== "today") return false;
       if (selectedWhen === "week" && ev.when !== "today" && ev.when !== "week") return false;
@@ -472,7 +436,7 @@ export default function EventsView({ onAskGenie }: { onAskGenie?: (prompt: strin
       }
       return true;
     });
-  }, [sourceEvents, selectedCat, selectedWhen, foodFilter, virtualFilter, goingFilter, searchQuery, rsvpEvents]);
+  }, [eventsList, selectedCat, selectedWhen, foodFilter, virtualFilter, goingFilter, searchQuery, rsvpEvents]);
 
   const glideTransform = `translateX(${CAT_INDICES[selectedCat] * 100}%)`;
 
@@ -508,7 +472,7 @@ export default function EventsView({ onAskGenie }: { onAskGenie?: (prompt: strin
               <button
                 type="button"
                 onClick={() => {
-                  const ev = sourceEvents.find((e: CampusEvent) => e.title.includes("Hack the Lake") || e.id === "10" || e.id === "EV-10") || sourceEvents[0] || EVENTS_DATA[0];
+                  const ev = eventsList.find((e: CampusEvent) => e.title.includes("Hack the Lake") || e.id === "10" || e.id === "EV-10") || eventsList[0] || EVENTS_DATA[0];
                   setPassEvent(ev);
                 }}
                 className="btn-acc"
@@ -692,162 +656,87 @@ export default function EventsView({ onAskGenie }: { onAskGenie?: (prompt: strin
         </div>
 
         {/* Toolbar */}
-        <div className="toolbar flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-2 flex-wrap flex-1 min-w-0">
-            {/* Source Segmented Selector */}
-            <div className="flex items-center gap-1 p-1 rounded-[9px] border border-line bg-inset/50 shrink-0">
-              <button
-                type="button"
-                onClick={() => setSelectedSource("all")}
-                className={`h-7 px-2.5 rounded-[6px] text-[12px] font-medium transition-all ${
-                  selectedSource === "all"
-                    ? "bg-surface text-ink font-semibold shadow-xs border border-line"
-                    : "text-ink-2 hover:text-ink"
-                }`}
-                title="Show all events"
-              >
-                All <span className="text-ink-3 ml-0.5 text-[10.5px]">({lakehouseEvents.length + lumaEvents.length})</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setSelectedSource("lakehouse")}
-                className={`h-7 px-2.5 rounded-[6px] text-[12px] font-medium transition-all ${
-                  selectedSource === "lakehouse"
-                    ? "bg-surface text-ink font-semibold shadow-xs border border-line"
-                    : "text-ink-2 hover:text-ink"
-                }`}
-                title="Show Lakehouse Delta table events"
-              >
-                Lakehouse <span className="text-ink-3 ml-0.5 text-[10.5px]">({lakehouseEvents.length})</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setSelectedSource("luma")}
-                className={`h-7 px-2.5 rounded-[6px] text-[12px] font-medium transition-all flex items-center gap-1.5 ${
-                  selectedSource === "luma"
-                    ? "bg-surface text-accent font-semibold shadow-xs border border-accent/40"
-                    : "text-ink-2 hover:text-ink"
-                }`}
-                title="Show Luma public calendar events"
-              >
-                <svg className="i i12 text-accent" width={12} height={12} aria-hidden="true"><use href="#i-luma" /></svg>
-                <span>Luma Events</span>
-                <span className="text-ink-3 ml-0.5 text-[10.5px]">({lumaEvents.length})</span>
-              </button>
-            </div>
-
-            {/* Category Segmented Scroller */}
-            <div className="seg-scroll">
-              <div className="seg" role="tablist" aria-label="Filter by category">
-                <span className="seg-glide" style={{ transform: glideTransform }} aria-hidden="true" />
-                {[
-                  { id: "all", label: "All" },
-                  { id: "meeting", label: "Meetings" },
-                  { id: "hackathon", label: "Hackathons" },
-                  { id: "career", label: "Career" },
-                  { id: "workshop", label: "Workshops" },
-                  { id: "social", label: "Social" },
-                  { id: "sports", label: "Sports" },
-                ].map((c) => (
-                  <label
-                    key={c.id}
-                    className={`seg-item ${selectedCat === c.id ? "text-ink font-semibold" : ""}`}
-                    onClick={() => setSelectedCat(c.id)}
-                  >
-                    <input
-                      type="radio"
-                      name="cat"
-                      className="vh"
-                      checked={selectedCat === c.id}
-                      onChange={() => setSelectedCat(c.id)}
-                    />
-                    {c.label}
-                  </label>
-                ))}
-              </div>
+        <div className="toolbar">
+          <div className="seg-scroll">
+            <div className="seg" role="tablist" aria-label="Filter by category">
+              <span className="seg-glide" style={{ transform: glideTransform }} aria-hidden="true" />
+              {[
+                { id: "all", label: "All" },
+                { id: "meeting", label: "Meetings" },
+                { id: "hackathon", label: "Hackathons" },
+                { id: "career", label: "Career" },
+                { id: "workshop", label: "Workshops" },
+                { id: "social", label: "Social" },
+                { id: "sports", label: "Sports" },
+              ].map((c) => (
+                <label
+                  key={c.id}
+                  className={`seg-item ${selectedCat === c.id ? "text-ink font-semibold" : ""}`}
+                  onClick={() => setSelectedCat(c.id)}
+                >
+                  <input
+                    type="radio"
+                    name="cat"
+                    className="vh"
+                    checked={selectedCat === c.id}
+                    onChange={() => setSelectedCat(c.id)}
+                  />
+                  {c.label}
+                </label>
+              ))}
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
-            <details className="menu">
-              <summary className="menu-btn" title="Filter by date">
-                <svg className="i i13" width={13} height={13} aria-hidden="true"><use href="#i-cal"/></svg>
-                <span className="menu-sum">
-                  <span>{selectedWhen === "all" ? "All dates" : selectedWhen === "today" ? "Today" : selectedWhen === "week" ? "This week" : "Weekend"}</span>
-                </span>
-                <svg className="i i13 chev" width={13} height={13} aria-hidden="true"><use href="#i-chev"/></svg>
-              </summary>
-              <div className="menu-pop">
-                <div className="menu-title">Date range</div>
-                {[
-                  { id: "all", label: "All dates" },
-                  { id: "today", label: "Today" },
-                  { id: "week", label: "This week" },
-                  { id: "weekend", label: "Weekend" },
-                ].map((w) => (
-                  <label
-                    key={w.id}
-                    className="menu-row"
-                    onClick={() => setSelectedWhen(w.id)}
-                  >
-                    <input
-                      type="radio"
-                      name="when"
-                      className="vh"
-                      checked={selectedWhen === w.id}
-                      onChange={() => setSelectedWhen(w.id)}
-                    />
-                    <svg className="i i13 mk" width={13} height={13} style={{ opacity: selectedWhen === w.id ? 1 : 0 }} aria-hidden="true"><use href="#i-check"/></svg>
-                    {w.label}
-                  </label>
-                ))}
-              </div>
-            </details>
+          <details className="menu">
+            <summary className="menu-btn" title="Filter by date">
+              <svg className="i i13" width={13} height={13} aria-hidden="true"><use href="#i-cal"/></svg>
+              <span className="menu-sum">
+                <span>{selectedWhen === "all" ? "All dates" : selectedWhen === "today" ? "Today" : selectedWhen === "week" ? "This week" : "Weekend"}</span>
+              </span>
+              <svg className="i i13 chev" width={13} height={13} aria-hidden="true"><use href="#i-chev"/></svg>
+            </summary>
+            <div className="menu-pop">
+              <div className="menu-title">Date range</div>
+              {[
+                { id: "all", label: "All dates" },
+                { id: "today", label: "Today" },
+                { id: "week", label: "This week" },
+                { id: "weekend", label: "Weekend" },
+              ].map((w) => (
+                <label
+                  key={w.id}
+                  className="menu-row"
+                  onClick={() => setSelectedWhen(w.id)}
+                >
+                  <input
+                    type="radio"
+                    name="when"
+                    className="vh"
+                    checked={selectedWhen === w.id}
+                    onChange={() => setSelectedWhen(w.id)}
+                  />
+                  <svg className="i i13 mk" width={13} height={13} style={{ opacity: selectedWhen === w.id ? 1 : 0 }} aria-hidden="true"><use href="#i-check"/></svg>
+                  {w.label}
+                </label>
+              ))}
+            </div>
+          </details>
 
-            <label className="search">
-              <svg className="i i13" width={13} height={13} aria-hidden="true"><use href="#i-search"/></svg>
-              <input
-                type="search"
-                placeholder="Search events, clubs…"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                aria-label="Search events"
-              />
-              <kbd>/</kbd>
-            </label>
-          </div>
+          <label className="search">
+            <svg className="i i13" width={13} height={13} aria-hidden="true"><use href="#i-search"/></svg>
+            <input
+              type="search"
+              placeholder="Search events, clubs…"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              aria-label="Search events"
+            />
+            <kbd>/</kbd>
+          </label>
         </div>
 
         {/* Quick Filters */}
         <div className="chips">
-          {/* Dedicated Luma Filter Chip Button */}
-          <button
-            type="button"
-            onClick={() => setSelectedSource((prev) => (prev === "luma" ? "all" : "luma"))}
-            className={`chip transition-all cursor-pointer ${
-              selectedSource === "luma"
-                ? "!bg-accent-tint !text-accent-ink !border-accent/40 font-semibold"
-                : "hover:!border-line-strong"
-            }`}
-            title="Filter to Luma community events"
-          >
-            <svg className="i i12 text-accent" width={12} height={12} aria-hidden="true"><use href="#i-luma"/></svg>
-            <span>Luma Events</span>
-            <b className={selectedSource === "luma" ? "!text-accent-ink" : ""}>{lumaEvents.length}</b>
-          </button>
-
-          {/* Fetch Luma Events Refresh Button */}
-          <button
-            type="button"
-            onClick={fetchLumaEvents}
-            disabled={isSyncingLuma}
-            className="chip transition-all cursor-pointer hover:!border-line-strong active:scale-95 disabled:opacity-60"
-            title="Fetch fresh events from Luma"
-          >
-            <svg className={`i i12 ${isSyncingLuma ? "animate-spin" : ""}`} width={12} height={12} aria-hidden="true"><use href="#i-rotate"/></svg>
-            <span>{isSyncingLuma ? "Fetching Luma…" : "Sync Luma"}</span>
-          </button>
-
           <label className="chip" style={{ background: foodFilter ? "var(--accent-tint)" : undefined, color: foodFilter ? "var(--accent-ink)" : undefined }}>
             <input
               type="checkbox"
@@ -887,48 +776,11 @@ export default function EventsView({ onAskGenie }: { onAskGenie?: (prompt: strin
 
         {/* Section Header */}
         <div className="sec">
-          <h2>
-            {selectedSource === "luma"
-              ? "Luma Community Events"
-              : selectedSource === "lakehouse"
-              ? "Lakehouse Campus Events"
-              : "Upcoming Events"}
-          </h2>
+          <h2>Upcoming events</h2>
           <span className="sec-meta" aria-live="polite">
             <b style={{ display: "inline", color: "var(--ink-2)", fontWeight: 600 }}>{filteredEvents.length}</b> events
-            {selectedSource === "luma" && <span className="text-accent ml-1.5">· Luma Source</span>}
           </span>
         </div>
-
-        {/* Empty State when no events are returned */}
-        {filteredEvents.length === 0 && (
-          <div className="flex flex-col items-center justify-center p-12 text-center rounded-[12px] border border-line bg-surface/50 my-4 mx-3">
-            <div className="flex size-10 items-center justify-center rounded-full bg-inset text-ink-3 mb-3 border border-line">
-              <svg className="i i18" width={18} height={18} aria-hidden="true">
-                <use href={selectedSource === "luma" ? "#i-luma" : "#i-search"} />
-              </svg>
-            </div>
-            <h3 className="text-[14px] font-semibold text-ink mb-1">
-              {selectedSource === "luma" ? "No Luma events available" : "No campus events found"}
-            </h3>
-            <p className="text-[12px] text-ink-3 max-w-[360px] mb-4">
-              {selectedSource === "luma"
-                ? "No events were returned from Luma. Configure LUMA_API_KEY in .env.local to load live public calendar events."
-                : "No events match the selected filters or date range."}
-            </p>
-            {selectedSource === "luma" && (
-              <button
-                type="button"
-                onClick={fetchLumaEvents}
-                disabled={isSyncingLuma}
-                className="btn-acc cursor-pointer"
-              >
-                <svg className={`i i12 ${isSyncingLuma ? "animate-spin" : ""}`} width={12} height={12} aria-hidden="true"><use href="#i-rotate"/></svg>
-                {isSyncingLuma ? "Fetching Luma Events…" : "Fetch Luma Events"}
-              </button>
-            )}
-          </div>
-        )}
 
         {/* Events Grid */}
         <section className="events">
