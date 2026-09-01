@@ -5,6 +5,40 @@ import { streamGenieConversation } from "@/lib/genie";
 
 export const runtime = "nodejs";
 
+async function canAnswerWithGenie(prompt: string, signal: AbortSignal): Promise<boolean> {
+  const baseUrl = (process.env.LLM_BASE_URL || "https://api.openai.com/v1").replace(/\/+$/, "");
+  const endpoint = baseUrl.endsWith("/chat/completions") ? baseUrl : `${baseUrl}/chat/completions`;
+  const apiKey = process.env.LLM_API_KEY || process.env.OPENAI_API_KEY;
+  if (!apiKey) return false;
+
+  const response = await fetchWithAutoRetry(endpoint, {
+    method: "POST",
+    signal,
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+    body: JSON.stringify({
+      model: process.env.LLM_MODEL || "gpt-4o",
+      temperature: 0,
+      messages: [
+        {
+          role: "system",
+          content: "Classify whether the user request can be answered entirely by a read-only Databricks Genie Agent. Genie can only query existing data. Return JSON only: {\"canUseGenie\":true|false}. Return false for any request to create, update, delete, set, submit, order, RSVP, register, apply, approve, send, or otherwise take an action, including mixed read-and-write requests.",
+        },
+        { role: "user", content: prompt },
+      ],
+    }),
+  });
+  if (!response.ok) return false;
+  const data = await response.json();
+  const content = data.choices?.[0]?.message?.content;
+  if (typeof content !== "string") return false;
+  try {
+    const parsed = JSON.parse(content.replace(/^```(?:json)?\s*|\s*```$/g, "").trim());
+    return parsed.canUseGenie === true;
+  } catch {
+    return false;
+  }
+}
+
 function createGenieResponse(req: NextRequest, prompt: string) {
   const stream = new ReadableStream({
     async start(controller) {
@@ -82,14 +116,18 @@ export async function POST(req: NextRequest) {
     } = body;
 
     const latestPrompt = [...messages].reverse().find((message: { role?: string }) => message.role === "user")?.content;
-    const useGenieAgent = inputModel === "env-default" || inputModel === "databricks-genie-agent" || inputProvider === "databricks";
-    if (useGenieAgent && latestPrompt) return createGenieResponse(req, latestPrompt);
+    const requestsGenie = inputModel === "env-default" || inputModel === "databricks-genie-agent" || inputProvider === "databricks";
+    const routeToGenie = requestsGenie && latestPrompt ? await canAnswerWithGenie(latestPrompt, req.signal) : false;
+    if (routeToGenie && latestPrompt) return createGenieResponse(req, latestPrompt);
 
-    const model = (!inputModel || inputModel === "env-default")
+    const model = (requestsGenie || !inputModel || inputModel === "env-default")
       ? (process.env.LLM_MODEL || process.env.NEXT_PUBLIC_DEFAULT_MODEL || "gpt-4o")
       : inputModel;
 
-    let provider = inputProvider;
+    // If Genie classification says this needs an action, use the app's own
+    // configured LLM instead of sending a write request to the read-only
+    // Genie Agent.
+    let provider = requestsGenie && !routeToGenie ? "custom" : inputProvider;
     if (provider === "custom" && !customBaseUrl && !process.env.LLM_BASE_URL) {
       const lower = model.toLowerCase();
       if (lower.includes("gemini")) provider = "gemini";
