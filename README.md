@@ -103,6 +103,11 @@ Rather than building complex bespoke search and analytics pipelines from scratch
 
 ## 🚀 Getting Started
 
+The full Campus Genie experience is served at `/`. The focused, read-only
+Opportunity Navigator is available at `/navigator`; it uses `/api/navigator`,
+the sanitized Databricks REST adapter, and an isolated synthetic snapshot under
+`backend/navigator/`. See `docs/opportunity-navigator.md` for its setup and judge flow.
+
 ### Prerequisites
 * [Node.js](https://nodejs.org/) (v18.18.0 or newer)
 * [npm](https://www.npmjs.com/) or [pnpm](https://pnpm.io/)

@@ -32,6 +32,7 @@ yarn-error.log*
 
 # env files
 .env*
+!.env.example
 .env
 .env.local
 .env.development.local
@@ -48,4 +49,3 @@ next-env.d.ts
 # ide / tools
 .gemini/
 .databricks/
-
