@@ -1547,14 +1547,15 @@ th.is-colsel .records-header-icon {
   --hue-sports: oklch(0.72 0.12 195);
 }
 
-.banner-wrap { padding: 12px 12px 0; }
+.banner-wrap { padding: 12px 12px 0; border: 0 !important; }
 .feature {
   --tag: var(--hue-hack);
   display: flex; align-items: center; gap: 13px;
   padding: 12px 14px;
-  border: 1px solid color-mix(in srgb, var(--tag) 28%, var(--line));
+  border: 1px solid color-mix(in srgb, var(--tag) 20%, var(--line-soft));
   border-radius: 12px;
-  background: color-mix(in srgb, var(--tag) 9%, var(--surface));
+  background: color-mix(in srgb, var(--tag) 7%, var(--surface));
+  box-shadow: var(--shadow-card);
 }
 .fx {
   display: inline-flex; width: 34px; height: 34px; flex-shrink: 0;

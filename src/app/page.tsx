@@ -654,7 +654,7 @@ export default function CampusGenieChatPage() {
       <div className="flex min-w-0 flex-1 flex-col gap-2.5">
         <section className="relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-[14px] border border-line bg-canvas shadow-card">
           {/* Top Bar */}
-          <header className="flex h-11 shrink-0 items-center justify-between border-b border-line px-3 sm:px-4 bg-canvas">
+          <header className="flex h-11 shrink-0 items-center justify-between border-b border-line/35 px-3 sm:px-4 bg-canvas">
             <div className="flex items-center gap-2">
               <span className="text-[13.5px] font-semibold text-ink">Campus Genie</span>
               <span className="text-[12px] text-ink-3">/</span>

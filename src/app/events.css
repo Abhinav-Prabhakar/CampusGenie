@@ -21,10 +21,10 @@
   --ink-2: oklch(0.731 0.008 260.731);
   --ink-3: oklch(0.541 0.01 264.484);
 
-  --line: oklch(0.308 0.006 258.354);
-  --line-strong: oklch(0.356 0.007 264.474);
-  --line-soft: oklch(0.278 0.006 258.354);
-  --stripe: oklch(1 0 0 / 0.055);
+  --line: oklch(0.275 0.004 258.354);
+  --line-strong: oklch(0.315 0.005 264.474);
+  --line-soft: oklch(1 0 0 / 0.04);
+  --stripe: oklch(1 0 0 / 0.035);
   --stripe-bg: oklch(0.226 0.004 264.485);
 
   --accent: oklch(0.68 0.173 253.301);
@@ -48,10 +48,10 @@
   --ease-out-strong: cubic-bezier(0.23, 1, 0.32, 1);
   --ease-in-out-strong: cubic-bezier(0.77, 0, 0.175, 1);
 
-  --shadow-btn: 0 0 0 1px oklch(1 0 0 / 0.1), 0 1px 2px oklch(0 0 0 / 0.3);
-  --shadow-card: 0 0 0 1px oklch(1 0 0 / 0.11), 0 1px 2px oklch(0 0 0 / 0.2), 0 2px 6px oklch(0 0 0 / 0.2);
-  --shadow-raised: 0 0 0 1px oklch(1 0 0 / 0.13), 0 2px 10px oklch(0 0 0 / 0.22);
-  --shadow-overlay: 0 0 0 1px oklch(1 0 0 / 0.15), 0 8px 28px oklch(0 0 0 / 0.34);
+  --shadow-btn: 0 0 0 1px var(--line), 0 1px 2px oklch(0 0 0 / 0.3);
+  --shadow-card: 0 0 0 1px var(--line-soft), 0 1px 3px oklch(0 0 0 / 0.2);
+  --shadow-raised: 0 0 0 1px var(--line), 0 3px 8px oklch(0 0 0 / 0.25);
+  --shadow-overlay: 0 0 0 1px var(--line), 0 8px 24px oklch(0 0 0 / 0.35);
   --shadow-inset-field: inset 0 1px 2px oklch(0 0 0 / 0.4);
 }
 
@@ -226,16 +226,17 @@ html:not(.dark) .cat {
 }
 
 /* ── featured banner ───────────────────────────────────── */
-.events-scope .banner-wrap { padding: 0 0 12px 0; }
+.events-scope .banner-wrap { padding: 0 0 12px 0; border: 0 !important; }
 .events-scope .feature {
   --tag: var(--hue-hack);
   display: flex;
   align-items: center;
   gap: 13px;
   padding: 12px 14px;
-  border: 1px solid color-mix(in srgb, var(--tag) 28%, var(--line));
+  border: 1px solid color-mix(in srgb, var(--tag) 20%, var(--line-soft));
   border-radius: 12px;
-  background: color-mix(in srgb, var(--tag) 9%, var(--surface));
+  background: color-mix(in srgb, var(--tag) 7%, var(--surface));
+  box-shadow: var(--shadow-card);
 }
 .events-scope .fx {
   display: inline-flex;

@@ -499,8 +499,8 @@ export default function EventsView({ onAskGenie }: { onAskGenie?: (prompt: strin
 
           {/* Featured Active Survey Banner from Student Admin */}
           {activeSurvey && (
-            <div className="mt-2.5 rounded-[12px] border border-line bg-surface p-3.5 shadow-card transition-all">
-              <div className="flex items-center justify-between border-b border-line-soft pb-2.5 mb-3">
+            <div className="mt-2.5 rounded-[12px] border border-line-soft/60 bg-surface p-3.5 shadow-card transition-all">
+              <div className="flex items-center justify-between border-b border-line-soft/30 pb-2.5 mb-3">
                 <div className="flex items-center gap-2">
                   <span className="flex size-6 items-center justify-center rounded-[6px] bg-accent-tint text-accent-ink text-[12px]">
                     <svg className="i i13" aria-hidden="true"><use href="#i-chart"/></svg>
