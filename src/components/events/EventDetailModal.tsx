@@ -457,7 +457,7 @@ export default function EventDetailModal({ event, onClose, onAskGenie }: EventDe
                   </span>
                   <span className="m">
                     <svg className="i i12" width={12} height={12} aria-hidden="true"><use href="#i-cal"/></svg>
-                    <b>32</b> /yr
+                    <b>32</b> events/year
                   </span>
                 </div>
               </div>
