@@ -321,7 +321,7 @@ const CAT_INDICES: Record<string, number> = {
 export default function EventsView({ onAskGenie }: { onAskGenie?: (prompt: string) => void }) {
   const [lakehouseEvents, setLakehouseEvents] = useState<CampusEvent[]>(EVENTS_DATA);
   const [lumaEvents, setLumaEvents] = useState<CampusEvent[]>([]);
-  const [selectedSource, setSelectedSource] = useState<"all" | "lakehouse" | "luma">("all");
+  const [selectedSource, setSelectedSource] = useState<"all" | "lakehouse" | "luma">("lakehouse");
   const [isSyncingLuma, setIsSyncingLuma] = useState<boolean>(false);
   const [featuredSurveys, setFeaturedSurveys] = useState<any[]>([]);
   const [activeSurvey, setActiveSurvey] = useState<any | null>(null);
@@ -434,7 +434,7 @@ export default function EventsView({ onAskGenie }: { onAskGenie?: (prompt: strin
   };
 
   const resetFilters = () => {
-    setSelectedSource("all");
+    setSelectedSource("lakehouse");
     setSelectedCat("all");
     setSelectedWhen("all");
     setSearchQuery("");
@@ -899,6 +899,36 @@ export default function EventsView({ onAskGenie }: { onAskGenie?: (prompt: strin
             {selectedSource === "luma" && <span className="text-accent ml-1.5">· Luma Source</span>}
           </span>
         </div>
+
+        {/* Empty State when no events are returned */}
+        {filteredEvents.length === 0 && (
+          <div className="flex flex-col items-center justify-center p-12 text-center rounded-[12px] border border-line bg-surface/50 my-4 mx-3">
+            <div className="flex size-10 items-center justify-center rounded-full bg-inset text-ink-3 mb-3 border border-line">
+              <svg className="i i18" width={18} height={18} aria-hidden="true">
+                <use href={selectedSource === "luma" ? "#i-luma" : "#i-search"} />
+              </svg>
+            </div>
+            <h3 className="text-[14px] font-semibold text-ink mb-1">
+              {selectedSource === "luma" ? "No Luma events available" : "No campus events found"}
+            </h3>
+            <p className="text-[12px] text-ink-3 max-w-[360px] mb-4">
+              {selectedSource === "luma"
+                ? "No events were returned from Luma. Configure LUMA_API_KEY in .env.local to load live public calendar events."
+                : "No events match the selected filters or date range."}
+            </p>
+            {selectedSource === "luma" && (
+              <button
+                type="button"
+                onClick={fetchLumaEvents}
+                disabled={isSyncingLuma}
+                className="btn-acc cursor-pointer"
+              >
+                <svg className={`i i12 ${isSyncingLuma ? "animate-spin" : ""}`} width={12} height={12} aria-hidden="true"><use href="#i-rotate"/></svg>
+                {isSyncingLuma ? "Fetching Luma Events…" : "Fetch Luma Events"}
+              </button>
+            )}
+          </div>
+        )}
 
         {/* Events Grid */}
         <section className="events">
