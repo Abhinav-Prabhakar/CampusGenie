@@ -223,23 +223,71 @@ export async function GET(req: NextRequest) {
   });
 }
 
+import { extractTextFromFile } from "@/lib/docParser";
+
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json();
-    const docId = body.id || `DOC-${Date.now().toString().slice(-4)}`;
-    const name = (body.name || "Uploaded Document.pdf").replace(/'/g, "''");
-    const type = (body.type || "document").toLowerCase();
-    const category = (body.category || "General").replace(/'/g, "''");
-    const description = (body.description || "Student uploaded reference document.").replace(/'/g, "''");
-    const chunkCount = parseInt(body.chunkCount) || Math.floor(Math.random() * 20) + 12;
-    const fileSize = body.fileSize || "1.4 MB";
-    const content = (body.content || body.contentSample || description).replace(/'/g, "''");
-    const uploadedBy = (body.uploadedBy || "Student User").replace(/'/g, "''");
+    let name = "Uploaded Document.pdf";
+    let type = "document";
+    let category = "Guidelines & Rules";
+    let description = "";
+    let content = "";
+    let fileSize = "1.2 MB";
+    let chunkCount = 16;
+    let uploadedBy = "Campus User";
+    let docId = `DOC-${Date.now().toString().slice(-4)}`;
+
+    const contentType = req.headers.get("content-type") || "";
+
+    if (contentType.includes("multipart/form-data")) {
+      const formData = await req.formData();
+      const file = formData.get("file") as File | null;
+      if (file) {
+        name = file.name;
+        const arrayBuf = await file.arrayBuffer();
+        const buffer = Buffer.from(arrayBuf);
+        const parsed = await extractTextFromFile(buffer, file.name, file.type);
+        content = parsed.text;
+        fileSize = file.size > 1024 * 1024
+          ? `${(file.size / (1024 * 1024)).toFixed(1)} MB`
+          : `${Math.max(1, Math.round(file.size / 1024))} KB`;
+        chunkCount = Math.max(6, Math.ceil(content.length / 450));
+      }
+      name = (formData.get("name") as string) || name;
+      category = (formData.get("category") as string) || category;
+      type = (formData.get("type") as string) || type;
+      description = (formData.get("description") as string) || description;
+      uploadedBy = (formData.get("uploadedBy") as string) || uploadedBy;
+      if (formData.get("content")) {
+        content = formData.get("content") as string;
+      }
+    } else {
+      const body = await req.json();
+      docId = body.id || docId;
+      name = body.name || name;
+      type = (body.type || type).toLowerCase();
+      category = body.category || category;
+      description = body.description || description;
+      chunkCount = parseInt(body.chunkCount) || Math.max(6, Math.ceil((body.content?.length || 500) / 450));
+      fileSize = body.fileSize || fileSize;
+      content = body.content || body.contentSample || description;
+      uploadedBy = body.uploadedBy || uploadedBy;
+    }
+
+    if (!description) {
+      description = `Document extracted and indexed into Databricks Lakehouse (${fileSize}).`;
+    }
+
+    const safeName = name.replace(/'/g, "''");
+    const safeCat = category.replace(/'/g, "''");
+    const safeDesc = description.replace(/'/g, "''");
+    const safeContent = content.slice(0, 10000).replace(/'/g, "''");
+    const safeUploader = uploadedBy.replace(/'/g, "''");
 
     const insertSql = `
       INSERT INTO workspace.campus_explorer.knowledge_sources VALUES (
-        '${docId}', '${name}', '${type}', '${category}', '${description}',
-        ${chunkCount}, '${fileSize}', 'Indexed', '${content}', '${uploadedBy}',
+        '${docId}', '${safeName}', '${type}', '${safeCat}', '${safeDesc}',
+        ${chunkCount}, '${fileSize}', 'Indexed', '${safeContent}', '${safeUploader}',
         current_timestamp()
       )
     `;
@@ -260,7 +308,7 @@ export async function POST(req: NextRequest) {
         chunkCount,
         fileSize,
         status: "Indexed",
-        contentSample: content.slice(0, 300),
+        contentSample: content.slice(0, 400),
         uploadedBy,
         updatedAt: new Date().toISOString(),
       },

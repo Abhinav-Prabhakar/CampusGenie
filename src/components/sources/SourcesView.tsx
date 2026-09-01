@@ -93,31 +93,40 @@ export default function SourcesView({ onAskGenie }: SourcesViewProps) {
 
     setIsUploading(true);
     try {
-      const fileSizeStr = selectedFile
-        ? selectedFile.size > 1024 * 1024
-          ? `${(selectedFile.size / (1024 * 1024)).toFixed(1)} MB`
-          : `${Math.max(1, Math.round(selectedFile.size / 1024))} KB`
-        : "1.2 MB";
-
-      const chunkCount = Math.max(8, Math.round((docContent.length || 500) / 120));
-
-      const res = await fetch("/api/sources", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: docName,
-          category: docCategory,
-          type: docType,
-          description: docDesc || `Document indexed into Databricks Lakehouse on ${new Date().toLocaleDateString()}`,
-          content: docContent || docDesc || "Document text indexed for Databricks Lakehouse RAG.",
-          chunkCount,
-          fileSize: fileSizeStr,
-          uploadedBy: "Campus Admin",
-        }),
-      });
+      let res: Response;
+      if (selectedFile) {
+        const fd = new FormData();
+        fd.append("file", selectedFile);
+        fd.append("name", docName);
+        fd.append("category", docCategory);
+        fd.append("type", docType);
+        fd.append("description", docDesc);
+        if (docContent.trim()) fd.append("content", docContent);
+        fd.append("uploadedBy", "Campus Admin");
+        res = await fetch("/api/sources", {
+          method: "POST",
+          body: fd,
+        });
+      } else {
+        const fileSizeStr = "1.2 MB";
+        const chunkCount = Math.max(8, Math.round((docContent.length || 500) / 120));
+        res = await fetch("/api/sources", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name: docName,
+            category: docCategory,
+            type: docType,
+            description: docDesc || `Document indexed into Databricks Lakehouse on ${new Date().toLocaleDateString()}`,
+            content: docContent || docDesc || "Document text indexed for Databricks Lakehouse RAG.",
+            chunkCount,
+            fileSize: fileSizeStr,
+            uploadedBy: "Campus Admin",
+          }),
+        });
+      }
 
       if (res.ok) {
-        const data = await res.json();
         setUploadSuccess(true);
         setTimeout(() => {
           setUploadSuccess(false);

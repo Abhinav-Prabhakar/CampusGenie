@@ -1,22 +1,43 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useMemo } from "react";
 import SidebarNav from "@/components/primitives/SidebarNav";
 import KeyboardShortcutsModal from "@/components/shortcuts/KeyboardShortcutsModal";
 import EventIcons from "@/components/events/EventIcons";
 import RecoveryPlanModal from "@/components/attendance/RecoveryPlanModal";
 import { useTheme } from "@/lib/theme";
+import type { AttendanceStatus, CourseAttendance } from "@/app/api/attendance/route";
 
 export default function AttendancePage() {
   const { isDark, toggleTheme } = useTheme();
   const [shortcutsOpen, setShortcutsOpen] = useState<boolean>(false);
   const [recoveryModalOpen, setRecoveryModalOpen] = useState<boolean>(false);
 
+  // Data from Databricks Lakehouse
+  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [isSyncing, setIsSyncing] = useState<boolean>(false);
+  const [dataSource, setDataSource] = useState<string>("lakehouse");
+  const [courses, setCourses] = useState<CourseAttendance[]>([]);
+  const [termGrid, setTermGrid] = useState<any[]>([]);
+  const [weekdayRates, setWeekdayRates] = useState({ MON: 79, TUE: 93, WED: 86, THU: 92, FRI: 83 });
+  const [stats, setStats] = useState({
+    overallPct: 86,
+    attendedCount: 56,
+    missedCount: 9,
+    lateCount: 6,
+    presentCount: 49,
+    scheduledCount: 74,
+    totalSessionsToDate: 65,
+    streakDays: 9,
+    atRiskCoursesCount: 1,
+  });
+
   // Interactive States
   const [isAlertDismissed, setIsAlertDismissed] = useState<boolean>(false);
   const [activeView, setActiveView] = useState<"heatmap" | "trend">("heatmap");
   const [checkInEng, setCheckInEng] = useState<boolean>(false);
   const [remindCs, setRemindCs] = useState<boolean>(false);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   // Filter Chips State
   const [filterPresent, setFilterPresent] = useState<boolean>(true);
@@ -24,12 +45,218 @@ export default function AttendancePage() {
   const [filterAbsent, setFilterAbsent] = useState<boolean>(true);
   const [filterScheduled, setFilterScheduled] = useState<boolean>(true);
 
+  const fetchAttendance = async () => {
+    try {
+      const res = await fetch("/api/attendance");
+      if (res.ok) {
+        const data = await res.json();
+        if (data.courses) setCourses(data.courses);
+        if (data.termGrid) setTermGrid(data.termGrid);
+        if (data.stats) setStats(data.stats);
+        if (data.weekdayRates) setWeekdayRates(data.weekdayRates);
+        if (data.source) setDataSource(data.source);
+      }
+    } catch (err) {
+      console.warn("Failed to fetch attendance:", err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchAttendance();
+  }, []);
+
+  const showToast = (msg: string) => {
+    setToastMessage(msg);
+    setTimeout(() => setToastMessage(null), 2500);
+  };
+
+  // ── TOGGLE A CELL IN TERM HEATMAP ──────────────────────────────
+  const handleToggleTermCell = async (cellIndex: number) => {
+    const cell = termGrid[cellIndex];
+    if (!cell || cell.status === "scheduled" || cell.status === "today") return;
+
+    // Cycle: full -> partial -> missed -> full
+    const nextStatusMap: Record<string, "full" | "partial" | "missed"> = {
+      full: "partial",
+      partial: "missed",
+      missed: "full",
+    };
+    const nextStatus = nextStatusMap[cell.status] || "full";
+
+    const updatedGrid = [...termGrid];
+    updatedGrid[cellIndex] = { ...cell, status: nextStatus };
+    setTermGrid(updatedGrid);
+
+    // Map nextStatus to AttendanceStatus
+    const logStatus = nextStatus === "full" ? "PRESENT" : nextStatus === "partial" ? "LATE" : "ABSENT";
+
+    // Optimistically update stats
+    recalculateFromGrid(updatedGrid);
+
+    // Persist to Databricks Lakehouse
+    setIsSyncing(true);
+    try {
+      await fetch("/api/attendance", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          courseId: "MATH-201",
+          sessionDate: cell.date,
+          newStatus: logStatus,
+        }),
+      });
+      showToast(`Updated ${cell.dayLabel}, ${cell.date} to ${logStatus} in Lakehouse`);
+    } catch (e) {
+      console.error("Failed to sync cell update:", e);
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  // ── TOGGLE A CELL IN A SPECIFIC COURSE CARD ────────────────────
+  const handleToggleCourseSession = async (courseId: string, dayIndex: number) => {
+    const course = courses.find((c) => c.courseId === courseId);
+    if (!course || !course.heatmapDays[dayIndex]) return;
+
+    const currentItem = course.heatmapDays[dayIndex];
+    if (currentItem.status === "SCHEDULED") return;
+
+    const nextStatusMap: Record<AttendanceStatus, AttendanceStatus> = {
+      PRESENT: "LATE",
+      LATE: "ABSENT",
+      ABSENT: "PRESENT",
+      SCHEDULED: "SCHEDULED",
+    };
+    const nextStatus = nextStatusMap[currentItem.status];
+
+    // Optimistically update courses
+    const updatedCourses = courses.map((c) => {
+      if (c.courseId !== courseId) return c;
+      const updatedDays = [...c.heatmapDays];
+      updatedDays[dayIndex] = { ...currentItem, status: nextStatus };
+
+      const past = updatedDays.filter((d) => d.status !== "SCHEDULED");
+      const att = past.filter((d) => d.status === "PRESENT").length;
+      const lte = past.filter((d) => d.status === "LATE").length;
+      const abs = past.filter((d) => d.status === "ABSENT").length;
+      const total = past.length || 1;
+      const effective = att + lte * 0.75;
+      const pct = Math.round((effective / total) * 100);
+      const isAtRisk = pct < c.minAttendancePct;
+
+      return {
+        ...c,
+        attendedCount: att,
+        lateCount: lte,
+        absentCount: abs,
+        currentPercentage: pct,
+        isAtRisk,
+        statusLabel: pct >= 95 ? "Perfect" : isAtRisk ? "At risk" : "On track",
+        heatmapDays: updatedDays,
+      };
+    });
+
+    setCourses(updatedCourses);
+
+    // Recalculate global stats
+    recalculateGlobalStats(updatedCourses);
+
+    // Persist to Databricks
+    setIsSyncing(true);
+    try {
+      await fetch("/api/attendance", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          logId: currentItem.logId,
+          courseId,
+          sessionDate: currentItem.date,
+          newStatus: nextStatus,
+        }),
+      });
+      showToast(`${course.courseCode} ${currentItem.date} set to ${nextStatus}`);
+    } catch (e) {
+      console.error("Failed to update course session:", e);
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  const recalculateFromGrid = (grid: any[]) => {
+    const pastCells = grid.filter((c) => c.status !== "scheduled" && c.status !== "today");
+    const full = pastCells.filter((c) => c.status === "full").length;
+    const partial = pastCells.filter((c) => c.status === "partial").length;
+    const missed = pastCells.filter((c) => c.status === "missed").length;
+    const total = pastCells.length || 1;
+    const pct = Math.round(((full * 2 + partial * 1.5) / (total * 2)) * 100);
+
+    setStats((prev) => ({
+      ...prev,
+      overallPct: pct,
+      attendedCount: full * 2 + partial,
+      missedCount: missed * 2,
+      lateCount: partial * 2,
+      presentCount: full * 2,
+    }));
+  };
+
+  const recalculateGlobalStats = (courseList: CourseAttendance[]) => {
+    let totalAtt = 0;
+    let totalLte = 0;
+    let totalAbs = 0;
+    let atRisk = 0;
+
+    for (const c of courseList) {
+      totalAtt += c.attendedCount;
+      totalLte += c.lateCount;
+      totalAbs += c.absentCount;
+      if (c.isAtRisk) atRisk++;
+    }
+
+    const totalToDate = totalAtt + totalLte + totalAbs || 65;
+    const overallPct = Math.round(((totalAtt + totalLte * 0.75) / totalToDate) * 100);
+
+    setStats((prev) => ({
+      ...prev,
+      overallPct,
+      attendedCount: totalAtt + totalLte,
+      missedCount: totalAbs,
+      lateCount: totalLte,
+      presentCount: totalAtt,
+      atRiskCoursesCount: atRisk,
+    }));
+  };
+
   const handleResetFilters = () => {
     setFilterPresent(true);
     setFilterLate(true);
     setFilterAbsent(true);
     setFilterScheduled(true);
     setActiveView("heatmap");
+  };
+
+  // Find MATH 201 course for the alert
+  const mathCourse: CourseAttendance = courses.find((c) => c.courseCode.includes("201")) || {
+    courseId: "MATH-201",
+    courseCode: "MATH 201",
+    title: "Linear Algebra",
+    instructor: "Dr. Okafor",
+    location: "Hart 112",
+    scheduleDays: ["Mon", "Wed", "Fri"],
+    startTime: "09:00",
+    durationMins: 50,
+    minAttendancePct: 75,
+    currentPercentage: 70,
+    isAtRisk: true,
+    statusLabel: "At risk",
+    attendedCount: 11,
+    lateCount: 2,
+    absentCount: 6,
+    totalSessionsToDate: 19,
+    logs: [],
+    heatmapDays: [],
   };
 
   return (
@@ -59,6 +286,12 @@ export default function AttendancePage() {
               <span className="hidden sm:inline-flex items-center rounded-full border border-line bg-inset px-2 py-0.5 font-mono text-[10px] font-medium tracking-wide text-ink-3">
                 SPRING · WEEK 7/14
               </span>
+              {isSyncing && (
+                <span className="inline-flex items-center gap-1 text-[11px] text-accent animate-pulse font-mono">
+                  <span className="size-1.5 rounded-full bg-accent animate-ping" />
+                  Syncing with Databricks…
+                </span>
+              )}
             </div>
 
             <div className="flex items-center gap-2">
@@ -97,10 +330,18 @@ export default function AttendancePage() {
             </div>
           </header>
 
+          {/* Toast Notification */}
+          {toastMessage && (
+            <div className="absolute top-14 right-6 z-50 rounded-[8px] border border-accent bg-surface px-3 py-1.5 text-[12px] font-medium text-ink shadow-lg animate-fade-in flex items-center gap-2">
+              <span className="size-2 rounded-full bg-accent animate-pulse" />
+              {toastMessage}
+            </div>
+          )}
+
           {/* Body content */}
           <div className="min-h-0 flex-1 overflow-y-auto p-3 sm:p-4 space-y-4 bg-canvas">
             {/* ── risk alert (dismissible) ───────────────────── */}
-            {!isAlertDismissed ? (
+            {!isAlertDismissed && mathCourse.isAtRisk ? (
               <div className="relative flex items-center justify-between gap-3 flex-wrap rounded-[12px] border border-orange/35 bg-orange-tint/20 p-3.5 shadow-sm animate-fade-in">
                 <button
                   type="button"
@@ -125,18 +366,18 @@ export default function AttendancePage() {
                       <span className="text-[12px] text-ink-2">exam eligibility</span>
                     </div>
                     <p className="mt-1 text-[12.5px] text-ink-2 leading-relaxed">
-                      Attendance is <b className="text-red font-semibold tabular-nums">70%</b> — below the <b className="font-semibold text-ink">75%</b> cutoff. Attend <b className="text-ink tabular-nums">18 of the remaining 22</b> sessions to restore eligibility.
+                      Attendance is <b className="text-red font-semibold tabular-nums">{mathCourse.currentPercentage}%</b> — below the <b className="font-semibold text-ink">75%</b> cutoff. Attend <b className="text-ink tabular-nums">18 of the remaining 22</b> sessions to restore eligibility.
                     </p>
                   </div>
                 </div>
 
                 <div className="flex flex-col gap-1.5 w-40 shrink-0">
                   <div className="relative h-1.5 w-full rounded-full bg-line overflow-hidden">
-                    <div className="absolute top-0 bottom-0 left-0 bg-red rounded-full" style={{ width: "70%" }} />
+                    <div className="absolute top-0 bottom-0 left-0 bg-red rounded-full" style={{ width: `${mathCourse.currentPercentage}%` }} />
                     <div className="absolute top-0 bottom-0 w-0.5 bg-ink" style={{ left: "75%" }} />
                   </div>
                   <div className="flex justify-between text-[10.5px] font-medium tabular-nums">
-                    <span className="text-red font-semibold">70% now</span>
+                    <span className="text-red font-semibold">{mathCourse.currentPercentage}% now</span>
                     <span className="text-ink-3">75% cutoff</span>
                   </div>
                 </div>
@@ -156,6 +397,25 @@ export default function AttendancePage() {
                   </button>
                 </div>
               </div>
+            ) : !isAlertDismissed && !mathCourse.isAtRisk ? (
+              <div className="flex items-center justify-between gap-3 rounded-[12px] border border-green/30 bg-green-tint/20 p-3 shadow-sm animate-fade-in">
+                <div className="flex items-center gap-2.5">
+                  <span className="flex size-7 items-center justify-center rounded-full bg-green text-white">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="20 6 9 17 4 12" /></svg>
+                  </span>
+                  <div>
+                    <span className="text-[13px] font-semibold text-green">All 5 courses in safe standing!</span>
+                    <p className="text-[12px] text-ink-2">MATH 201 attendance is now {mathCourse.currentPercentage}% — meeting all final exam cutoffs.</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsAlertDismissed(true)}
+                  className="text-[12px] font-medium text-ink-3 hover:text-ink"
+                >
+                  Dismiss
+                </button>
+              </div>
             ) : (
               <button
                 type="button"
@@ -163,7 +423,7 @@ export default function AttendancePage() {
                 className="inline-flex items-center gap-1.5 rounded-full border border-line bg-surface px-2.5 py-1 text-[11.5px] font-medium text-ink-3 hover:text-ink hover:bg-hover transition-colors"
               >
                 <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M10.3 3.8 1.9 18a2 2 0 0 0 1.7 3h16.8a2 2 0 0 0 1.7-3L13.7 3.8a2 2 0 0 0-3.4 0Z"/><path d="M12 9v4M12 17h.01"/></svg>
-                MATH 201 warning hidden — restore
+                Course warning banner hidden — restore
               </button>
             )}
 
@@ -175,10 +435,10 @@ export default function AttendancePage() {
                   <svg className="size-11 -rotate-90" viewBox="0 0 36 36">
                     <circle className="text-line" strokeWidth="3.6" stroke="currentColor" fill="none" cx="18" cy="18" r="15.92" />
                     <circle
-                      className="text-accent"
+                      className="text-accent transition-all duration-300"
                       strokeWidth="3.6"
                       strokeDasharray="100"
-                      strokeDashoffset={checkInEng ? "14" : "14"}
+                      strokeDashoffset={100 - stats.overallPct}
                       strokeLinecap="round"
                       stroke="currentColor"
                       fill="none"
@@ -188,14 +448,14 @@ export default function AttendancePage() {
                     />
                   </svg>
                   <span className="absolute inset-0 flex items-center justify-center font-mono text-[11.5px] font-semibold text-ink tabular-nums">
-                    {checkInEng ? "86" : "86"}<small className="text-[8px] text-ink-3">%</small>
+                    {stats.overallPct}<small className="text-[8px] text-ink-3">%</small>
                   </span>
                 </div>
                 <div className="flex-1 min-w-0">
                   <span className="text-[11px] font-semibold text-ink-3 uppercase tracking-wider">Overall</span>
                   <div className="flex items-baseline gap-1 mt-0.5">
-                    <b className="text-[18px] font-semibold text-ink tabular-nums">{checkInEng ? "86%" : "86%"}</b>
-                    <span className="text-[11.5px] text-ink-3 tabular-nums">{checkInEng ? "57 / 65" : "56 / 65"} sessions</span>
+                    <b className="text-[18px] font-semibold text-ink tabular-nums">{stats.overallPct}%</b>
+                    <span className="text-[11.5px] text-ink-3 tabular-nums">{stats.attendedCount} / {stats.totalSessionsToDate} sessions</span>
                   </div>
                   <div className="flex items-center gap-1 mt-1 text-[11px] text-ink-3">
                     <span className="inline-flex items-center rounded-full bg-green-tint px-1.5 py-0.2 text-[10px] font-medium text-green tabular-nums">
@@ -214,8 +474,8 @@ export default function AttendancePage() {
                 <div className="flex-1 min-w-0">
                   <span className="text-[11px] font-semibold text-ink-3 uppercase tracking-wider">Attended</span>
                   <div className="flex items-baseline gap-1 mt-0.5">
-                    <b className="text-[18px] font-semibold text-ink tabular-nums">{checkInEng ? "57" : "56"}</b>
-                    <span className="text-[11.5px] text-ink-3 tabular-nums">of 65 to date</span>
+                    <b className="text-[18px] font-semibold text-ink tabular-nums">{stats.attendedCount}</b>
+                    <span className="text-[11.5px] text-ink-3 tabular-nums">of {stats.totalSessionsToDate} to date</span>
                   </div>
                   <div className="flex items-center gap-1.5 mt-1 text-[11px] text-ink-3">
                     <span className="flex items-end gap-0.5 h-3.5">
@@ -240,7 +500,7 @@ export default function AttendancePage() {
                 <div className="flex-1 min-w-0">
                   <span className="text-[11px] font-semibold text-ink-3 uppercase tracking-wider">Streak</span>
                   <div className="flex items-baseline gap-1 mt-0.5">
-                    <b className="text-[18px] font-semibold text-ink tabular-nums">9</b>
+                    <b className="text-[18px] font-semibold text-ink tabular-nums">{stats.streakDays}</b>
                     <span className="text-[11.5px] text-ink-3">school days</span>
                   </div>
                   <div className="flex items-center gap-1 mt-1 text-[11px] text-ink-3">
@@ -260,11 +520,11 @@ export default function AttendancePage() {
                 <div className="flex-1 min-w-0">
                   <span className="text-[11px] font-semibold text-ink-3 uppercase tracking-wider">Missed</span>
                   <div className="flex items-baseline gap-1 mt-0.5">
-                    <b className="text-[18px] font-semibold text-ink tabular-nums">9</b>
+                    <b className="text-[18px] font-semibold text-ink tabular-nums">{stats.missedCount}</b>
                     <span className="text-[11.5px] text-ink-3">sessions</span>
                   </div>
                   <div className="flex items-center gap-1 mt-1 text-[11px] text-ink-3">
-                    <span className="text-red font-medium tabular-nums">6 in MATH 201</span>
+                    <span className="text-red font-medium tabular-nums">{mathCourse.absentCount} in MATH 201</span>
                   </div>
                 </div>
               </div>
@@ -277,7 +537,7 @@ export default function AttendancePage() {
                 <div className="flex-1 min-w-0">
                   <span className="text-[11px] font-semibold text-ink-3 uppercase tracking-wider">At risk</span>
                   <div className="flex items-baseline gap-1 mt-0.5">
-                    <b className="text-[18px] font-semibold text-orange tabular-nums">1</b>
+                    <b className="text-[18px] font-semibold text-orange tabular-nums">{stats.atRiskCoursesCount}</b>
                     <span className="text-[11.5px] text-ink-3">of 5 courses</span>
                   </div>
                   <button
@@ -285,7 +545,7 @@ export default function AttendancePage() {
                     onClick={() => setRecoveryModalOpen(true)}
                     className="flex items-center gap-1 mt-1 text-[11px] text-accent hover:underline cursor-pointer"
                   >
-                    MATH 201 · 70% (Recovery plan →)
+                    MATH 201 · {mathCourse.currentPercentage}% (Plan →)
                   </button>
                 </div>
               </div>
@@ -311,7 +571,7 @@ export default function AttendancePage() {
                   </span>
                   <span className="hidden sm:inline-flex items-center gap-1 rounded-full border border-line bg-inset px-2 py-0.5 text-[11px] font-medium text-ink-3">
                     <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M13 2 4.5 13.5H11L9.5 22 18 10.5h-6.5L13 2Z"/></svg>
-                    9-day streak on the line
+                    {stats.streakDays}-day streak on the line
                   </span>
                 </div>
               </div>
@@ -358,8 +618,12 @@ export default function AttendancePage() {
                         </span>
                         <button
                           type="button"
-                          onClick={() => setCheckInEng(true)}
-                          className="inline-flex h-7 items-center gap-1 rounded-[7px] bg-accent px-3 text-[11.5px] font-medium text-white shadow-sm hover:brightness-105 transition-all"
+                          onClick={() => {
+                            setCheckInEng(true);
+                            setStats((prev) => ({ ...prev, attendedCount: prev.attendedCount + 1 }));
+                            showToast("Checked in to ENG 105 in Lakehouse!");
+                          }}
+                          className="inline-flex h-7 items-center gap-1 rounded-[7px] bg-accent px-3 text-[11.5px] font-medium text-white shadow-sm hover:brightness-105 transition-all cursor-pointer active:scale-95"
                         >
                           Check in
                         </button>
@@ -372,8 +636,11 @@ export default function AttendancePage() {
                         </span>
                         <button
                           type="button"
-                          onClick={() => setCheckInEng(false)}
-                          className="inline-flex h-7 items-center gap-1 rounded-[7px] bg-green-tint px-2.5 text-[11.5px] font-medium text-green"
+                          onClick={() => {
+                            setCheckInEng(false);
+                            setStats((prev) => ({ ...prev, attendedCount: prev.attendedCount - 1 }));
+                          }}
+                          className="inline-flex h-7 items-center gap-1 rounded-[7px] bg-green-tint px-2.5 text-[11.5px] font-medium text-green cursor-pointer"
                         >
                           <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M20 6L9 17l-5-5"/></svg>
                           Done
@@ -399,8 +666,11 @@ export default function AttendancePage() {
                     </span>
                     <button
                       type="button"
-                      onClick={() => setRemindCs(!remindCs)}
-                      className={`inline-flex h-7 items-center gap-1 rounded-[7px] border border-line px-2.5 text-[11.5px] font-medium transition-colors ${
+                      onClick={() => {
+                        setRemindCs(!remindCs);
+                        showToast(remindCs ? "Reminder removed" : "Reminder set for CS 210 office hours");
+                      }}
+                      className={`inline-flex h-7 items-center gap-1 rounded-[7px] border border-line px-2.5 text-[11.5px] font-medium transition-colors cursor-pointer ${
                         remindCs ? "bg-accent-tint text-accent border-accent/40" : "bg-surface text-ink-2 hover:bg-hover hover:text-ink"
                       }`}
                     >
@@ -440,7 +710,7 @@ export default function AttendancePage() {
 
                 <span className="hidden sm:inline-flex items-center gap-1 text-[11.5px] text-ink-3">
                   <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-green"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.66 3.58 3 8 3s8-1.34 8-3V5M4 12c0 1.66 3.58 3 8 3s8-1.34 8-3"/></svg>
-                  live · attendance.delta
+                  live · workspace.campus_explorer.student_attendance_logs
                 </span>
               </div>
 
@@ -448,45 +718,45 @@ export default function AttendancePage() {
                 <button
                   type="button"
                   onClick={() => setFilterPresent(!filterPresent)}
-                  className={`inline-flex h-6.5 items-center gap-1.5 rounded-full border px-2.5 text-[11.5px] font-medium transition-colors ${
+                  className={`inline-flex h-6.5 items-center gap-1.5 rounded-full border px-2.5 text-[11.5px] font-medium transition-colors cursor-pointer ${
                     filterPresent ? "border-accent/40 bg-accent-tint text-accent" : "border-line bg-surface text-ink-3"
                   }`}
                 >
                   <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M20 6L9 17l-5-5"/></svg>
-                  Present <b className="font-mono text-[10.5px]">49</b>
+                  Present <b className="font-mono text-[10.5px]">{stats.presentCount}</b>
                 </button>
 
                 <button
                   type="button"
                   onClick={() => setFilterLate(!filterLate)}
-                  className={`inline-flex h-6.5 items-center gap-1.5 rounded-full border px-2.5 text-[11.5px] font-medium transition-colors ${
+                  className={`inline-flex h-6.5 items-center gap-1.5 rounded-full border px-2.5 text-[11.5px] font-medium transition-colors cursor-pointer ${
                     filterLate ? "border-orange/40 bg-orange-tint text-orange" : "border-line bg-surface text-ink-3"
                   }`}
                 >
                   <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg>
-                  Late <b className="font-mono text-[10.5px]">6</b>
+                  Late <b className="font-mono text-[10.5px]">{stats.lateCount}</b>
                 </button>
 
                 <button
                   type="button"
                   onClick={() => setFilterAbsent(!filterAbsent)}
-                  className={`inline-flex h-6.5 items-center gap-1.5 rounded-full border px-2.5 text-[11.5px] font-medium transition-colors ${
+                  className={`inline-flex h-6.5 items-center gap-1.5 rounded-full border px-2.5 text-[11.5px] font-medium transition-colors cursor-pointer ${
                     filterAbsent ? "border-red/40 bg-red-tint text-red" : "border-line bg-surface text-ink-3"
                   }`}
                 >
                   <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M18 6L6 18M6 6l12 12"/></svg>
-                  Absent <b className="font-mono text-[10.5px]">9</b>
+                  Absent <b className="font-mono text-[10.5px]">{stats.missedCount}</b>
                 </button>
 
                 <button
                   type="button"
                   onClick={() => setFilterScheduled(!filterScheduled)}
-                  className={`inline-flex h-6.5 items-center gap-1.5 rounded-full border px-2.5 text-[11.5px] font-medium transition-colors ${
+                  className={`inline-flex h-6.5 items-center gap-1.5 rounded-full border px-2.5 text-[11.5px] font-medium transition-colors cursor-pointer ${
                     filterScheduled ? "border-line-strong bg-inset text-ink-2" : "border-line bg-surface text-ink-3"
                   }`}
                 >
                   <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="4.5" width="18" height="17" rx="2.5"/><path d="M8 2.5v4M16 2.5v4M3 10h18"/></svg>
-                  Scheduled <b className="font-mono text-[10.5px]">74</b>
+                  Scheduled <b className="font-mono text-[10.5px]">{stats.scheduledCount}</b>
                 </button>
 
                 <button
@@ -511,13 +781,13 @@ export default function AttendancePage() {
                     </svg>
                     <div>
                       <h2 className="text-[13.5px] font-semibold text-ink">Term heatmap</h2>
-                      <span className="text-[11.5px] text-ink-3 font-mono">Feb 3 – May 9 · weeks 1–14 · class days only</span>
+                      <span className="text-[11.5px] text-ink-3 font-mono">Feb 3 – May 9 · weeks 1–14 · click squares to toggle status</span>
                     </div>
                   </div>
                   <div className="flex items-center gap-1.5">
                     <span className="inline-flex items-center gap-1 rounded-full bg-green-tint px-2 py-0.5 text-[10.5px] font-medium text-green">
                       <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M13 2 4.5 13.5H11L9.5 22 18 10.5h-6.5L13 2Z"/></svg>
-                      9-day streak
+                      {stats.streakDays}-day streak
                     </span>
                     <span className="hidden sm:inline-flex items-center rounded-full border border-line bg-inset px-2 py-0.5 text-[10.5px] font-medium text-ink-3">
                       This week 5/5
@@ -540,52 +810,45 @@ export default function AttendancePage() {
                       <span className="flex items-center h-6">F</span>
                     </div>
                     <div className="grid grid-rows-5 grid-flow-col auto-cols-[24px] gap-1">
-                      {/* W1 */}
-                      <span title="Mon · Feb 3 — 2/2 · 100%" className={`size-6 rounded-[5px] bg-accent/80 transition-transform hover:scale-125 ${!filterPresent ? "opacity-20" : ""}`} />
-                      <span title="Tue · Feb 4 — 2/2 · 100%" className={`size-6 rounded-[5px] bg-accent/80 transition-transform hover:scale-125 ${!filterPresent ? "opacity-20" : ""}`} />
-                      <span title="Wed · Feb 5 — 2/2 · 100%" className={`size-6 rounded-[5px] bg-accent/80 transition-transform hover:scale-125 ${!filterPresent ? "opacity-20" : ""}`} />
-                      <span title="Thu · Feb 6 — 2/2 · 100%" className={`size-6 rounded-[5px] bg-accent/80 transition-transform hover:scale-125 ${!filterPresent ? "opacity-20" : ""}`} />
-                      <span title="Fri · Feb 7 — 1/2 · 50%" className={`size-6 rounded-[5px] bg-accent/40 transition-transform hover:scale-125 ${!filterLate ? "opacity-20" : ""}`} />
-                      {/* W2 */}
-                      <span title="Mon · Feb 10 — 1/2 · 50%" className={`size-6 rounded-[5px] bg-accent/40 transition-transform hover:scale-125 ${!filterLate ? "opacity-20" : ""}`} />
-                      <span title="Tue · Feb 11 — 2/2 · 100%" className={`size-6 rounded-[5px] bg-accent/80 transition-transform hover:scale-125 ${!filterPresent ? "opacity-20" : ""}`} />
-                      <span title="Wed · Feb 12 — 2/2 · 100%" className={`size-6 rounded-[5px] bg-accent/80 transition-transform hover:scale-125 ${!filterPresent ? "opacity-20" : ""}`} />
-                      <span title="Thu · Feb 13 — 2/2 · 100%" className={`size-6 rounded-[5px] bg-accent/80 transition-transform hover:scale-125 ${!filterPresent ? "opacity-20" : ""}`} />
-                      <span title="Fri · Feb 14 — 2/2 · 100%" className={`size-6 rounded-[5px] bg-accent/80 transition-transform hover:scale-125 ${!filterPresent ? "opacity-20" : ""}`} />
-                      {/* W3 */}
-                      <span title="Mon · Feb 17 — 2/2 · 100%" className={`size-6 rounded-[5px] bg-accent/80 transition-transform hover:scale-125 ${!filterPresent ? "opacity-20" : ""}`} />
-                      <span title="Tue · Feb 18 — 1/2 · 50%" className={`size-6 rounded-[5px] bg-accent/40 transition-transform hover:scale-125 ${!filterLate ? "opacity-20" : ""}`} />
-                      <span title="Wed · Feb 19 — 2/2 · 100%" className={`size-6 rounded-[5px] bg-accent/80 transition-transform hover:scale-125 ${!filterPresent ? "opacity-20" : ""}`} />
-                      <span title="Thu · Feb 20 — 2/2 · 100%" className={`size-6 rounded-[5px] bg-accent/80 transition-transform hover:scale-125 ${!filterPresent ? "opacity-20" : ""}`} />
-                      <span title="Fri · Feb 21 — 1/2 · 50%" className={`size-6 rounded-[5px] bg-accent/40 transition-transform hover:scale-125 ${!filterLate ? "opacity-20" : ""}`} />
-                      {/* W4 */}
-                      <span title="Mon · Feb 24 — 1/2 · 50%" className={`size-6 rounded-[5px] bg-accent/40 transition-transform hover:scale-125 ${!filterLate ? "opacity-20" : ""}`} />
-                      <span title="Tue · Feb 25 — 2/2 · 100%" className={`size-6 rounded-[5px] bg-accent/80 transition-transform hover:scale-125 ${!filterPresent ? "opacity-20" : ""}`} />
-                      <span title="Wed · Feb 26 — 2/2 · 100%" className={`size-6 rounded-[5px] bg-accent/80 transition-transform hover:scale-125 ${!filterPresent ? "opacity-20" : ""}`} />
-                      <span title="Thu · Feb 27 — 2/2 · 100%" className={`size-6 rounded-[5px] bg-accent/80 transition-transform hover:scale-125 ${!filterPresent ? "opacity-20" : ""}`} />
-                      <span title="Fri · Feb 28 — 2/2 · 100%" className={`size-6 rounded-[5px] bg-accent/80 transition-transform hover:scale-125 ${!filterPresent ? "opacity-20" : ""}`} />
-                      {/* W5 */}
-                      <span title="Mon · Mar 3 — 1/2 · 50%" className={`size-6 rounded-[5px] bg-accent/40 transition-transform hover:scale-125 ${!filterLate ? "opacity-20" : ""}`} />
-                      <span title="Tue · Mar 4 — 2/2 · 100%" className={`size-6 rounded-[5px] bg-accent/80 transition-transform hover:scale-125 ${!filterPresent ? "opacity-20" : ""}`} />
-                      <span title="Wed · Mar 5 — 2/2 · 100%" className={`size-6 rounded-[5px] bg-accent/80 transition-transform hover:scale-125 ${!filterPresent ? "opacity-20" : ""}`} />
-                      <span title="Thu · Mar 6 — 2/2 · 100%" className={`size-6 rounded-[5px] bg-accent/80 transition-transform hover:scale-125 ${!filterPresent ? "opacity-20" : ""}`} />
-                      <span title="Fri · Mar 7 — 1/2 · 50%" className={`size-6 rounded-[5px] bg-accent/40 transition-transform hover:scale-125 ${!filterLate ? "opacity-20" : ""}`} />
-                      {/* W6 */}
-                      <span title="Mon · Mar 10 — 2/2 · 100%" className={`size-6 rounded-[5px] bg-accent/80 transition-transform hover:scale-125 ${!filterPresent ? "opacity-20" : ""}`} />
-                      <span title="Tue · Mar 11 — 2/2 · 100%" className={`size-6 rounded-[5px] bg-accent/80 transition-transform hover:scale-125 ${!filterPresent ? "opacity-20" : ""}`} />
-                      <span title="Wed · Mar 12 — 0/2 · missed both" className={`size-6 rounded-[5px] bg-red/70 transition-transform hover:scale-125 ${!filterAbsent ? "opacity-20" : ""}`} />
-                      <span title="Thu · Mar 13 — 2/2 · 100%" className={`size-6 rounded-[5px] bg-accent/80 transition-transform hover:scale-125 ${!filterPresent ? "opacity-20" : ""}`} />
-                      <span title="Fri · Mar 14 — 2/2 · 100%" className={`size-6 rounded-[5px] bg-accent/80 transition-transform hover:scale-125 ${!filterPresent ? "opacity-20" : ""}`} />
-                      {/* W7 (Current) */}
-                      <span title="Mon · Mar 17 — 2/2 · 100%" className={`size-6 rounded-[5px] bg-accent/80 transition-transform hover:scale-125 ${!filterPresent ? "opacity-20" : ""}`} />
-                      <span title="Tue · Mar 18 — 2/2 · 100%" className={`size-6 rounded-[5px] bg-accent/80 transition-transform hover:scale-125 ${!filterPresent ? "opacity-20" : ""}`} />
-                      <span title="Wed · Mar 19 — today" className="size-6 rounded-[5px] bg-accent-tint border-2 border-accent transition-transform hover:scale-125 animate-pulse" />
-                      <span title="Thu · Mar 20 — scheduled" className={`size-6 rounded-[5px] border border-line bg-transparent ${!filterScheduled ? "opacity-20" : ""}`} />
-                      <span title="Fri · Mar 21 — scheduled" className={`size-6 rounded-[5px] border border-line bg-transparent ${!filterScheduled ? "opacity-20" : ""}`} />
-                      {/* W8-14 (Scheduled) */}
-                      {Array.from({ length: 35 }).map((_, idx) => (
-                        <span key={idx} title="Scheduled" className={`size-6 rounded-[5px] border border-line/60 bg-transparent ${!filterScheduled ? "opacity-20" : ""}`} />
-                      ))}
+                      {termGrid.length > 0 ? (
+                        termGrid.map((cell, idx) => {
+                          const isToday = cell.status === "today";
+                          const isScheduled = cell.status === "scheduled";
+                          const isFull = cell.status === "full";
+                          const isPartial = cell.status === "partial";
+                          const isMissed = cell.status === "missed";
+
+                          let bg = "bg-accent/80";
+                          if (isToday) bg = "bg-accent-tint border-2 border-accent animate-pulse";
+                          else if (isScheduled) bg = "border border-line/60 bg-transparent";
+                          else if (isMissed) bg = "bg-red/70";
+                          else if (isPartial) bg = "bg-accent/40";
+
+                          const opacityClass =
+                            (isFull && !filterPresent) ||
+                            (isPartial && !filterLate) ||
+                            (isMissed && !filterAbsent) ||
+                            (isScheduled && !filterScheduled)
+                              ? "opacity-20"
+                              : "opacity-100";
+
+                          return (
+                            <button
+                              key={idx}
+                              type="button"
+                              onClick={() => handleToggleTermCell(idx)}
+                              title={`${cell.dayLabel} · ${cell.date} — ${
+                                isFull ? "Present (Full day)" : isPartial ? "Late (Partial day)" : isMissed ? "Missed" : isToday ? "Today" : "Scheduled"
+                              } (Click to toggle)`}
+                              className={`size-6 rounded-[5px] transition-transform hover:scale-125 cursor-pointer hover:ring-2 hover:ring-accent ${bg} ${opacityClass}`}
+                            />
+                          );
+                        })
+                      ) : (
+                        Array.from({ length: 70 }).map((_, idx) => (
+                          <span key={idx} className="size-6 rounded-[5px] bg-accent/40 animate-pulse" />
+                        ))
+                      )}
                     </div>
                   </div>
                 </div>
@@ -593,7 +856,7 @@ export default function AttendancePage() {
                 <div className="flex items-center justify-between border-t border-line px-3.5 py-2 text-[11.5px] text-ink-3">
                   <div className="flex items-center gap-1.5">
                     <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-green"><path d="M20 6L9 17l-5-5"/></svg>
-                    <span><b className="text-ink-2 font-semibold tabular-nums">56</b> of 65 sessions recorded</span>
+                    <span><b className="text-ink-2 font-semibold tabular-nums">{stats.attendedCount}</b> of {stats.totalSessionsToDate} sessions recorded</span>
                   </div>
                   <div className="flex items-center gap-3">
                     <span className="inline-flex items-center gap-1.5"><i className="size-2.5 rounded-[3px] bg-accent/80" /> Full day</span>
@@ -622,380 +885,173 @@ export default function AttendancePage() {
                   {/* Mon */}
                   <div className="flex flex-col items-center gap-2 flex-1">
                     <div className="relative w-full max-w-[36px] h-24 flex items-end rounded-[6px] bg-inset p-0.5">
-                      <span className="w-full rounded-[4px] bg-orange/70" style={{ height: "79%" }} title="Mon — 11/14 sessions (79%)" />
+                      <span className="w-full rounded-[4px] bg-orange/70 transition-all duration-300" style={{ height: `${weekdayRates.MON}%` }} title={`Mon — ${weekdayRates.MON}%`} />
                     </div>
                     <div className="text-center">
                       <span className="block text-[10.5px] font-semibold text-ink-2">MON</span>
-                      <span className="font-mono text-[10px] text-orange tabular-nums">79%</span>
+                      <span className="font-mono text-[10px] text-orange tabular-nums">{weekdayRates.MON}%</span>
                     </div>
                   </div>
 
                   {/* Tue */}
                   <div className="flex flex-col items-center gap-2 flex-1">
                     <div className="relative w-full max-w-[36px] h-24 flex items-end rounded-[6px] bg-inset p-0.5">
-                      <span className="w-full rounded-[4px] bg-accent/70" style={{ height: "93%" }} title="Tue — 13/14 sessions (93%)" />
+                      <span className="w-full rounded-[4px] bg-accent/70 transition-all duration-300" style={{ height: `${weekdayRates.TUE}%` }} title={`Tue — ${weekdayRates.TUE}%`} />
                     </div>
                     <div className="text-center">
                       <span className="block text-[10.5px] font-semibold text-ink-2">TUE</span>
-                      <span className="font-mono text-[10px] text-ink-3 tabular-nums">93%</span>
+                      <span className="font-mono text-[10px] text-ink-3 tabular-nums">{weekdayRates.TUE}%</span>
                     </div>
                   </div>
 
                   {/* Wed */}
                   <div className="flex flex-col items-center gap-2 flex-1">
                     <div className="relative w-full max-w-[36px] h-24 flex items-end rounded-[6px] bg-inset p-0.5">
-                      <span className="w-full rounded-[4px] bg-accent/70" style={{ height: "86%" }} title="Wed — 12/14 sessions (86%)" />
+                      <span className="w-full rounded-[4px] bg-accent/70 transition-all duration-300" style={{ height: `${weekdayRates.WED}%` }} title={`Wed — ${weekdayRates.WED}%`} />
                     </div>
                     <div className="text-center">
                       <span className="block text-[10.5px] font-semibold text-ink-2">WED</span>
-                      <span className="font-mono text-[10px] text-ink-3 tabular-nums">86%</span>
+                      <span className="font-mono text-[10px] text-ink-3 tabular-nums">{weekdayRates.WED}%</span>
                     </div>
                   </div>
 
                   {/* Thu */}
                   <div className="flex flex-col items-center gap-2 flex-1">
                     <div className="relative w-full max-w-[36px] h-24 flex items-end rounded-[6px] bg-inset p-0.5">
-                      <span className="w-full rounded-[4px] bg-green/80" style={{ height: "100%" }} title="Thu — 12/12 sessions (100%)" />
+                      <span className="w-full rounded-[4px] bg-accent/70 transition-all duration-300" style={{ height: `${weekdayRates.THU}%` }} title={`Thu — ${weekdayRates.THU}%`} />
                     </div>
                     <div className="text-center">
                       <span className="block text-[10.5px] font-semibold text-ink-2">THU</span>
-                      <span className="font-mono text-[10px] text-green tabular-nums">100%</span>
+                      <span className="font-mono text-[10px] text-ink-3 tabular-nums">{weekdayRates.THU}%</span>
                     </div>
                   </div>
 
                   {/* Fri */}
                   <div className="flex flex-col items-center gap-2 flex-1">
                     <div className="relative w-full max-w-[36px] h-24 flex items-end rounded-[6px] bg-inset p-0.5">
-                      <span className="w-full rounded-[4px] bg-orange/80" style={{ height: "75%" }} title="Fri — 9/12 sessions (75%)" />
+                      <span className="w-full rounded-[4px] bg-orange/70 transition-all duration-300" style={{ height: `${weekdayRates.FRI}%` }} title={`Fri — ${weekdayRates.FRI}%`} />
                     </div>
                     <div className="text-center">
                       <span className="block text-[10.5px] font-semibold text-ink-2">FRI</span>
-                      <span className="font-mono text-[10px] text-orange tabular-nums">75%</span>
+                      <span className="font-mono text-[10px] text-orange tabular-nums">{weekdayRates.FRI}%</span>
                     </div>
                   </div>
                 </div>
 
-                <div className="flex items-center justify-between border-t border-line px-3.5 py-2 text-[11px] text-ink-3">
-                  <span className="truncate">Friday slump — 4 of 6 MATH absences</span>
-                  <div className="flex items-center gap-2 shrink-0">
-                    <span className="text-green font-medium">Best THU 100%</span>
-                    <span className="text-orange font-medium">Worst FRI 75%</span>
-                  </div>
+                <div className="flex items-center justify-between border-t border-line px-3.5 py-2 text-[11.5px] text-ink-3">
+                  <span>Lowest attendance day: <b className="text-orange">Mon ({weekdayRates.MON}%)</b></span>
+                  <span className="text-green">Highest: <b>Tue ({weekdayRates.TUE}%)</b></span>
                 </div>
               </section>
             </div>
 
-            {/* ── per-subject grids ──────────────────────────── */}
-            <div className="pt-2">
-              <div className="flex items-baseline justify-between mb-3">
-                <h2 className="text-[15px] font-semibold text-ink">By subject</h2>
-                <span className="text-[11.5px] text-ink-3 font-mono">5 courses · 65 sessions to date · 74 scheduled</span>
+            {/* ── courses breakdown grid (5 courses) ─────────── */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <h2 className="text-[14px] font-semibold text-ink">Courses &amp; Lab Sessions ({courses.length})</h2>
+                <span className="text-[11.5px] text-ink-3 font-mono">Click course squares to toggle individual attendance</span>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                {/* CS 210 */}
-                <article className="flex flex-col justify-between rounded-[12px] border border-line bg-surface p-3.5 shadow-card hover:-translate-y-0.5 transition-transform">
-                  <div>
-                    <div className="flex items-start justify-between gap-2 mb-3">
-                      <div className="flex items-center gap-2.5">
-                        <span className="flex size-8.5 shrink-0 items-center justify-center rounded-[9px] border border-accent/30 bg-accent-tint text-[11px] font-semibold text-accent">
-                          CS
-                        </span>
-                        <div>
-                          <h3 className="text-[13.5px] font-semibold text-ink truncate">Data Structures &amp; Algorithms</h3>
-                          <span className="text-[11.5px] text-ink-3">Tue + Thu · 10:30</span>
+                {courses.map((course) => {
+                  const isMath = course.courseCode.includes("201");
+                  const isCs = course.courseCode.includes("210");
+                  const isPhys = course.courseCode.includes("211");
+                  const isEng = course.courseCode.includes("105");
+                  const isHist = course.courseCode.includes("140");
+
+                  let monogramColor = "border-accent/30 bg-accent-tint text-accent";
+                  if (isMath) monogramColor = "border-orange/30 bg-orange-tint text-orange";
+                  else if (isPhys) monogramColor = "border-cyan-500/30 bg-cyan-500/10 text-cyan-400";
+                  else if (isEng) monogramColor = "border-pink-500/30 bg-pink-500/10 text-pink-400";
+                  else if (isHist) monogramColor = "border-emerald-500/30 bg-emerald-500/10 text-emerald-400";
+
+                  return (
+                    <article
+                      key={course.courseId}
+                      className="flex flex-col justify-between rounded-[12px] border border-line bg-surface p-3.5 shadow-card hover:-translate-y-0.5 transition-transform"
+                    >
+                      <div>
+                        <div className="flex items-start justify-between gap-2 mb-3">
+                          <div className="flex items-center gap-2.5">
+                            <span className={`flex size-8.5 shrink-0 items-center justify-center rounded-[9px] border font-mono text-[11px] font-bold ${monogramColor}`}>
+                              {course.courseCode.slice(0, 2)}
+                            </span>
+                            <div>
+                              <h3 className="text-[13.5px] font-semibold text-ink truncate">{course.title}</h3>
+                              <span className="text-[11.5px] text-ink-3">
+                                {course.scheduleDays.join(" + ")} · {course.startTime}
+                              </span>
+                            </div>
+                          </div>
+                          <div className="flex flex-col items-end">
+                            <span className={`text-[16px] font-semibold tabular-nums ${course.isAtRisk ? "text-red" : "text-ink"}`}>
+                              {course.currentPercentage}%
+                            </span>
+                            {course.isAtRisk ? (
+                              <button
+                                type="button"
+                                onClick={() => setRecoveryModalOpen(true)}
+                                className="inline-flex items-center gap-1 rounded-full bg-red-tint px-2 py-0.5 text-[9.5px] font-medium text-red hover:bg-red-tint/70 hover:brightness-95 cursor-pointer transition-colors border border-red/20"
+                              >
+                                At risk · Plan →
+                              </button>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 rounded-full bg-green-tint px-1.5 py-0.2 text-[9.5px] font-medium text-green">
+                                {course.statusLabel}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Interactive Course Mini-Heatmap */}
+                        {activeView === "heatmap" ? (
+                          <div className="grid grid-rows-2 grid-flow-col auto-cols-[14px] gap-1 py-1 overflow-x-auto">
+                            {course.heatmapDays.map((day, dIdx) => {
+                              const isPres = day.status === "PRESENT";
+                              const isLte = day.status === "LATE";
+                              const isAbs = day.status === "ABSENT";
+                              const isSched = day.status === "SCHEDULED";
+
+                              let cellBg = "bg-accent/80";
+                              if (isLte) cellBg = "bg-orange/80";
+                              else if (isAbs) cellBg = "bg-red/70";
+                              else if (isSched) cellBg = "border border-line bg-transparent";
+
+                              return (
+                                <button
+                                  key={dIdx}
+                                  type="button"
+                                  onClick={() => handleToggleCourseSession(course.courseId, dIdx)}
+                                  title={`${course.courseCode} · ${day.date} (${day.day}) — ${day.status} (Click to toggle)`}
+                                  className={`size-3.5 rounded-xs cursor-pointer hover:scale-125 transition-transform hover:ring-1 hover:ring-accent ${cellBg}`}
+                                />
+                              );
+                            })}
+                          </div>
+                        ) : (
+                          <div className="flex items-end gap-1 h-10 border-b border-line/50 pb-1">
+                            {course.heatmapDays.slice(0, 10).map((day, dIdx) => {
+                              const isPres = day.status === "PRESENT";
+                              const isAbs = day.status === "ABSENT";
+                              const h = isPres ? "h-full bg-accent/70" : isAbs ? "h-1/4 bg-red/70" : "h-2/3 bg-orange/70";
+                              return <i key={dIdx} className={`flex-1 rounded-xs ${h}`} />;
+                            })}
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="flex items-center justify-between border-t border-line/60 pt-2.5 mt-3 text-[11.5px] text-ink-3">
+                        <span className="text-ink-2 font-medium">{course.instructor}</span>
+                        <div className="flex items-center gap-2 font-mono font-medium">
+                          <span className="text-green">✓ {course.attendedCount}</span>
+                          <span className="text-orange">⏱ {course.lateCount}</span>
+                          <span className="text-red">✕ {course.absentCount}</span>
                         </div>
                       </div>
-                      <div className="flex flex-col items-end">
-                        <span className="text-[16px] font-semibold text-ink tabular-nums">92%</span>
-                        <span className="inline-flex items-center gap-1 rounded-full bg-green-tint px-1.5 py-0.2 text-[9.5px] font-medium text-green">On track</span>
-                      </div>
-                    </div>
-
-                    {activeView === "heatmap" ? (
-                      <div className="grid grid-rows-2 grid-flow-col auto-cols-[13px] gap-1 py-1 overflow-x-auto">
-                        <span className="size-3.2 rounded-xs bg-accent/80" title="Present" />
-                        <span className="size-3.2 rounded-xs bg-orange/80" title="Late 8 min" />
-                        <span className="size-3.2 rounded-xs bg-accent/80" title="Present" />
-                        <span className="size-3.2 rounded-xs bg-accent/80" title="Present" />
-                        <span className="size-3.2 rounded-xs bg-red/70" title="Absent" />
-                        <span className="size-3.2 rounded-xs bg-accent/80" title="Present" />
-                        <span className="size-3.2 rounded-xs bg-accent/80" title="Present" />
-                        <span className="size-3.2 rounded-xs bg-accent/80" title="Present" />
-                        <span className="size-3.2 rounded-xs bg-accent/80" title="Present" />
-                        <span className="size-3.2 rounded-xs bg-accent/80" title="Present" />
-                        <span className="size-3.2 rounded-xs bg-accent/80" title="Present" />
-                        <span className="size-3.2 rounded-xs bg-accent/80" title="Present" />
-                        <span className="size-3.2 rounded-xs bg-accent/80" title="Present" />
-                        <span className="size-3.2 rounded-xs border border-line bg-transparent" title="Scheduled" />
-                      </div>
-                    ) : (
-                      <div className="flex items-end gap-1 h-10 border-b border-line/50 pb-1">
-                        <i className="flex-1 bg-accent/70 rounded-xs h-full" />
-                        <i className="flex-1 bg-accent/70 rounded-xs h-full" />
-                        <i className="flex-1 bg-red/70 rounded-xs h-1/2" />
-                        <i className="flex-1 bg-accent/70 rounded-xs h-full" />
-                        <i className="flex-1 bg-accent/70 rounded-xs h-full" />
-                        <i className="flex-1 bg-accent/70 rounded-xs h-full" />
-                        <i className="flex-1 bg-accent/70 rounded-xs h-full" />
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="flex items-center justify-between border-t border-line/60 pt-2.5 mt-3 text-[11.5px] text-ink-3">
-                    <span className="text-ink-2 font-medium">Prof. Reyes</span>
-                    <div className="flex items-center gap-2 font-mono font-medium">
-                      <span className="text-green">✓ 11</span>
-                      <span className="text-orange">⏱ 1</span>
-                      <span className="text-red">✕ 1</span>
-                    </div>
-                  </div>
-                </article>
-
-                {/* MATH 201 */}
-                <article className="flex flex-col justify-between rounded-[12px] border border-line bg-surface p-3.5 shadow-card hover:-translate-y-0.5 transition-transform">
-                  <div>
-                    <div className="flex items-start justify-between gap-2 mb-3">
-                      <div className="flex items-center gap-2.5">
-                        <span className="flex size-8.5 shrink-0 items-center justify-center rounded-[9px] border border-orange/30 bg-orange-tint text-[11px] font-semibold text-orange">
-                          MA
-                        </span>
-                        <div>
-                          <h3 className="text-[13.5px] font-semibold text-ink truncate">Linear Algebra</h3>
-                          <span className="text-[11.5px] text-ink-3">Mon + Wed + Fri · 09:00</span>
-                        </div>
-                      </div>
-                      <div className="flex flex-col items-end">
-                        <span className="text-[16px] font-semibold text-red tabular-nums">70%</span>
-                        <button
-                          type="button"
-                          onClick={() => setRecoveryModalOpen(true)}
-                          className="inline-flex items-center gap-1 rounded-full bg-red-tint px-2 py-0.5 text-[9.5px] font-medium text-red hover:bg-red-tint/70 hover:brightness-95 cursor-pointer transition-colors border border-red/20"
-                        >
-                          At risk · Plan →
-                        </button>
-                      </div>
-                    </div>
-
-                    {activeView === "heatmap" ? (
-                      <div className="grid grid-rows-3 grid-flow-col auto-cols-[13px] gap-1 py-1 overflow-x-auto">
-                        <span className="size-3.2 rounded-xs bg-accent/80" title="Present" />
-                        <span className="size-3.2 rounded-xs bg-accent/80" title="Present" />
-                        <span className="size-3.2 rounded-xs bg-red/70" title="Absent" />
-                        <span className="size-3.2 rounded-xs bg-red/70" title="Absent" />
-                        <span className="size-3.2 rounded-xs bg-orange/80" title="Late" />
-                        <span className="size-3.2 rounded-xs bg-accent/80" title="Present" />
-                        <span className="size-3.2 rounded-xs bg-accent/80" title="Present" />
-                        <span className="size-3.2 rounded-xs bg-accent/80" title="Present" />
-                        <span className="size-3.2 rounded-xs bg-red/70" title="Absent" />
-                        <span className="size-3.2 rounded-xs bg-red/70" title="Absent" />
-                        <span className="size-3.2 rounded-xs bg-accent/80" title="Present" />
-                        <span className="size-3.2 rounded-xs bg-accent/80" title="Present" />
-                        <span className="size-3.2 rounded-xs bg-orange/80" title="Late" />
-                        <span className="size-3.2 rounded-xs bg-accent/80" title="Present" />
-                        <span className="size-3.2 rounded-xs bg-red/70" title="Absent" />
-                        <span className="size-3.2 rounded-xs bg-accent/80" title="Present" />
-                        <span className="size-3.2 rounded-xs bg-red/70" title="Absent" />
-                        <span className="size-3.2 rounded-xs bg-accent/80" title="Present" />
-                        <span className="size-3.2 rounded-xs bg-accent/80" title="Present" />
-                        <span className="size-3.2 rounded-xs bg-accent/80" title="Present" />
-                        <span className="size-3.2 rounded-xs border border-line bg-transparent" title="Scheduled" />
-                      </div>
-                    ) : (
-                      <div className="flex items-end gap-1 h-10 border-b border-line/50 pb-1">
-                        <i className="flex-1 bg-orange/70 rounded-xs h-2/3" />
-                        <i className="flex-1 bg-orange/70 rounded-xs h-2/3" />
-                        <i className="flex-1 bg-orange/70 rounded-xs h-2/3" />
-                        <i className="flex-1 bg-orange/70 rounded-xs h-2/3" />
-                        <i className="flex-1 bg-orange/70 rounded-xs h-2/3" />
-                        <i className="flex-1 bg-orange/70 rounded-xs h-2/3" />
-                        <i className="flex-1 bg-accent/70 rounded-xs h-full" />
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="flex items-center justify-between border-t border-line/60 pt-2.5 mt-3 text-[11.5px] text-ink-3">
-                    <span className="text-ink-2 font-medium">Dr. Okafor</span>
-                    <div className="flex items-center gap-2 font-mono font-medium">
-                      <span className="text-green">✓ 11</span>
-                      <span className="text-orange">⏱ 2</span>
-                      <span className="text-red">✕ 6</span>
-                    </div>
-                  </div>
-                </article>
-
-                {/* PHYS 211 */}
-                <article className="flex flex-col justify-between rounded-[12px] border border-line bg-surface p-3.5 shadow-card hover:-translate-y-0.5 transition-transform">
-                  <div>
-                    <div className="flex items-start justify-between gap-2 mb-3">
-                      <div className="flex items-center gap-2.5">
-                        <span className="flex size-8.5 shrink-0 items-center justify-center rounded-[9px] border border-cyan-500/30 bg-cyan-500/10 text-[11px] font-semibold text-cyan-400">
-                          PH
-                        </span>
-                        <div>
-                          <h3 className="text-[13.5px] font-semibold text-ink truncate">Mechanics &amp; Waves</h3>
-                          <span className="text-[11.5px] text-ink-3">Mon + Thu lab · 11:00</span>
-                        </div>
-                      </div>
-                      <div className="flex flex-col items-end">
-                        <span className="text-[16px] font-semibold text-ink tabular-nums">92%</span>
-                        <span className="inline-flex items-center gap-1 rounded-full bg-green-tint px-1.5 py-0.2 text-[9.5px] font-medium text-green">On track</span>
-                      </div>
-                    </div>
-
-                    {activeView === "heatmap" ? (
-                      <div className="grid grid-rows-2 grid-flow-col auto-cols-[13px] gap-1 py-1 overflow-x-auto">
-                        <span className="size-3.2 rounded-xs bg-accent/80" title="Present" />
-                        <span className="size-3.2 rounded-xs bg-accent/80" title="Present" />
-                        <span className="size-3.2 rounded-xs bg-accent/80" title="Present" />
-                        <span className="size-3.2 rounded-xs bg-accent/80" title="Present" />
-                        <span className="size-3.2 rounded-xs bg-accent/80" title="Present" />
-                        <span className="size-3.2 rounded-xs bg-accent/80" title="Present" />
-                        <span className="size-3.2 rounded-xs bg-accent/80" title="Present" />
-                        <span className="size-3.2 rounded-xs bg-orange/80" title="Late" />
-                        <span className="size-3.2 rounded-xs bg-red/70" title="Absent" />
-                        <span className="size-3.2 rounded-xs bg-accent/80" title="Present" />
-                        <span className="size-3.2 rounded-xs bg-accent/80" title="Present" />
-                        <span className="size-3.2 rounded-xs bg-accent/80" title="Present" />
-                        <span className="size-3.2 rounded-xs bg-accent/80" title="Present" />
-                        <span className="size-3.2 rounded-xs border border-line bg-transparent" title="Scheduled" />
-                      </div>
-                    ) : (
-                      <div className="flex items-end gap-1 h-10 border-b border-line/50 pb-1">
-                        <i className="flex-1 bg-accent/70 rounded-xs h-full" />
-                        <i className="flex-1 bg-accent/70 rounded-xs h-full" />
-                        <i className="flex-1 bg-accent/70 rounded-xs h-full" />
-                        <i className="flex-1 bg-accent/70 rounded-xs h-full" />
-                        <i className="flex-1 bg-red/70 rounded-xs h-1/2" />
-                        <i className="flex-1 bg-accent/70 rounded-xs h-full" />
-                        <i className="flex-1 bg-accent/70 rounded-xs h-full" />
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="flex items-center justify-between border-t border-line/60 pt-2.5 mt-3 text-[11.5px] text-ink-3">
-                    <span className="text-ink-2 font-medium">Prof. Lindqvist</span>
-                    <div className="flex items-center gap-2 font-mono font-medium">
-                      <span className="text-green">✓ 11</span>
-                      <span className="text-orange">⏱ 1</span>
-                      <span className="text-red">✕ 1</span>
-                    </div>
-                  </div>
-                </article>
-
-                {/* ENG 105 */}
-                <article className="flex flex-col justify-between rounded-[12px] border border-line bg-surface p-3.5 shadow-card hover:-translate-y-0.5 transition-transform">
-                  <div>
-                    <div className="flex items-start justify-between gap-2 mb-3">
-                      <div className="flex items-center gap-2.5">
-                        <span className="flex size-8.5 shrink-0 items-center justify-center rounded-[9px] border border-pink-500/30 bg-pink-500/10 text-[11px] font-semibold text-pink-400">
-                          EN
-                        </span>
-                        <div>
-                          <h3 className="text-[13.5px] font-semibold text-ink truncate">Composition &amp; Rhetoric</h3>
-                          <span className="text-[11.5px] text-ink-3">Wed · 13:00</span>
-                        </div>
-                      </div>
-                      <div className="flex flex-col items-end">
-                        <span className="text-[16px] font-semibold text-ink tabular-nums">{checkInEng ? "86%" : "83%"}</span>
-                        <span className="inline-flex items-center gap-1 rounded-full bg-orange-tint px-1.5 py-0.2 text-[9.5px] font-medium text-orange">
-                          {checkInEng ? "Checked In" : "Check in today"}
-                        </span>
-                      </div>
-                    </div>
-
-                    {activeView === "heatmap" ? (
-                      <div className="grid grid-rows-1 grid-flow-col auto-cols-[13px] gap-1 py-1 overflow-x-auto">
-                        <span className="size-3.2 rounded-xs bg-accent/80" title="Present" />
-                        <span className="size-3.2 rounded-xs bg-accent/80" title="Present" />
-                        <span className="size-3.2 rounded-xs bg-accent/80" title="Present" />
-                        <span className="size-3.2 rounded-xs bg-accent/80" title="Present" />
-                        <span className="size-3.2 rounded-xs bg-accent/80" title="Present" />
-                        <span className="size-3.2 rounded-xs bg-red/70" title="Absent" />
-                        <span className={`size-3.2 rounded-xs ${checkInEng ? "bg-accent/80" : "border border-accent bg-accent-tint animate-pulse"}`} title="Today" />
-                        <span className="size-3.2 rounded-xs border border-line bg-transparent" title="Scheduled" />
-                      </div>
-                    ) : (
-                      <div className="flex items-end gap-1 h-10 border-b border-line/50 pb-1">
-                        <i className="flex-1 bg-accent/70 rounded-xs h-full" />
-                        <i className="flex-1 bg-accent/70 rounded-xs h-full" />
-                        <i className="flex-1 bg-accent/70 rounded-xs h-full" />
-                        <i className="flex-1 bg-accent/70 rounded-xs h-full" />
-                        <i className="flex-1 bg-accent/70 rounded-xs h-full" />
-                        <i className="flex-1 bg-red/70 rounded-xs h-1/6" />
-                        <i className={`flex-1 rounded-xs ${checkInEng ? "bg-accent/70 h-full" : "bg-accent-tint border border-accent h-1/2"}`} />
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="flex items-center justify-between border-t border-line/60 pt-2.5 mt-3 text-[11.5px] text-ink-3">
-                    <span className="text-ink-2 font-medium">Prof. Marsh</span>
-                    <div className="flex items-center gap-2 font-mono font-medium">
-                      <span className="text-green">✓ {checkInEng ? "6" : "5"}</span>
-                      <span className="text-orange">⏱ 0</span>
-                      <span className="text-red">✕ {checkInEng ? "0" : "1"}</span>
-                    </div>
-                  </div>
-                </article>
-
-                {/* HIST 140 */}
-                <article className="flex flex-col justify-between rounded-[12px] border border-line bg-surface p-3.5 shadow-card hover:-translate-y-0.5 transition-transform">
-                  <div>
-                    <div className="flex items-start justify-between gap-2 mb-3">
-                      <div className="flex items-center gap-2.5">
-                        <span className="flex size-8.5 shrink-0 items-center justify-center rounded-[9px] border border-emerald-500/30 bg-emerald-500/10 text-[11px] font-semibold text-emerald-400">
-                          HI
-                        </span>
-                        <div>
-                          <h3 className="text-[13.5px] font-semibold text-ink truncate">Modern European History</h3>
-                          <span className="text-[11.5px] text-ink-3">Tue + Fri · 15:00</span>
-                        </div>
-                      </div>
-                      <div className="flex flex-col items-end">
-                        <span className="text-[16px] font-semibold text-green tabular-nums">100%</span>
-                        <span className="inline-flex items-center gap-1 rounded-full bg-green-tint px-1.5 py-0.2 text-[9.5px] font-medium text-green">Perfect</span>
-                      </div>
-                    </div>
-
-                    {activeView === "heatmap" ? (
-                      <div className="grid grid-rows-2 grid-flow-col auto-cols-[13px] gap-1 py-1 overflow-x-auto">
-                        <span className="size-3.2 rounded-xs bg-accent/80" title="Present" />
-                        <span className="size-3.2 rounded-xs bg-accent/80" title="Present" />
-                        <span className="size-3.2 rounded-xs bg-accent/80" title="Present" />
-                        <span className="size-3.2 rounded-xs bg-orange/80" title="Late" />
-                        <span className="size-3.2 rounded-xs bg-accent/80" title="Present" />
-                        <span className="size-3.2 rounded-xs bg-accent/80" title="Present" />
-                        <span className="size-3.2 rounded-xs bg-accent/80" title="Present" />
-                        <span className="size-3.2 rounded-xs bg-accent/80" title="Present" />
-                        <span className="size-3.2 rounded-xs bg-accent/80" title="Present" />
-                        <span className="size-3.2 rounded-xs bg-accent/80" title="Present" />
-                        <span className="size-3.2 rounded-xs bg-orange/80" title="Late" />
-                        <span className="size-3.2 rounded-xs bg-accent/80" title="Present" />
-                        <span className="size-3.2 rounded-xs bg-accent/80" title="Present" />
-                        <span className="size-3.2 rounded-xs border border-line bg-transparent" title="Scheduled" />
-                      </div>
-                    ) : (
-                      <div className="flex items-end gap-1 h-10 border-b border-line/50 pb-1">
-                        <i className="flex-1 bg-accent/70 rounded-xs h-full" />
-                        <i className="flex-1 bg-accent/70 rounded-xs h-full" />
-                        <i className="flex-1 bg-accent/70 rounded-xs h-full" />
-                        <i className="flex-1 bg-accent/70 rounded-xs h-full" />
-                        <i className="flex-1 bg-accent/70 rounded-xs h-full" />
-                        <i className="flex-1 bg-accent/70 rounded-xs h-full" />
-                        <i className="flex-1 bg-accent/70 rounded-xs h-full" />
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="flex items-center justify-between border-t border-line/60 pt-2.5 mt-3 text-[11.5px] text-ink-3">
-                    <span className="text-ink-2 font-medium">Dr. Park</span>
-                    <div className="flex items-center gap-2 font-mono font-medium">
-                      <span className="text-green">✓ 11</span>
-                      <span className="text-orange">⏱ 2</span>
-                      <span className="text-red">✕ 0</span>
-                    </div>
-                  </div>
-                </article>
+                    </article>
+                  );
+                })}
               </div>
             </div>
 
@@ -1003,12 +1059,28 @@ export default function AttendancePage() {
             <footer className="flex items-center justify-between gap-2 flex-wrap rounded-[10px] border border-line bg-inset px-3.5 py-2 text-[11.5px] text-ink-3 font-mono">
               <div className="flex items-center gap-1.5">
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-green"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.66 3.58 3 8 3s8-1.34 8-3V5M4 12c0 1.66 3.58 3 8 3s8-1.34 8-3"/></svg>
-                <code className="text-ink-2">attendance.delta</code>
-                <span>· synced 4 min ago · badge scans verified</span>
+                <code className="text-ink-2">workspace.campus_explorer.student_attendance_logs</code>
+                <span>· synced live with Databricks Lakehouse</span>
               </div>
               <div className="flex items-center gap-3">
                 <span>Week <b>7</b> of 14 · <b>22</b> sessions remaining</span>
-                <button type="button" className="text-accent hover:underline flex items-center gap-1 font-sans">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const csvContent = "data:text/csv;charset=utf-8," +
+                      "Course,Instructor,Attended,Late,Absent,Percentage\n" +
+                      courses.map((c) => `${c.courseCode},${c.instructor},${c.attendedCount},${c.lateCount},${c.absentCount},${c.currentPercentage}%`).join("\n");
+                    const encodedUri = encodeURI(csvContent);
+                    const link = document.createElement("a");
+                    link.setAttribute("href", encodedUri);
+                    link.setAttribute("download", `attendance_report_week7.csv`);
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                    showToast("Downloaded attendance_report_week7.csv");
+                  }}
+                  className="text-accent hover:underline flex items-center gap-1 font-sans cursor-pointer"
+                >
                   Export report
                   <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="9 18 15 12 9 6" /></svg>
                 </button>
@@ -1024,12 +1096,15 @@ export default function AttendancePage() {
       {/* Attendance Recovery Plan Modal */}
       <RecoveryPlanModal
         isOpen={recoveryModalOpen}
-        onClose={() => setRecoveryModalOpen(false)}
-        courseCode="MATH 201"
-        courseName="Linear Algebra"
-        instructor="Dr. Okafor"
-        currentSessions={20}
-        attendedSessions={14}
+        onClose={() => {
+          setRecoveryModalOpen(false);
+          fetchAttendance();
+        }}
+        courseCode={mathCourse.courseCode || "MATH 201"}
+        courseName={mathCourse.title || "Linear Algebra"}
+        instructor={mathCourse.instructor || "Dr. Okafor"}
+        currentSessions={mathCourse.totalSessionsToDate || 20}
+        attendedSessions={mathCourse.attendedCount || 14}
         totalTermSessions={42}
         cutoffPercentage={75}
       />
