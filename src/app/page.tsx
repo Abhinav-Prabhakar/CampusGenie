@@ -510,14 +510,14 @@ export default function CampusGenieChatPage() {
           {/* Main Chat Flow */}
           <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-3 pt-2 pb-28 sm:px-6 sm:pt-3 sm:pb-36">
             {messages.length === 0 ? (
-              <div className="my-auto flex flex-col items-center justify-center text-center max-w-xl mx-auto space-y-6">
+              <div className="my-auto flex flex-col items-center justify-center text-center max-w-3xl mx-auto w-full space-y-6 px-2">
                 <div className="flex size-12 items-center justify-center rounded-2xl bg-hover-2 text-ink shadow-hairline">
                   <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                     <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" />
                   </svg>
                 </div>
 
-                <div className="space-y-2">
+                <div className="space-y-2 max-w-lg mx-auto">
                   <h2 className="text-xl font-semibold text-ink">How can Campus Genie assist you today?</h2>
                   <p className="text-[13px] text-ink-2 leading-relaxed">
                     Powered by Databricks Unity Catalog Delta tables &amp; AI reasoning. Explore research labs, AI club recruitment, campus fests, and alumni career paths.
@@ -639,8 +639,8 @@ export default function CampusGenieChatPage() {
           </div>
 
           {/* Floating Bottom Prompt Bar Input */}
-          <div className="absolute inset-x-0 bottom-0 pointer-events-none pb-4 sm:pb-6 px-3 sm:px-6 flex justify-center bg-gradient-to-t from-canvas via-canvas/90 to-transparent pt-12 z-20">
-            <div className="w-full max-w-3xl pointer-events-auto rounded-[14px] shadow-[0_12px_36px_rgba(0,0,0,0.35)] backdrop-blur-md">
+          <div className="absolute inset-x-0 bottom-0 pointer-events-none pb-5 sm:pb-6 px-4 flex justify-center items-center z-20">
+            <div className="w-full max-w-3xl pointer-events-auto rounded-[14px] shadow-[0_12px_36px_rgba(0,0,0,0.38)] backdrop-blur-md">
               <PromptBar
                 placeholder="Ask Campus Genie anything"
                 onSend={handleSend}
