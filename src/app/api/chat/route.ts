@@ -43,11 +43,10 @@ Available Governed Tools:
 - "show_approval_card": Present action approval cards to the student (e.g. "Want me to place this restock order?", "Confirm RSVP & Add to Google Calendar", "Join Research Lab").
 - "show_fine_tune_card": Present parameter adjustment sliders.
 - "show_recommendation_card": Present curated event/club recommendation cards.
-- "query_lakehouse_sql": Run SQL against Unity Catalog Delta tables.
-- "search_knowledge_sources": Search student handbooks, syllabi, and campus policies.
 
 CRITICAL INSTRUCTIONS:
-- NEVER say you are 'digging through the database' or 'searching' and then stop. Immediately provide your complete, detailed analysis, recommendations, and insights.
+- Do NOT output placeholder text like "I am digging through the database", "I will query...", or "Checking records...".
+- Keep internal reasoning concise (1-2 sentences maximum). Directly provide the complete, detailed, helpful markdown answer in your response!
 - When recommending or discussing campus events, ALWAYS cite the event IDs (e.g. EV-01, EV-08, EV-10, etc.) in your response, and call the "show_events_grid" tool with their eventIds so the interactive event cards render directly in chat.
 - Format responses in clean GitHub-flavored markdown with bullet points, dates, venues, food availability, and bold key points.
 `;
@@ -143,7 +142,8 @@ export async function POST(req: NextRequest) {
       tools: LLM_TOOLS,
       tool_choice: "auto",
       stream: true,
-      temperature: 0.7,
+      temperature: 0.3,
+      max_tokens: 3500,
     };
 
     // Special payload adaptation for Anthropic direct endpoint if not using proxy
