@@ -23,9 +23,9 @@ export async function GET() {
 
   const envEntry: LLMModelConfig = {
     id: "env-default",
-    name: envModel ? `Default: ${envModel} (.env)` : "Default API & Model (.env)",
-    provider: "custom",
-    isReasoning: isReasoning,
+    name: "Campus Genie Agent",
+    provider: "databricks",
+    isReasoning: true,
   };
 
   const models: LLMModelConfig[] = [

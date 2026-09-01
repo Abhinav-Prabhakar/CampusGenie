@@ -129,6 +129,8 @@ Rather than building complex bespoke search and analytics pipelines from scratch
    DATABRICKS_GENIE_SPACE_ID=<your-genie-space-id>
    ```
 
+   Campus Genie uses the Databricks Genie Conversation API by default. The Genie Agent must have access to the `workspace.campus_explorer` tables and the configured SQL warehouse.
+
 4. **Run the development server:**
    ```bash
    npm run dev

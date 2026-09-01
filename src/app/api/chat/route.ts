@@ -1,8 +1,32 @@
 import { NextRequest, NextResponse } from "next/server";
 import { fetchWithAutoRetry, LLM_TOOLS } from "@/lib/llm";
 import { executeLakehouseSql } from "@/lib/lakehouse";
+import { streamGenieConversation } from "@/lib/genie";
 
 export const runtime = "nodejs";
+
+function createGenieResponse(req: NextRequest, prompt: string) {
+  const stream = new ReadableStream({
+    async start(controller) {
+      const encoder = new TextEncoder();
+      const send = (event: unknown) => {
+        if (!req.signal.aborted) controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
+      };
+      try {
+        await streamGenieConversation(prompt, req.signal, send);
+        send({ type: "tool_status", toolName: "genie_agent", label: "Campus Genie Agent complete", active: false });
+        if (!req.signal.aborted) controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+      } catch (error: any) {
+        if (!req.signal.aborted) send({ error: error?.message || "Genie Agent request failed" });
+      } finally {
+        controller.close();
+      }
+    },
+  });
+  return new Response(stream, {
+    headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", Connection: "keep-alive" },
+  });
+}
 
 const SYSTEM_PROMPT = `You are "Campus Genie", an AI lakehouse intelligence agent powered natively by Databricks Lakehouse with Unity Catalog (workspace.campus_explorer schema).
 You help university students explore campus events, research labs, student clubs, hackathons, surveys, alumni career pathways, cafe supply chain inventory, and city tech ecosystems (e.g. Bengaluru Indiranagar & Koramangala tech meetups).
@@ -56,6 +80,10 @@ export async function POST(req: NextRequest) {
       customApiKey,
       customBaseUrl,
     } = body;
+
+    const latestPrompt = [...messages].reverse().find((message: { role?: string }) => message.role === "user")?.content;
+    const useGenieAgent = inputModel === "env-default" || inputModel === "databricks-genie-agent" || inputProvider === "databricks";
+    if (useGenieAgent && latestPrompt) return createGenieResponse(req, latestPrompt);
 
     const model = (!inputModel || inputModel === "env-default")
       ? (process.env.LLM_MODEL || process.env.NEXT_PUBLIC_DEFAULT_MODEL || "gpt-4o")
