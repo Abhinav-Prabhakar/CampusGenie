@@ -85,59 +85,7 @@ Campus Genie turns those disconnected records into a governed campus data layer 
 
 The browser never connects directly to Databricks or receives server credentials. Next.js Route Handlers own provider selection, prompt security, tool orchestration, and Lakehouse access. Databricks remains the governed data and intelligence layer.
 
-> **Diagram placeholder:** Generate the diagram using the prompt below, export it as `docs/images/campus-genie-architecture.png`, then replace this entire prompt block with `![Campus Genie system architecture](docs/images/campus-genie-architecture.png)`.
-
-```text
-DIAGRAM GENERATION PROMPT — CAMPUS GENIE SYSTEM ARCHITECTURE
-
-Create a polished 16:9 software architecture diagram for a project named “Campus Genie.” Use a clean dark navy and Databricks-red visual language with high contrast, restrained gradients, rounded cards, thin connection lines, and readable labels. Do not make it look like a generic AI-generated infographic.
-
-Arrange the diagram in five horizontal layers:
-
-1. Student and administrator layer:
-   - Student
-   - Student Admin
-   - Browser
-
-2. Next.js 16 application layer:
-   - Chat UI
-   - Events
-   - Attendance
-   - Sources
-   - Admin
-   - Component Gallery
-
-3. Server Route Handler and security layer:
-   - /api/chat
-   - Prompt-injection guard
-   - Role and request validation
-   - Tool allowlist
-   - Read-only SQL validator
-   - /api/events
-   - /api/surveys
-   - /api/sources
-   - /api/models
-
-4. Intelligence and execution layer:
-   - Databricks Genie Conversation API
-   - Configured LLM provider
-   - Lakehouse SQL adapter
-   - Databricks CLI OAuth fallback for local development
-
-5. Databricks platform layer:
-   - Unity Catalog: workspace.campus_explorer
-   - SQL Warehouse
-   - Delta tables
-   - Governance and permissions
-
-Show these primary flows with labeled arrows:
-Student question → Chat UI → /api/chat → security checks → Genie or configured LLM → governed tools → SQL Warehouse → Unity Catalog tables → structured response → interactive cards in Chat UI.
-
-Show administrator writes as a separate path:
-Student Admin → explicit event/survey/source API route → validated server handler → Delta table.
-
-Add a small trust-boundary legend: browser input is untrusted, tool output is untrusted data, credentials remain server-side, and chat-generated SQL is read-only. Avoid decorative people illustrations, fake code, excessive icons, or tiny text.
-```
+![Campus Genie system architecture](<Campus Genie System Architecture.png>)
 
 ## How a chat request works
 
@@ -152,32 +100,7 @@ Add a small trust-boundary legend: browser input is untrusted, tool output is un
 9. The server streams final content and concise tool-status events to the browser. Provider chain-of-thought is not exposed.
 10. The client converts verified tool calls into surveys, event grids, approval cards, recommendations, and standard Markdown responses.
 
-> **Diagram placeholder:** Generate the sequence diagram using the prompt below, export it as `docs/images/chat-request-sequence.png`, then replace this entire prompt block with `![Secure Campus Genie chat request sequence](docs/images/chat-request-sequence.png)`.
-
-```text
-DIAGRAM GENERATION PROMPT — SECURE CHAT REQUEST SEQUENCE
-
-Create a professional left-to-right sequence diagram titled “Secure Campus Genie Chat Request.” Use six lifelines: Student, Next.js Chat UI, /api/chat Security Boundary, LLM or Databricks Genie, Governed Tool Executor, and Databricks Lakehouse.
-
-Show the following ordered messages:
-1. Student submits a campus question.
-2. Chat UI sends user/assistant history only.
-3. /api/chat validates JSON, roles, message count, and size.
-4. /api/chat runs prompt-injection detection.
-5a. Unsafe request branch: return a short safe refusal; do not call any provider or tool.
-5b. Safe request branch: route to Databricks Genie or the configured LLM.
-6. Model requests a declared tool.
-7. Server filters the tool name and validates arguments.
-8. SQL branch: enforce one read-only SELECT/WITH statement and governed-table allowlist.
-9. Tool Executor queries the SQL Warehouse and Unity Catalog.
-10. Lakehouse returns rows.
-11. Server wraps rows as UNTRUSTED_TOOL_DATA.
-12. Model produces a concise final answer without private reasoning.
-13. Server streams content and safe tool-status events.
-14. Chat UI renders Markdown, event cards, surveys, or recommendation cards.
-
-Use red shield markers for rejected paths, green check markers for validated paths, and a note that server credentials never cross into the browser. Keep text large enough for a GitHub README and do not include source code.
-```
+![Secure Campus Genie chat request sequence](<Secure Campus Genie Chat Request.png>)
 
 ## Lakehouse data model
 
