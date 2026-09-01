@@ -197,6 +197,7 @@ type SidebarNavProps = {
   fill?: boolean;
   onNewChat?: () => void;
   onPick?: (id: string, label: string, prompt?: string) => void;
+  onDeleteChat?: (id: string) => void;
   /** controlled primary-nav selection (e.g. "home" | "invite") */
   activeNav?: string;
   onNavigate?: (key: string) => void;
@@ -349,6 +350,7 @@ export default function SidebarNav({
   fill = false,
   onNewChat,
   onPick,
+  onDeleteChat,
   activeNav,
   onNavigate,
   footerLabel = "Upgrade",
@@ -376,7 +378,7 @@ export default function SidebarNav({
   const workspaceButtonRef = useRef<HTMLButtonElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const selectedTitle = activeTitle === undefined ? demoActiveTitle : activeTitle;
-  const { threads, setActiveThreadId } = useChatStore();
+  const { threads, setActiveThreadId, deleteThread } = useChatStore();
 
   const combinedRecents: SidebarRecent[] = useMemo(() => {
     const threadItems: SidebarRecent[] = threads.map((t) => ({
@@ -575,30 +577,57 @@ export default function SidebarNav({
           <GlideGroup>
             {visibleRecents.map((item) => {
               const active = item.label === selectedTitle;
+              const isCustomThread = threads.some((t) => t.id === item.id);
+
               return (
-                <button
+                <div
                   key={item.id}
                   data-row
-                  type="button"
-                  title={item.label}
-                  onClick={() => {
-                    selectNav("chat");
-                    if (activeTitle === undefined) setDemoActiveTitle(item.label);
-                    setActiveThreadId(item.id);
-                    onPick?.(item.id, item.label, item.prompt);
-                    if (typeof window !== "undefined" && window.location.pathname !== "/") {
-                      sessionStorage.setItem("cg_active_chat_id", item.id);
-                      router.push("/");
-                    }
-                  }}
-                  className={`sidebar-row relative z-10 mx-2 flex h-8 items-center rounded-[8px] px-2 text-left transition-[width,background-color,color,transform] duration-150 active:scale-[0.98] animate-fade-in ${
+                  className={`sidebar-row group/chat-row relative z-10 mx-2 flex h-8 items-center rounded-[8px] px-2 text-left transition-[width,background-color,color,transform] duration-150 animate-fade-in ${
                     active ? "bg-hover-2 group-hover/glide:bg-transparent" : ""
                   }`}
                 >
-                  <span className={`sidebar-copy min-w-0 flex-1 truncate text-[14px] font-medium ${active ? "text-ink" : "text-ink-2"}`}>
-                    {item.label}
-                  </span>
-                </button>
+                  <button
+                    type="button"
+                    title={item.label}
+                    onClick={() => {
+                      selectNav("chat");
+                      if (activeTitle === undefined) setDemoActiveTitle(item.label);
+                      setActiveThreadId(item.id);
+                      onPick?.(item.id, item.label, item.prompt);
+                      if (typeof window !== "undefined" && window.location.pathname !== "/") {
+                        sessionStorage.setItem("cg_active_chat_id", item.id);
+                        router.push("/");
+                      }
+                    }}
+                    className="flex min-w-0 flex-1 items-center text-left"
+                  >
+                    <span className={`sidebar-copy min-w-0 flex-1 truncate text-[14px] font-medium ${active ? "text-ink" : "text-ink-2"}`}>
+                      {item.label}
+                    </span>
+                  </button>
+
+                  {isCustomThread && (
+                    <button
+                      type="button"
+                      title="Delete chat"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (onDeleteChat) {
+                          onDeleteChat(item.id);
+                        } else {
+                          deleteThread(item.id);
+                        }
+                      }}
+                      className="sidebar-copy ml-1 hidden size-5 shrink-0 items-center justify-center rounded-[5px] text-ink-3 hover:bg-hover hover:text-red transition-colors group-hover/chat-row:flex"
+                    >
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <polyline points="3 6 5 6 21 6" />
+                        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                      </svg>
+                    </button>
+                  )}
+                </div>
               );
             })}
             {query && visibleRecents.length === 0 && (

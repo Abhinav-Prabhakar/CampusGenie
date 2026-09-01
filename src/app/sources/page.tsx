@@ -1,15 +1,22 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import SidebarNav from "@/components/primitives/SidebarNav";
 import KeyboardShortcutsModal from "@/components/shortcuts/KeyboardShortcutsModal";
 import EventIcons from "@/components/events/EventIcons";
+import SourcesView from "@/components/sources/SourcesView";
 import { useTheme } from "@/lib/theme";
-import Link from "next/link";
 
 export default function SourcesPage() {
   const { isDark, toggleTheme } = useTheme();
   const [shortcutsOpen, setShortcutsOpen] = useState<boolean>(false);
+  const router = useRouter();
+
+  const handleAskGenie = (prompt: string) => {
+    sessionStorage.setItem("cg_initial_prompt", prompt);
+    router.push("/");
+  };
 
   return (
     <main className="flex h-[100dvh] w-full gap-0 bg-canvas p-2.5 text-ink lg:pl-0 select-none">
@@ -25,7 +32,9 @@ export default function SourcesPage() {
         <section className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-[14px] border border-line bg-canvas shadow-card">
           <header className="flex h-11 shrink-0 items-center justify-between border-b border-line px-3 sm:px-4 bg-canvas">
             <div className="flex items-center gap-2">
-              <span className="text-[13.5px] font-semibold text-ink">Knowledge Sources</span>
+              <span className="text-[13.5px] font-semibold text-ink">Campus Genie</span>
+              <span className="text-[12px] text-ink-3">/</span>
+              <span className="text-[12.5px] font-medium text-ink-2">Knowledge Sources &amp; Catalog</span>
             </div>
 
             <div className="flex items-center gap-2">
@@ -60,20 +69,8 @@ export default function SourcesPage() {
             </div>
           </header>
 
-          <div className="min-h-0 flex-1 overflow-y-auto p-6 flex flex-col items-center justify-center text-center bg-canvas">
-            <div className="max-w-[460px] p-8 rounded-[14px] border border-line bg-surface shadow-card flex flex-col items-center">
-              <div className="size-12 rounded-[10px] bg-inset border border-line flex items-center justify-center text-xl text-ink-2 mb-3">
-                📚
-              </div>
-              <h2 className="text-[16px] font-semibold text-ink mb-1">Knowledge & Catalog Sources</h2>
-              <p className="text-[13px] text-ink-2 mb-4 leading-relaxed">
-                Connect and govern your campus datasets, Delta tables, club handbooks, and syllabi.
-              </p>
-              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-inset border border-line text-[11.5px] text-ink-3">
-                <span className="size-1.5 rounded-full bg-orange animate-pulse" />
-                Under Configuration in Unity Catalog
-              </span>
-            </div>
+          <div className="min-h-0 flex-1 overflow-y-auto bg-canvas">
+            <SourcesView onAskGenie={handleAskGenie} />
           </div>
         </section>
       </div>

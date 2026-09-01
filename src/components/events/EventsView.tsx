@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useEffect, useMemo } from "react";
 import EventDetailModal from "./EventDetailModal";
 import EventIcons from "./EventIcons";
 import EventPassModal from "./EventPassModal";
@@ -319,6 +319,13 @@ const CAT_INDICES: Record<string, number> = {
 };
 
 export default function EventsView({ onAskGenie }: { onAskGenie?: (prompt: string) => void }) {
+  const [eventsList, setEventsList] = useState<CampusEvent[]>(EVENTS_DATA);
+  const [featuredSurveys, setFeaturedSurveys] = useState<any[]>([]);
+  const [activeSurvey, setActiveSurvey] = useState<any | null>(null);
+  const [surveyAnswers, setSurveyAnswers] = useState<Record<string, any>>({});
+  const [surveySubmitted, setSurveySubmitted] = useState<boolean>(false);
+  const [surveyOpen, setSurveyOpen] = useState<boolean>(true);
+
   const [selectedEvent, setSelectedEvent] = useState<CampusEvent | null>(null);
   const [passEvent, setPassEvent] = useState<CampusEvent | null>(null);
   const [selectedCat, setSelectedCat] = useState<string>("all");
@@ -330,13 +337,62 @@ export default function EventsView({ onAskGenie }: { onAskGenie?: (prompt: strin
   const [savedEvents, setSavedEvents] = useState<Record<string, boolean>>({
     "10": true,
     "13": true,
+    "EV-10": true,
+    "EV-13": true,
   });
   const [rsvpEvents, setRsvpEvents] = useState<Record<string, boolean>>({
     "5": true,
     "10": true,
     "13": true,
     "14": true,
+    "EV-05": true,
+    "EV-10": true,
+    "EV-13": true,
+    "EV-14": true,
   });
+
+  // Fetch live events from Lakehouse API
+  useEffect(() => {
+    fetch("/api/events")
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.events && data.events.length > 0) {
+          setEventsList(data.events);
+        }
+      })
+      .catch((err) => console.warn("Failed to fetch live events, using cached seed data:", err));
+
+    // Fetch featured surveys
+    fetch("/api/surveys?featured=true")
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.surveys && data.surveys.length > 0) {
+          setFeaturedSurveys(data.surveys);
+          setActiveSurvey(data.surveys[0]);
+        }
+      })
+      .catch((err) => console.warn("Failed to fetch featured surveys:", err));
+  }, []);
+
+  const handleSurveySubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!activeSurvey) return;
+    try {
+      await fetch("/api/surveys", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "submit_response",
+          surveyId: activeSurvey.id,
+          answers: surveyAnswers,
+        }),
+      });
+      setSurveySubmitted(true);
+    } catch (err) {
+      console.error("Failed to submit survey response:", err);
+      setSurveySubmitted(true);
+    }
+  };
 
   const toggleSave = (id: string) => {
     setSavedEvents((prev) => ({ ...prev, [id]: !prev[id] }));
@@ -363,13 +419,13 @@ export default function EventsView({ onAskGenie }: { onAskGenie?: (prompt: strin
   };
 
   const filteredEvents = useMemo(() => {
-    return EVENTS_DATA.filter((ev) => {
+    return eventsList.filter((ev) => {
       if (selectedCat !== "all" && ev.cat !== selectedCat) return false;
       if (selectedWhen === "today" && ev.when !== "today") return false;
       if (selectedWhen === "week" && ev.when !== "today" && ev.when !== "week") return false;
       if (selectedWhen === "weekend" && ev.when !== "weekend") return false;
-      if (foodFilter && !ev.flags.food) return false;
-      if (virtualFilter && !ev.flags.virtual && !ev.isVirtual) return false;
+      if (foodFilter && !ev.flags?.food) return false;
+      if (virtualFilter && !ev.flags?.virtual && !ev.isVirtual) return false;
       if (goingFilter && !rsvpEvents[ev.id]) return false;
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase();
@@ -380,7 +436,7 @@ export default function EventsView({ onAskGenie }: { onAskGenie?: (prompt: strin
       }
       return true;
     });
-  }, [selectedCat, selectedWhen, foodFilter, virtualFilter, goingFilter, searchQuery, rsvpEvents]);
+  }, [eventsList, selectedCat, selectedWhen, foodFilter, virtualFilter, goingFilter, searchQuery, rsvpEvents]);
 
   const glideTransform = `translateX(${CAT_INDICES[selectedCat] * 100}%)`;
 
@@ -416,7 +472,7 @@ export default function EventsView({ onAskGenie }: { onAskGenie?: (prompt: strin
               <button
                 type="button"
                 onClick={() => {
-                  const ev = EVENTS_DATA.find((e) => e.title.includes("Hack the Lake") || e.id === "10") || EVENTS_DATA[0];
+                  const ev = eventsList.find((e) => e.title.includes("Hack the Lake") || e.id === "10" || e.id === "EV-10") || eventsList[0];
                   setPassEvent(ev);
                 }}
                 className="btn-acc"
@@ -440,6 +496,163 @@ export default function EventsView({ onAskGenie }: { onAskGenie?: (prompt: strin
               </button>
             </div>
           </aside>
+
+          {/* Featured Active Survey Banner from Student Admin */}
+          {activeSurvey && (
+            <div className="mt-2.5 rounded-[12px] border border-line bg-surface p-3.5 shadow-card transition-all">
+              <div className="flex items-center justify-between border-b border-line-soft pb-2.5 mb-3">
+                <div className="flex items-center gap-2">
+                  <span className="flex size-6 items-center justify-center rounded-[6px] bg-accent-tint text-accent-ink text-[12px]">
+                    <svg className="i i13" aria-hidden="true"><use href="#i-chart"/></svg>
+                  </span>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h3 className="text-[13.5px] font-semibold text-ink">{activeSurvey.title}</h3>
+                      <span className="inline-flex items-center gap-1 rounded-full bg-accent-tint px-2 py-0.5 text-[10.5px] font-medium text-accent-ink">
+                        Featured Survey
+                      </span>
+                    </div>
+                    <p className="text-[11.5px] text-ink-3">{activeSurvey.description}</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-[11px] text-ink-3">
+                    <b>{activeSurvey.responseCount || 86}</b> student responses
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setSurveyOpen((p) => !p)}
+                    className="flex size-6 items-center justify-center rounded-[5px] text-ink-3 hover:bg-hover hover:text-ink transition-colors"
+                  >
+                    <svg className={`i i12 transition-transform ${surveyOpen ? "rotate-180" : ""}`} aria-hidden="true"><use href="#i-chev"/></svg>
+                  </button>
+                </div>
+              </div>
+
+              {surveyOpen && (
+                <div>
+                  {surveySubmitted ? (
+                    <div className="flex items-center justify-between rounded-[8px] bg-green-tint/30 p-3 text-[12.5px] text-green animate-fade-in">
+                      <div className="flex items-center gap-2">
+                        <svg className="i i14" aria-hidden="true"><use href="#i-check"/></svg>
+                        <span>Thank you! Your survey responses were recorded in Databricks Lakehouse.</span>
+                      </div>
+                      <span className="text-[11px] text-ink-3">Synced to workspace.campus_explorer</span>
+                    </div>
+                  ) : (
+                    <form onSubmit={handleSurveySubmit} className="space-y-3">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
+                        {activeSurvey.questions?.slice(0, 4).map((q: any) => (
+                          <div key={q.id} className="rounded-[8px] border border-line bg-canvas p-2.5 space-y-1.5">
+                            <label className="text-[12px] font-medium text-ink flex items-center justify-between">
+                              <span>{q.title}</span>
+                              {q.required && <span className="text-red text-[10px]">*Required</span>}
+                            </label>
+                            {q.type === "text" && (
+                              <input
+                                type="text"
+                                placeholder="Type your answer…"
+                                value={surveyAnswers[q.id] || ""}
+                                onChange={(e) => setSurveyAnswers({ ...surveyAnswers, [q.id]: e.target.value })}
+                                className="w-full h-7 rounded-[6px] border border-line bg-surface px-2 text-[12px] text-ink outline-none placeholder:text-ink-3 focus:border-accent"
+                              />
+                            )}
+                            {q.type === "radio" && q.options && (
+                              <div className="space-y-1">
+                                {q.options.map((opt: string) => (
+                                  <label key={opt} className="flex items-center gap-1.5 text-[11.5px] text-ink-2 cursor-pointer hover:text-ink">
+                                    <input
+                                      type="radio"
+                                      name={q.id}
+                                      value={opt}
+                                      checked={surveyAnswers[q.id] === opt}
+                                      onChange={() => setSurveyAnswers({ ...surveyAnswers, [q.id]: opt })}
+                                      className="size-3 accent-accent"
+                                    />
+                                    <span>{opt}</span>
+                                  </label>
+                                ))}
+                              </div>
+                            )}
+                            {q.type === "checkbox" && q.options && (
+                              <div className="flex flex-wrap gap-2">
+                                {q.options.map((opt: string) => {
+                                  const current = surveyAnswers[q.id] || [];
+                                  const isChecked = current.includes(opt);
+                                  return (
+                                    <label
+                                      key={opt}
+                                      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-[5px] border text-[11px] cursor-pointer transition-colors ${
+                                        isChecked ? "border-accent bg-accent-tint text-accent-ink" : "border-line bg-surface text-ink-3 hover:text-ink"
+                                      }`}
+                                    >
+                                      <input
+                                        type="checkbox"
+                                        className="hidden"
+                                        checked={isChecked}
+                                        onChange={() => {
+                                          const next = isChecked ? current.filter((x: string) => x !== opt) : [...current, opt];
+                                          setSurveyAnswers({ ...surveyAnswers, [q.id]: next });
+                                        }}
+                                      />
+                                      <span>{opt}</span>
+                                    </label>
+                                  );
+                                })}
+                              </div>
+                            )}
+                            {q.type === "scale" && (
+                              <div className="flex items-center justify-between pt-1">
+                                <span className="text-[10px] text-ink-3">{q.scaleMin || "Low"}</span>
+                                <div className="flex gap-1">
+                                  {[1, 2, 3, 4, 5].map((num) => (
+                                    <button
+                                      key={num}
+                                      type="button"
+                                      onClick={() => setSurveyAnswers({ ...surveyAnswers, [q.id]: num })}
+                                      className={`size-6 rounded-[4px] border text-[11px] font-medium transition-colors ${
+                                        surveyAnswers[q.id] === num ? "border-accent bg-accent text-white" : "border-line bg-surface text-ink-2 hover:bg-hover"
+                                      }`}
+                                    >
+                                      {num}
+                                    </button>
+                                  ))}
+                                </div>
+                                <span className="text-[10px] text-ink-3">{q.scaleMax || "High"}</span>
+                              </div>
+                            )}
+                            {q.type === "star" && (
+                              <div className="flex gap-1 pt-1">
+                                {[1, 2, 3, 4, 5].map((star) => (
+                                  <button
+                                    key={star}
+                                    type="button"
+                                    onClick={() => setSurveyAnswers({ ...surveyAnswers, [q.id]: star })}
+                                    className={`text-[14px] transition-colors ${(surveyAnswers[q.id] || 0) >= star ? "text-amber-400" : "text-ink-3"}`}
+                                  >
+                                    ★
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                      <div className="flex items-center justify-end gap-2 pt-1">
+                        <button
+                          type="submit"
+                          className="h-7 px-3 rounded-[6px] bg-accent text-white text-[12px] font-medium hover:opacity-90 active:scale-[0.98] transition-all flex items-center gap-1.5"
+                        >
+                          <svg className="i i11" aria-hidden="true"><use href="#i-check"/></svg>
+                          Submit Survey Response
+                        </button>
+                      </div>
+                    </form>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Toolbar */}

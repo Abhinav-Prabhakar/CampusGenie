@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useMemo } from "react";
 import SidebarNav, { type SidebarRecent } from "@/components/primitives/SidebarNav";
 import PromptBar from "@/components/primitives/PromptBar";
 import ThinkingState from "@/components/primitives/ThinkingState";
+import LoadingState from "@/components/primitives/LoadingState";
 import ApprovalCard from "@/components/primitives/ApprovalCard";
 import RecommendationCard from "@/components/primitives/RecommendationCard";
 import FineTuneCard from "@/components/primitives/FineTuneCard";
@@ -21,7 +22,9 @@ import KeyboardShortcutsModal from "@/components/shortcuts/KeyboardShortcutsModa
 import EventIcons from "@/components/events/EventIcons";
 import { useTheme } from "@/lib/theme";
 import { useChatStore, createThreadTitle, type ChatThread } from "@/lib/chatStore";
-import Link from "next/link";
+import ChatEventCards from "@/components/events/ChatEventCards";
+import type { EventRecord } from "@/app/api/events/route";
+import type { ApprovalQuestion } from "@/components/primitives/ApprovalCard";
 
 export type ChatMessage = {
   id: string;
@@ -33,7 +36,22 @@ export type ChatMessage = {
     args: any;
     result?: string;
   }>;
-  cards?: Array<"approval" | "finetune" | "recommendation" | "context" | "sql">;
+  events?: EventRecord[];
+  questions?: ApprovalQuestion[];
+  approvalCard?: {
+    title: string;
+    description?: string;
+    itemName?: string;
+    costOrLocation?: string;
+  };
+  recommendation?: {
+    title: string;
+    subtitle?: string;
+    short?: string;
+    label?: string;
+    eventId?: string;
+  };
+  finetune?: boolean;
   timestamp: string;
 };
 
@@ -43,26 +61,103 @@ const SUGGESTIONS = [
     prompt: "What should a 3rd-year CSE student who loves AI and has Friday evening free do this week on campus and in Bengaluru?",
   },
   {
-    title: "Want me to place this restock order?",
-    prompt: "Check dairy and waffle cone inventory for the campus cafe and prepare a restock approval order.",
+    title: "Events with free food this week",
+    prompt: "What campus workshops, mixers, or hackathons are offering free food and meals this week?",
   },
   {
-    title: "How many flavors should we launch?",
-    prompt: "Simulate summer demand patterns from past campus fests and recommend how many ice cream flavors to launch.",
-  },
-  {
-    title: "Find my AI research tribe",
-    prompt: "Find active campus research labs and student clubs working on LLMs with recruitment open right now.",
+    title: "Find active research labs & clubs",
+    prompt: "Find active campus research labs (AI, Systems) and student technical clubs with open project recruitments right now.",
   },
   {
     title: "Alumni pathways: ML vs Systems",
     prompt: "Compare career trajectories and club involvement of alumni who landed AI research roles vs Big Tech SDE.",
   },
+  {
+    title: "Check cafe inventory & supplies",
+    prompt: "Check campus cafe dairy and waffle cones inventory levels in Databricks Lakehouse.",
+  },
 ];
+
+function resolveRelevantEvents(
+  toolEventIds: string[],
+  content: string,
+  thinking: string,
+  userPrompt: string,
+  allEvents: EventRecord[]
+): EventRecord[] {
+  const matched = new Map<string, EventRecord>();
+
+  // 1. Explicit tool call IDs
+  for (const id of toolEventIds) {
+    const ev = allEvents.find(
+      (e) =>
+        e.id.toLowerCase() === id.toLowerCase() ||
+        e.id.replace("-", "").toLowerCase() === id.replace("-", "").toLowerCase()
+    );
+    if (ev) matched.set(ev.id, ev);
+  }
+
+  // 2. Mentioned event IDs in content or thinking (e.g. EV-01, EV-10)
+  const combined = `${content} ${thinking}`;
+  const idMatches = combined.match(/EV-?\d+/gi) || [];
+  for (const raw of idMatches) {
+    const norm = raw.toUpperCase().replace(/^EV(\d+)$/, "EV-$1");
+    const ev = allEvents.find((e) => e.id === norm || e.id.replace("-", "") === norm.replace("-", ""));
+    if (ev) matched.set(ev.id, ev);
+  }
+
+  // 3. Title matches in content
+  for (const ev of allEvents) {
+    if (
+      combined.toLowerCase().includes(ev.title.toLowerCase()) ||
+      content.toLowerCase().includes(ev.title.toLowerCase())
+    ) {
+      matched.set(ev.id, ev);
+    }
+  }
+
+  // 4. Keyword matches if query asked about specific domains
+  if (matched.size === 0) {
+    const q = (userPrompt + " " + combined).toLowerCase();
+    if (q.includes("hackathon") || q.includes("hack") || q.includes("build")) {
+      allEvents.filter((e) => e.cat === "hackathon").forEach((e) => matched.set(e.id, e));
+    } else if (
+      q.includes("free food") ||
+      q.includes("pizza") ||
+      q.includes("snacks") ||
+      q.includes("food provided") ||
+      q.includes("food")
+    ) {
+      allEvents.filter((e) => e.flags?.food).forEach((e) => matched.set(e.id, e));
+    } else if (q.includes("career") || q.includes("resume") || q.includes("internship")) {
+      allEvents.filter((e) => e.cat === "career").forEach((e) => matched.set(e.id, e));
+    } else if (
+      q.includes("systems") ||
+      q.includes("robotics") ||
+      q.includes("ai") ||
+      q.includes("design") ||
+      q.includes("workshop")
+    ) {
+      allEvents
+        .filter((e) => e.cat === "workshop" || e.cat === "meeting")
+        .slice(0, 4)
+        .forEach((e) => matched.set(e.id, e));
+    } else if (
+      q.includes("event") ||
+      q.includes("happening") ||
+      q.includes("schedule") ||
+      q.includes("this week")
+    ) {
+      allEvents.slice(0, 4).forEach((e) => matched.set(e.id, e));
+    }
+  }
+
+  return Array.from(matched.values());
+}
 
 export default function CampusGenieChatPage() {
   const { isDark, toggleTheme } = useTheme();
-  const { threads, activeThreadId, saveThread, setActiveThreadId } = useChatStore();
+  const { threads, activeThreadId, saveThread, deleteThread, setActiveThreadId } = useChatStore();
 
   const [models, setModels] = useState<LLMModelConfig[]>(DEFAULT_AVAILABLE_MODELS);
   const [selectedModel, setSelectedModel] = useState<LLMModelConfig>(DEFAULT_AVAILABLE_MODELS[0]);
@@ -86,6 +181,16 @@ export default function CampusGenieChatPage() {
   const [newModelReasoning, setNewModelReasoning] = useState<boolean>(false);
   const [newModelBaseUrl, setNewModelBaseUrl] = useState<string>("");
   const [newModelApiKey, setNewModelApiKey] = useState<string>("");
+  const [lakehouseEvents, setLakehouseEvents] = useState<EventRecord[]>([]);
+
+  useEffect(() => {
+    fetch("/api/events")
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.events) setLakehouseEvents(data.events);
+      })
+      .catch((err) => console.warn("Failed to load events for chat matching", err));
+  }, []);
 
   const scrollAnchorRef = useRef<HTMLDivElement>(null);
 
@@ -221,6 +326,7 @@ export default function CampusGenieChatPage() {
     const newMessages = [...messages, userMsg];
     setMessages(newMessages);
     setIsLoading(true);
+    setErrorMessage(null);
 
     // Save user message immediately to thread
     saveThread({
@@ -230,12 +336,6 @@ export default function CampusGenieChatPage() {
       createdAt: Date.now(),
       updatedAt: Date.now(),
     });
-
-    // Determine special cards to display based on prompt context
-    const lower = text.toLowerCase();
-    const isRestock = lower.includes("restock") || lower.includes("place this order") || lower.includes("inventory");
-    const isFlavor = lower.includes("flavor") || lower.includes("launch") || lower.includes("how many");
-    const isEvent = lower.includes("event") || lower.includes("week") || lower.includes("tonight") || lower.includes("meetup");
 
     const effectiveApiKey = selectedModel.customApiKey || customApiKey || undefined;
     const effectiveBaseUrl = selectedModel.customBaseUrl || customBaseUrl || undefined;
@@ -258,12 +358,13 @@ export default function CampusGenieChatPage() {
         throw new Error(errData.error || `HTTP ${response.status} ${response.statusText}`);
       }
 
-      // Read SSE stream
+      // Read SSE stream with robust line buffer
       const reader = response.body?.getReader();
       const decoder = new TextDecoder();
       let assistantContent = "";
       let assistantThinking = "";
-      let toolInvocations: any[] = [];
+      const toolMap = new Map<number, { name: string; args: string }>();
+      let lineBuffer = "";
 
       const assistantMsgId = (Date.now() + 1).toString();
 
@@ -272,33 +373,68 @@ export default function CampusGenieChatPage() {
           const { done, value } = await reader.read();
           if (done) break;
 
-          const chunk = decoder.decode(value, { stream: true });
-          const lines = chunk.split("\n").filter((l) => l.trim().startsWith("data: "));
+          lineBuffer += decoder.decode(value, { stream: true });
+          const rawLines = lineBuffer.split("\n");
+          // Keep trailing incomplete fragment in lineBuffer
+          lineBuffer = rawLines.pop() ?? "";
 
-          for (const line of lines) {
-            const dataStr = line.replace(/^data: /, "").trim();
+          for (const line of rawLines) {
+            const trimmed = line.trim();
+            if (!trimmed.startsWith("data: ")) continue;
+            const dataStr = trimmed.replace(/^data: /, "").trim();
             if (dataStr === "[DONE]") continue;
 
             try {
               const parsed = JSON.parse(dataStr);
               const delta = parsed.choices?.[0]?.delta;
 
-              if (delta?.reasoning_content || delta?.thinking) {
-                assistantThinking += delta.reasoning_content || delta.thinking;
-              } else if (delta?.content) {
+              if (delta?.reasoning_content || delta?.reasoning || delta?.thinking || delta?.thought) {
+                assistantThinking += (delta.reasoning_content || delta.reasoning || delta.thinking || delta.thought);
+              }
+              if (delta?.content) {
                 assistantContent += delta.content;
               }
 
               if (delta?.tool_calls) {
                 for (const tc of delta.tool_calls) {
-                  if (tc.function?.name) {
-                    toolInvocations.push({
-                      name: tc.function.name,
-                      args: tc.function.arguments || "{}",
-                    });
-                  }
+                  const idx = tc.index ?? 0;
+                  const current = toolMap.get(idx) || { name: "", args: "" };
+                  if (tc.function?.name) current.name = tc.function.name;
+                  if (tc.function?.arguments) current.args += tc.function.arguments;
+                  toolMap.set(idx, current);
                 }
               }
+
+              const toolInvocations = Array.from(toolMap.values());
+              let parsedQuestions: any = null;
+              let parsedApproval: any = null;
+              let parsedRecommendation: any = null;
+              const explicitToolEventIds: string[] = [];
+
+              for (const ti of toolInvocations) {
+                try {
+                  const parsedArgs = JSON.parse(ti.args);
+                  if (ti.name === "ask_questions" && parsedArgs.questions) {
+                    parsedQuestions = parsedArgs.questions;
+                  } else if (ti.name === "show_approval_card") {
+                    parsedApproval = parsedArgs;
+                  } else if (ti.name === "show_recommendation_card") {
+                    parsedRecommendation = parsedArgs;
+                  } else if (ti.name === "show_events_grid" && Array.isArray(parsedArgs.eventIds)) {
+                    explicitToolEventIds.push(...parsedArgs.eventIds);
+                  }
+                } catch {
+                  // Arguments still streaming
+                }
+              }
+
+              const currentMatchedEvents = resolveRelevantEvents(
+                explicitToolEventIds,
+                assistantContent,
+                assistantThinking,
+                text,
+                lakehouseEvents
+              );
 
               setMessages((prev) => {
                 const filtered = prev.filter((m) => m.id !== assistantMsgId);
@@ -307,41 +443,69 @@ export default function CampusGenieChatPage() {
                   {
                     id: assistantMsgId,
                     role: "assistant" as const,
-                    content: assistantContent || "Synthesizing recommendations from Databricks Lakehouse...",
-                    thinking: assistantThinking || (selectedModel.isReasoning ? "Analyzing Unity Catalog Delta tables & student persona constraints..." : undefined),
+                    content: assistantContent,
+                    thinking: assistantThinking || undefined,
                     toolCalls: toolInvocations.length > 0 ? toolInvocations : undefined,
-                    cards: [
-                      isRestock ? "approval" : null,
-                      isFlavor ? "finetune" : null,
-                      isEvent ? "recommendation" : null,
-                    ].filter(Boolean) as any[],
+                    questions: parsedQuestions || undefined,
+                    approvalCard: parsedApproval || undefined,
+                    recommendation: parsedRecommendation || undefined,
+                    events: currentMatchedEvents.length > 0 ? currentMatchedEvents : undefined,
                     timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
                   },
                 ];
                 return updated;
               });
             } catch (pErr) {
-              // Non-JSON delta
+              // Non-JSON SSE payload
             }
           }
         }
       }
 
-      // If empty response
-      if (!assistantContent) {
-        assistantContent = `Campus Genie queried **campus_explorer.campus_events** and matched your student profile with top events and high-yield activities for this week.`;
+      const finalToolInvocations = Array.from(toolMap.values());
+      let finalQuestions: any = null;
+      let finalApproval: any = null;
+      let finalRecommendation: any = null;
+      const finalToolEventIds: string[] = [];
+
+      for (const ti of finalToolInvocations) {
+        try {
+          const parsedArgs = JSON.parse(ti.args);
+          if (ti.name === "ask_questions" && parsedArgs.questions) {
+            finalQuestions = parsedArgs.questions;
+          } else if (ti.name === "show_approval_card") {
+            finalApproval = parsedArgs;
+          } else if (ti.name === "show_recommendation_card") {
+            finalRecommendation = parsedArgs;
+          } else if (ti.name === "show_events_grid" && Array.isArray(parsedArgs.eventIds)) {
+            finalToolEventIds.push(...parsedArgs.eventIds);
+          }
+        } catch {}
+      }
+
+      const finalMatchedEvents = resolveRelevantEvents(
+        finalToolEventIds,
+        assistantContent,
+        assistantThinking,
+        text,
+        lakehouseEvents
+      );
+
+      // If no text content and no tool calls, report error
+      if (!assistantContent && finalToolInvocations.length === 0) {
+        assistantContent = "Unable to process query. No response returned from Lakehouse LLM.";
       }
 
       const finalAssistantMsg: ChatMessage = {
         id: assistantMsgId,
         role: "assistant",
         content: assistantContent,
-        thinking: selectedModel.isReasoning ? "Scanning Unity Catalog schema for category = 'AI' and start_time >= CURRENT_DATE()..." : undefined,
-        cards: [
-          isRestock ? "approval" : null,
-          isFlavor ? "finetune" : null,
-          isEvent ? "recommendation" : null,
-        ].filter(Boolean) as any[],
+        thinking: assistantThinking || undefined,
+        toolCalls: finalToolInvocations.length > 0 ? finalToolInvocations : undefined,
+        questions: finalQuestions || undefined,
+        approvalCard: finalApproval || undefined,
+        recommendation: finalRecommendation || undefined,
+        events: finalMatchedEvents.length > 0 ? finalMatchedEvents : undefined,
         timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
       };
 
@@ -362,6 +526,28 @@ export default function CampusGenieChatPage() {
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const handleDeleteChat = (id: string) => {
+    deleteThread(id);
+    if (currentThreadId === id || activeThreadId === id) {
+      setMessages([]);
+      setActiveTitle(null);
+      setCurrentThreadId(null);
+      setActiveThreadId(null);
+      setErrorMessage(null);
+    }
+  };
+
+  const handleClearCurrentChat = () => {
+    if (currentThreadId) {
+      deleteThread(currentThreadId);
+    }
+    setMessages([]);
+    setActiveTitle(null);
+    setCurrentThreadId(null);
+    setActiveThreadId(null);
+    setErrorMessage(null);
   };
 
   const handlePickRecent = (id: string, label: string, prompt?: string) => {
@@ -390,6 +576,7 @@ export default function CampusGenieChatPage() {
         activeTitle={activeTitle}
         activeNav="chat"
         onPick={handlePickRecent}
+        onDeleteChat={handleDeleteChat}
         onNewChat={() => {
           setMessages([]);
           setActiveTitle(null);
@@ -399,15 +586,14 @@ export default function CampusGenieChatPage() {
         }}
         footerLabel="Campus Genie v1.0"
         footerIcon={
-          <span className="relative flex size-2">
-            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-green opacity-75" />
-            <span className="relative inline-flex size-2 rounded-full bg-green" />
+          <span className="flex size-2">
+            <span className="size-2 rounded-full bg-green" />
           </span>
         }
       />
 
       <div className="flex min-w-0 flex-1 flex-col gap-2.5">
-        <section className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-[14px] border border-line bg-canvas shadow-card">
+        <section className="relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-[14px] border border-line bg-canvas shadow-card">
           {/* Top Bar */}
           <header className="flex h-11 shrink-0 items-center justify-between border-b border-line px-3 sm:px-4 bg-canvas">
             <div className="flex items-center gap-2">
@@ -419,6 +605,21 @@ export default function CampusGenieChatPage() {
             </div>
 
             <div className="flex items-center gap-2">
+              {/* Clear / Delete Current Chat Button */}
+              {messages.length > 0 && (
+                <button
+                  type="button"
+                  onClick={handleClearCurrentChat}
+                  title="Delete/Clear this chat"
+                  className="flex size-7 items-center justify-center rounded-[7px] border border-line bg-surface text-ink-3 hover:bg-hover hover:text-red transition-colors duration-100"
+                >
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <polyline points="3 6 5 6 21 6" />
+                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                  </svg>
+                </button>
+              )}
+
               {/* Model Picker */}
               <div className="relative">
                 <select
@@ -541,7 +742,7 @@ export default function CampusGenieChatPage() {
               </div>
             ) : (
               <div className="space-y-5 max-w-3xl mx-auto w-full pb-4">
-                {messages.map((msg) => (
+                {messages.map((msg, idx) => (
                   <div
                     key={msg.id}
                     className={`flex flex-col space-y-1.5 ${msg.role === "user" ? "items-end" : "items-start"}`}
@@ -553,65 +754,95 @@ export default function CampusGenieChatPage() {
                       </div>
                     ) : (
                       <div className="w-full space-y-3">
-                        {/* Thinking / Reasoning Accordion Component */}
+                        {/* Thinking / Reasoning Accordion Component with real live trace */}
                         {msg.thinking && (
                           <div className="w-full">
                             <ThinkingState
-                              variant={selectedModel.isReasoning ? "Reasoning" : "Steps"}
+                              variant="Reasoning"
+                              thinking={msg.thinking}
+                              isStreaming={isLoading && idx === messages.length - 1 && !msg.content}
                             />
                           </div>
                         )}
 
-                        {/* Markdown Text Response Body */}
-                        <div className="rounded-[14px] border border-line bg-surface p-4 text-[13.5px] text-ink leading-relaxed shadow-card">
-                          <MarkdownMessage content={msg.content} />
-                        </div>
+                        {/* Markdown Text Response Body - Only render when content is non-empty */}
+                        {Boolean(msg.content && msg.content.trim()) && (
+                          <div className="rounded-[14px] border border-line bg-surface p-4 text-[13.5px] text-ink leading-relaxed shadow-card">
+                            <MarkdownMessage content={msg.content} />
+                          </div>
+                        )}
 
-                        {/* Governed Cards & Artifacts from Lakehouse */}
-                        {msg.cards?.includes("approval") && (
+                        {/* Interactive Lakehouse Event Cards with click-to-open modal */}
+                        {msg.events && msg.events.length > 0 && (
+                          <div className="w-full animate-fade-in">
+                            <ChatEventCards events={msg.events} onAskGenie={handleSend} />
+                          </div>
+                        )}
+
+                        {/* Interactive Question Card from LLM (ask_questions tool) */}
+                        {msg.questions && msg.questions.length > 0 && (
+                          <div className="w-full animate-fade-in">
+                            <ApprovalCard
+                              questions={msg.questions}
+                              labels={{
+                                skip: "Skip",
+                                continue: "Continue",
+                                send: "Submit Answers",
+                                customPlaceholder: "Other details…",
+                                sentMessage: "Answers sent",
+                              }}
+                              onSubmitted={(answers) => {
+                                const formatted = Object.entries(answers)
+                                  .map(([q, a]) => `${q}: ${Array.isArray(a) ? a.join(", ") : a}`)
+                                  .join("; ");
+                                handleSend(`My answers: ${formatted}`);
+                              }}
+                            />
+                          </div>
+                        )}
+
+                        {/* Action Approval Card from LLM (show_approval_card tool) */}
+                        {msg.approvalCard && (
                           <div className="w-full animate-fade-in">
                             <ApprovalCard
                               questions={[
                                 {
-                                  q: "Want me to place this restock order?",
+                                  q: msg.approvalCard.title,
                                   type: "radio",
-                                  options: ["Approve order (Amul Dairy · ₹14,250)", "Hold for manager review", "Modify quantity"],
+                                  options: [
+                                    `Confirm & Proceed (${msg.approvalCard.itemName || "Action"}${msg.approvalCard.costOrLocation ? ` · ${msg.approvalCard.costOrLocation}` : ""})`,
+                                    "Hold for review",
+                                    "Cancel",
+                                  ],
                                 },
                               ]}
-                              onSubmitted={(answers) => handleSend("Restock order approved. Proceeding with Databricks automated procurement pipeline.")}
+                              onSubmitted={(answers) => {
+                                const ans = Object.values(answers)[0];
+                                handleSend(`Action decision for "${msg.approvalCard?.title}": ${ans}`);
+                              }}
                             />
                           </div>
                         )}
 
-                        {msg.cards?.includes("finetune") && (
-                          <div className="w-full animate-fade-in">
-                            <FineTuneCard
-                              fields={[
-                                { key: "flavors", label: "Flavors", value: 12, min: 3, max: 30 },
-                                { key: "storage", label: "Cold Storage", value: 85, min: 20, max: 100, suffix: "%" },
-                                { key: "margin", label: "Est Margin", value: 42, min: 10, max: 80, suffix: "%" },
-                                { key: "batches", label: "Batches/wk", value: 8, min: 1, max: 24 },
-                              ]}
-                            />
-                          </div>
-                        )}
-
-                        {msg.cards?.includes("recommendation") && (
+                        {/* Recommendation Card from LLM (show_recommendation_card tool) */}
+                        {msg.recommendation && (
                           <div className="w-full animate-fade-in">
                             <RecommendationCard
+                              labels={{
+                                title: msg.recommendation.title,
+                                alternatives: "Alternatives",
+                                otherOptions: "Other Options",
+                                accepted: "Selected",
+                              }}
                               options={[
                                 {
-                                  key: "acm",
-                                  body: (
-                                    <>
-                                      Join <EntityChip name="ACM Systems & AI Lab" /> with 98% student persona match.
-                                    </>
-                                  ),
-                                  short: "ACM Systems & AI · Wed 6:30 PM",
-                                  signal: 98,
-                                  tone: "green",
-                                  label: "Best Fit",
-                                  cta: "View Event",
+                                  key: "primary",
+                                  body: <>{msg.recommendation.subtitle || msg.recommendation.title}</>,
+                                  short: msg.recommendation.short || msg.recommendation.title,
+                                  signal: 95,
+                                  tone: "var(--green)",
+                                  label: msg.recommendation.label || "Top Pick",
+                                  cta: "Explore More",
                                   ctaVariant: "primary",
                                 },
                               ]}
@@ -622,6 +853,16 @@ export default function CampusGenieChatPage() {
                     )}
                   </div>
                 ))}
+
+                {/* Loading State Spinner Component when waiting for assistant response */}
+                {isLoading && (messages.length === 0 || messages[messages.length - 1]?.role === "user" || (!messages[messages.length - 1]?.content && !messages[messages.length - 1]?.thinking)) && (
+                  <div className="w-full flex items-center py-2 animate-fade-in">
+                    <LoadingState
+                      variant="Drive"
+                      label={selectedModel.isReasoning ? "Reasoning through Lakehouse Delta tables…" : "Querying Unity Catalog…"}
+                    />
+                  </div>
+                )}
 
                 {/* Error Banner */}
                 {errorMessage && (
