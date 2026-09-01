@@ -177,7 +177,6 @@ function IconCalCheck({ size = 18 }: { size?: number }) {
 const WORKSPACE = { key: "campus_genie", name: "Campus Genie", monogram: "CG" };
 
 export const NAV_ITEMS = [
-  { key: "navigator", label: "Opportunity Navigator", icon: <IconPopsicle2 size={18} />, href: "/navigator" },
   { key: "events", label: "Events", icon: <IconCalendar size={18} />, count: "14", href: "/events" },
   { key: "attendance", label: "Attendance", icon: <IconCalCheck size={18} />, count: "86%", href: "/attendance" },
   { key: "admin", label: "Student Admin", icon: <IconShield size={18} />, count: "Admin", href: "/admin" },
