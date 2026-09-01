@@ -12,6 +12,7 @@ export default function AttendancePage() {
   const { isDark, toggleTheme } = useTheme();
   const [shortcutsOpen, setShortcutsOpen] = useState<boolean>(false);
   const [recoveryModalOpen, setRecoveryModalOpen] = useState<boolean>(false);
+  const [selectedCourseForRecovery, setSelectedCourseForRecovery] = useState<CourseAttendance | null>(null);
 
   // Data from Databricks Lakehouse
   const [isLoading, setIsLoading] = useState<boolean>(true);
@@ -385,7 +386,10 @@ export default function AttendancePage() {
                 <div className="flex items-center gap-2 shrink-0">
                   <button
                     type="button"
-                    onClick={() => setRecoveryModalOpen(true)}
+                    onClick={() => {
+                      setSelectedCourseForRecovery(mathCourse);
+                      setRecoveryModalOpen(true);
+                    }}
                     className="inline-flex h-7.5 items-center gap-1.5 rounded-[8px] bg-accent px-3 text-[12px] font-medium text-white shadow-sm hover:brightness-105 transition-all cursor-pointer active:scale-[0.98]"
                   >
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.5"/></svg>
@@ -542,7 +546,10 @@ export default function AttendancePage() {
                   </div>
                   <button
                     type="button"
-                    onClick={() => setRecoveryModalOpen(true)}
+                    onClick={() => {
+                      setSelectedCourseForRecovery(mathCourse);
+                      setRecoveryModalOpen(true);
+                    }}
                     className="flex items-center gap-1 mt-1 text-[11px] text-accent hover:underline cursor-pointer"
                   >
                     MATH 201 · {mathCourse.currentPercentage}% (Plan →)
@@ -991,15 +998,25 @@ export default function AttendancePage() {
                             {course.isAtRisk ? (
                               <button
                                 type="button"
-                                onClick={() => setRecoveryModalOpen(true)}
+                                onClick={() => {
+                                  setSelectedCourseForRecovery(course);
+                                  setRecoveryModalOpen(true);
+                                }}
                                 className="inline-flex items-center gap-1 rounded-full bg-red-tint px-2 py-0.5 text-[9.5px] font-medium text-red hover:bg-red-tint/70 hover:brightness-95 cursor-pointer transition-colors border border-red/20"
                               >
                                 At risk · Plan →
                               </button>
                             ) : (
-                              <span className="inline-flex items-center gap-1 rounded-full bg-green-tint px-1.5 py-0.2 text-[9.5px] font-medium text-green">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setSelectedCourseForRecovery(course);
+                                  setRecoveryModalOpen(true);
+                                }}
+                                className="inline-flex items-center gap-1 rounded-full bg-green-tint px-1.5 py-0.2 text-[9.5px] font-medium text-green hover:brightness-95 cursor-pointer"
+                              >
                                 {course.statusLabel}
-                              </span>
+                              </button>
                             )}
                           </div>
                         </div>
@@ -1093,21 +1110,25 @@ export default function AttendancePage() {
       {/* Global SVG Icons Sprite */}
       <EventIcons />
 
-      {/* Attendance Recovery Plan Modal */}
-      <RecoveryPlanModal
-        isOpen={recoveryModalOpen}
-        onClose={() => {
-          setRecoveryModalOpen(false);
-          fetchAttendance();
-        }}
-        courseCode={mathCourse.courseCode || "MATH 201"}
-        courseName={mathCourse.title || "Linear Algebra"}
-        instructor={mathCourse.instructor || "Dr. Okafor"}
-        currentSessions={mathCourse.totalSessionsToDate || 20}
-        attendedSessions={mathCourse.attendedCount || 14}
-        totalTermSessions={42}
-        cutoffPercentage={75}
-      />
+      {/* Dynamic Attendance Recovery Plan Modal */}
+      {selectedCourseForRecovery && (
+        <RecoveryPlanModal
+          isOpen={recoveryModalOpen}
+          onClose={() => {
+            setRecoveryModalOpen(false);
+            fetchAttendance();
+          }}
+          courseCode={selectedCourseForRecovery.courseCode}
+          courseName={selectedCourseForRecovery.title}
+          instructor={selectedCourseForRecovery.instructor}
+          location={selectedCourseForRecovery.location}
+          scheduleTime={`${selectedCourseForRecovery.scheduleDays?.join(", ") || "Mon, Wed, Fri"} ${selectedCourseForRecovery.startTime || "09:00 AM"}`}
+          currentSessions={selectedCourseForRecovery.totalSessionsToDate || 20}
+          attendedSessions={selectedCourseForRecovery.attendedCount || 14}
+          totalTermSessions={selectedCourseForRecovery.courseCode.includes("201") || selectedCourseForRecovery.courseCode.includes("210") ? 42 : 28}
+          cutoffPercentage={selectedCourseForRecovery.minAttendancePct || 75}
+        />
+      )}
 
       {/* Keyboard Shortcuts Dialog Modal */}
       <KeyboardShortcutsModal

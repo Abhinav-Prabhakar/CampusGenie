@@ -206,3 +206,120 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: false, error: err.message }, { status: 500 });
   }
 }
+
+export async function PUT(req: NextRequest) {
+  try {
+    const body = await req.json();
+    const eventId = (body.id || body.eventId || "").replace(/'/g, "''");
+    if (!eventId) {
+      return NextResponse.json({ success: false, error: "Missing event ID" }, { status: 400 });
+    }
+
+    const title = (body.title || "Campus Event").replace(/'/g, "''");
+    const category = (body.category || "meeting").toLowerCase();
+    const host = (body.host || body.host_organization || "Student Org").replace(/'/g, "''");
+    const hostCode = (body.hostCode || host.slice(0, 2)).toUpperCase();
+    const location = (body.location || "Campus Hub").replace(/'/g, "''");
+    const isVirtual = Boolean(body.isVirtual || body.isHybrid);
+    const date = body.date || "2026-04-15";
+    const time = (body.time || "6:00 PM").replace(/'/g, "''");
+    const duration = (body.duration || "1h").replace(/'/g, "''");
+    const capacity = parseInt(body.capacity || body.capNumber) || 50;
+    const food = Boolean(body.food || body.hasFood);
+    const featured = Boolean(body.featured || body.isFeatured);
+    const status = body.status || "live";
+    const visibility = body.visibility || "public";
+    const description = (body.description || body.desc || "").replace(/'/g, "''");
+    const tags = Array.isArray(body.tags) ? body.tags : [category, "Campus"];
+    const tagsArraySql = `ARRAY(${tags.map((t: string) => `'${t.replace(/'/g, "''")}'`).join(",")})`;
+
+    const mergeSql = `
+      MERGE INTO workspace.campus_explorer.campus_events AS target
+      USING (
+        SELECT 
+          '${eventId}' AS event_id,
+          '${title}' AS title,
+          '${category}' AS category,
+          '${host}' AS host_organization,
+          '${hostCode}' AS host_code,
+          '${location}' AS location,
+          ${isVirtual} AS is_virtual,
+          DATE '${date}' AS event_date,
+          '${time}' AS start_time,
+          '${duration}' AS duration,
+          ${capacity} AS capacity,
+          ${food} AS food_provided,
+          ${featured} AS is_featured,
+          '${status}' AS status,
+          '${visibility}' AS visibility,
+          ${tagsArraySql} AS tags,
+          '${description}' AS description
+      ) AS src
+      ON target.event_id = src.event_id
+      WHEN MATCHED THEN UPDATE SET
+        target.title = src.title,
+        target.category = src.category,
+        target.host_organization = src.host_organization,
+        target.host_code = src.host_code,
+        target.location = src.location,
+        target.is_virtual = src.is_virtual,
+        target.event_date = src.event_date,
+        target.start_time = src.start_time,
+        target.duration = src.duration,
+        target.capacity = src.capacity,
+        target.food_provided = src.food_provided,
+        target.is_featured = src.is_featured,
+        target.status = src.status,
+        target.visibility = src.visibility,
+        target.tags = src.tags,
+        target.description = src.description
+      WHEN NOT MATCHED THEN INSERT (
+        event_id, title, category, host_organization, host_code,
+        location, is_virtual, event_date, start_time, duration,
+        capacity, registered_count, food_provided, is_featured, status, visibility,
+        tags, description, created_at
+      ) VALUES (
+        src.event_id, src.title, src.category, src.host_organization, src.host_code,
+        src.location, src.is_virtual, src.event_date, src.start_time, src.duration,
+        src.capacity, 0, src.food_provided, src.is_featured, src.status, src.visibility,
+        src.tags, src.description, current_timestamp()
+      )
+    `;
+
+    const result = await executeLakehouseSql(mergeSql);
+
+    return NextResponse.json({
+      success: true,
+      eventId,
+      state: result.state,
+      message: "Event updated in Databricks Lakehouse table.",
+    });
+  } catch (err: any) {
+    console.error("[Update Event Error]", err);
+    return NextResponse.json({ success: false, error: err.message }, { status: 500 });
+  }
+}
+
+export async function DELETE(req: NextRequest) {
+  try {
+    const { searchParams } = new URL(req.url);
+    const id = searchParams.get("id") || "";
+    if (!id) {
+      return NextResponse.json({ success: false, error: "Missing event ID" }, { status: 400 });
+    }
+
+    const safeId = id.replace(/'/g, "''");
+    const deleteSql = `DELETE FROM workspace.campus_explorer.campus_events WHERE event_id = '${safeId}'`;
+    const result = await executeLakehouseSql(deleteSql);
+
+    return NextResponse.json({
+      success: true,
+      deletedId: safeId,
+      state: result.state,
+      message: "Event deleted from Databricks Lakehouse.",
+    });
+  } catch (err: any) {
+    console.error("[Delete Event Error]", err);
+    return NextResponse.json({ success: false, error: err.message }, { status: 500 });
+  }
+}

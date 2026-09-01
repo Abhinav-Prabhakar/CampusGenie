@@ -414,25 +414,117 @@ export default function EventAdminView() {
     }
   };
 
-  const handleSaveRow = (id: string) => {
+  const fetchLiveEvents = async () => {
+    try {
+      const res = await fetch("/api/events");
+      if (res.ok) {
+        const data = await res.json();
+        if (data.events && data.events.length > 0) {
+          setEvents(
+            data.events.map((e: any) => ({
+              id: e.id,
+              title: e.title,
+              category: e.cat || "meeting",
+              catLabel: e.catLabel || "Meeting",
+              catIcon: e.catIcon || "i-msg",
+              date: `${e.month || "APR"} ${e.day || "15"}`,
+              time: e.time || "6:00 PM",
+              location: e.loc || "Campus Hub",
+              attendees: `${typeof e.registered === "number" ? e.registered : 0}/${e.capacity || 60}`,
+              capNumber: e.capacity || 60,
+              rsvpsCount: typeof e.registered === "number" ? e.registered : 0,
+              checkedInCount: Math.round((typeof e.registered === "number" ? e.registered : 0) * 0.6),
+              status: e.status || "live",
+              visibility: e.visibility || "public",
+              isFeatured: e.isFeatured,
+              hasFood: e.flags?.food,
+              isHybrid: e.isVirtual,
+              duration: e.duration || "1h",
+            }))
+          );
+        }
+      }
+    } catch (err) {
+      console.warn("Failed to fetch live admin events:", err);
+    }
+  };
+
+  useEffect(() => {
+    fetchLiveEvents();
+  }, []);
+
+  const handleSaveRow = async (id: string) => {
     setSavedRowId(id);
+    const target = events.find((e) => e.id === id);
+    if (target) {
+      try {
+        await fetch("/api/events", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            id: target.id,
+            title: target.title,
+            category: target.category,
+            location: target.location,
+            time: target.time,
+            duration: target.duration,
+            capacity: target.capNumber,
+            food: target.hasFood,
+            isHybrid: target.isHybrid,
+            featured: target.isFeatured,
+            status: target.status,
+            visibility: target.visibility,
+          }),
+        });
+      } catch (err) {
+        console.error("Failed to update event in Lakehouse:", err);
+      }
+    }
     setTimeout(() => setSavedRowId(null), 1200);
   };
 
-  const handleDuplicateRow = (id: string) => {
+  const handleDuplicateRow = async (id: string) => {
     const target = events.find((e) => e.id === id);
     if (!target) return;
+    const newId = `EV-${Date.now().toString().slice(-4)}`;
     const dup: AdminEvent = {
       ...target,
-      id: `e-${Date.now()}`,
+      id: newId,
       title: `${target.title} (Copy)`,
       status: "draft",
     };
     setEvents([dup, ...events]);
+    try {
+      await fetch("/api/events", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: newId,
+          title: dup.title,
+          category: dup.category,
+          location: dup.location,
+          time: dup.time,
+          duration: dup.duration,
+          capacity: dup.capNumber,
+          food: dup.hasFood,
+          isHybrid: dup.isHybrid,
+          featured: dup.isFeatured,
+          status: "draft",
+          visibility: dup.visibility,
+        }),
+      });
+    } catch (err) {
+      console.error("Failed to duplicate event in Lakehouse:", err);
+    }
   };
 
-  const handleDeleteRow = (id: string) => {
+  const handleDeleteRow = async (id: string) => {
     setEvents((prev) => prev.filter((e) => e.id !== id));
+    try {
+      await fetch(`/api/events?id=${encodeURIComponent(id)}`, { method: "DELETE" });
+    } catch (err) {
+      console.error("Failed to delete event in Lakehouse:", err);
+    }
   };
 
   return (
