@@ -4,11 +4,13 @@ import { useState } from "react";
 import SidebarNav from "@/components/primitives/SidebarNav";
 import KeyboardShortcutsModal from "@/components/shortcuts/KeyboardShortcutsModal";
 import EventIcons from "@/components/events/EventIcons";
+import RecoveryPlanModal from "@/components/attendance/RecoveryPlanModal";
 import { useTheme } from "@/lib/theme";
 
 export default function AttendancePage() {
   const { isDark, toggleTheme } = useTheme();
   const [shortcutsOpen, setShortcutsOpen] = useState<boolean>(false);
+  const [recoveryModalOpen, setRecoveryModalOpen] = useState<boolean>(false);
 
   // Interactive States
   const [isAlertDismissed, setIsAlertDismissed] = useState<boolean>(false);
@@ -140,7 +142,11 @@ export default function AttendancePage() {
                 </div>
 
                 <div className="flex items-center gap-2 shrink-0">
-                  <button type="button" className="inline-flex h-7.5 items-center gap-1.5 rounded-[8px] bg-accent px-3 text-[12px] font-medium text-white shadow-sm hover:brightness-105 transition-all">
+                  <button
+                    type="button"
+                    onClick={() => setRecoveryModalOpen(true)}
+                    className="inline-flex h-7.5 items-center gap-1.5 rounded-[8px] bg-accent px-3 text-[12px] font-medium text-white shadow-sm hover:brightness-105 transition-all cursor-pointer active:scale-[0.98]"
+                  >
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.5"/></svg>
                     Recovery plan
                   </button>
@@ -274,9 +280,13 @@ export default function AttendancePage() {
                     <b className="text-[18px] font-semibold text-orange tabular-nums">1</b>
                     <span className="text-[11.5px] text-ink-3">of 5 courses</span>
                   </div>
-                  <div className="flex items-center gap-1 mt-1 text-[11px] text-accent hover:underline cursor-pointer">
-                    MATH 201 · 70%
-                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setRecoveryModalOpen(true)}
+                    className="flex items-center gap-1 mt-1 text-[11px] text-accent hover:underline cursor-pointer"
+                  >
+                    MATH 201 · 70% (Recovery plan →)
+                  </button>
                 </div>
               </div>
             </section>
@@ -757,7 +767,13 @@ export default function AttendancePage() {
                       </div>
                       <div className="flex flex-col items-end">
                         <span className="text-[16px] font-semibold text-red tabular-nums">70%</span>
-                        <span className="inline-flex items-center gap-1 rounded-full bg-red-tint px-1.5 py-0.2 text-[9.5px] font-medium text-red">At risk</span>
+                        <button
+                          type="button"
+                          onClick={() => setRecoveryModalOpen(true)}
+                          className="inline-flex items-center gap-1 rounded-full bg-red-tint px-2 py-0.5 text-[9.5px] font-medium text-red hover:bg-red-tint/70 hover:brightness-95 cursor-pointer transition-colors border border-red/20"
+                        >
+                          At risk · Plan →
+                        </button>
                       </div>
                     </div>
 
@@ -1004,6 +1020,19 @@ export default function AttendancePage() {
 
       {/* Global SVG Icons Sprite */}
       <EventIcons />
+
+      {/* Attendance Recovery Plan Modal */}
+      <RecoveryPlanModal
+        isOpen={recoveryModalOpen}
+        onClose={() => setRecoveryModalOpen(false)}
+        courseCode="MATH 201"
+        courseName="Linear Algebra"
+        instructor="Dr. Okafor"
+        currentSessions={20}
+        attendedSessions={14}
+        totalTermSessions={42}
+        cutoffPercentage={75}
+      />
 
       {/* Keyboard Shortcuts Dialog Modal */}
       <KeyboardShortcutsModal
