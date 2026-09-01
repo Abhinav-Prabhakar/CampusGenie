@@ -56,6 +56,44 @@ export const LLM_TOOLS = [
   {
     type: "function",
     function: {
+      name: "query_lakehouse_sql",
+      description: "Execute a SQL query on Databricks Unity Catalog Delta tables in schema 'workspace.campus_explorer' (campus_events, campus_surveys, knowledge_sources, clubs_and_labs, city_tech_events, alumni_career_pathways, procurement_inventory) to retrieve live event details, club openings, survey votes, and alumni paths.",
+      parameters: {
+        type: "object",
+        properties: {
+          query: {
+            type: "string",
+            description: "The SQL statement to execute, e.g. SELECT * FROM workspace.campus_explorer.campus_events ORDER BY event_date ASC LIMIT 10",
+          },
+          explanation: {
+            type: "string",
+            description: "Brief reason why this query is executed",
+          },
+        },
+        required: ["query"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "search_knowledge_sources",
+      description: "Search campus policy documents, student handbooks, syllabi, and club funding guidelines stored in Databricks Lakehouse knowledge base.",
+      parameters: {
+        type: "object",
+        properties: {
+          query: {
+            type: "string",
+            description: "Search keyword or phrase",
+          },
+        },
+        required: ["query"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "show_events_grid",
       description: "Render interactive campus event cards in the chat UI with click-to-open detail modal and event pass registration.",
       parameters: {

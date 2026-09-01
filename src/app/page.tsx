@@ -182,6 +182,7 @@ export default function CampusGenieChatPage() {
   const [newModelBaseUrl, setNewModelBaseUrl] = useState<string>("");
   const [newModelApiKey, setNewModelApiKey] = useState<string>("");
   const [lakehouseEvents, setLakehouseEvents] = useState<EventRecord[]>([]);
+  const [toolActivity, setToolActivity] = useState<{ label: string; active: boolean } | null>(null);
 
   useEffect(() => {
     fetch("/api/events")
@@ -386,6 +387,17 @@ export default function CampusGenieChatPage() {
 
             try {
               const parsed = JSON.parse(dataStr);
+
+              if (parsed.type === "tool_status") {
+                setToolActivity({
+                  label: parsed.label,
+                  active: parsed.active ?? true,
+                });
+                if (parsed.label) {
+                  assistantThinking += `\n[Lakehouse Tool] ${parsed.label}\n`;
+                }
+              }
+
               const delta = parsed.choices?.[0]?.delta;
 
               if (delta?.reasoning_content || delta?.reasoning || delta?.thinking || delta?.thought) {
@@ -854,12 +866,12 @@ export default function CampusGenieChatPage() {
                   </div>
                 ))}
 
-                {/* Loading State Spinner Component when waiting for assistant response */}
-                {isLoading && (messages.length === 0 || messages[messages.length - 1]?.role === "user" || (!messages[messages.length - 1]?.content && !messages[messages.length - 1]?.thinking)) && (
+                {/* Loading State Spinner Component when waiting for assistant response or running tools */}
+                {isLoading && (messages.length === 0 || messages[messages.length - 1]?.role === "user" || (!messages[messages.length - 1]?.content && !messages[messages.length - 1]?.thinking) || toolActivity?.active) && (
                   <div className="w-full flex items-center py-2 animate-fade-in">
                     <LoadingState
                       variant="Drive"
-                      label={selectedModel.isReasoning ? "Reasoning through Lakehouse Delta tables…" : "Querying Unity Catalog…"}
+                      label={toolActivity?.active ? toolActivity.label : (selectedModel.isReasoning ? "Reasoning through Lakehouse Delta tables…" : "Querying Unity Catalog…")}
                     />
                   </div>
                 )}

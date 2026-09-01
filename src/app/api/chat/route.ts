@@ -1,54 +1,32 @@
 import { NextRequest, NextResponse } from "next/server";
 import { fetchWithAutoRetry, LLM_TOOLS } from "@/lib/llm";
+import { executeLakehouseSql } from "@/lib/lakehouse";
 
 export const runtime = "nodejs";
 
-const SYSTEM_PROMPT = `You are "Campus Genie", an AI reasoning and lakehouse intelligence agent powered natively by Databricks Lakehouse with Unity Catalog (workspace.campus_explorer schema).
+const SYSTEM_PROMPT = `You are "Campus Genie", an AI lakehouse intelligence agent powered natively by Databricks Lakehouse with Unity Catalog (workspace.campus_explorer schema).
 You help university students explore campus events, research labs, student clubs, hackathons, surveys, alumni career pathways, cafe supply chain inventory, and city tech ecosystems (e.g. Bengaluru Indiranagar & Koramangala tech meetups).
 
-Governed Unity Catalog Delta Snapshot:
-1. Events (workspace.campus_explorer.campus_events):
-- [EV-01] ACM Weekly — Systems & Pizza | Category: meeting | Date: 2026-04-09 06:30 PM | Loc: Ocean Eng 214 | Food: true | Tags: Systems, Distributed Systems, Linux, Pizza | Desc: Weekly systems talk on kernel bypass networking demo and open hack time.
-- [EV-02] Figma 101 — Campus Design Systems | Category: workshop | Date: 2026-04-09 04:00 PM | Loc: Virtual Teams | Food: false | Tags: Design, UI/UX, Figma | Desc: Hands-on session building accessible design systems with OKLCH tokens.
-- [EV-03] Transfer Student Firepit Mixer | Category: social | Date: 2026-04-09 07:30 PM | Loc: Quad Firepit | Food: true | Tags: Social, Community, Mixer, Food | Desc: Campfire snacks, s'mores, and campus survival tips.
-- [EV-04] Databricks Coffee Chats & Career AMA | Category: career | Date: 2026-04-10 01:00 PM | Loc: Alumni Lounge | Food: true | Tags: Career, Internship, Networking, Databricks | Desc: 1-on-1 coffee chats with Databricks engineering leaders.
-- [EV-05] Robotics Lab Open House | Category: meeting | Date: 2026-04-10 05:00 PM | Loc: Robotics Lab B2 | Food: false | Tags: Robotics, Hardware, ROS2, AI | Desc: Autonomous quadrupeds demos, computer vision pipelines, lab recruitment.
-- [EV-06] Resume Lab — Drop-in Review | Category: career | Date: 2026-04-11 12:00 PM | Loc: HUB 317 | Food: false | Tags: Career, Resume, Mentorship | Desc: Peer and alumni resume reviews for summer internship applications.
-- [EV-07] Debate Society — Practice Rounds | Category: meeting | Date: 2026-04-11 04:30 PM | Loc: HUB 204 | Food: false | Tags: Debate, Public Speaking, Policy | Desc: AI governance and open source data policy debate.
-- [EV-08] Lightning Blitz Mini-Hack | Category: hackathon | Date: 2026-04-11 06:00 PM | Loc: Innovation Lab | Food: true | Tags: Hackathon, Rapid Prototyping, Free Food | Desc: 3-hour rapid prototyping challenge with instant cash micro-grants.
-- [EV-09] Moonlight Jam on the Quad | Category: social | Date: 2026-04-11 09:00 PM | Loc: Main Quad Stage | Food: false | Tags: Music, Festival, Quad | Desc: Acoustic and indie student band performances under the stars.
-- [EV-10] HackDavis 36 — Build for Good | Category: hackathon | Date: 2026-04-12 09:00 AM | Loc: Kemper 210 | Food: true | Featured: true | Tags: Hackathon, AI, Social Impact, Lakehouse | Desc: Flagship 36-hour social impact hackathon with $5,000 prize pool and Databricks mentors.
-- [EV-11] Intramural 3v3 Hoops Blitz | Category: sports | Date: 2026-04-12 11:00 AM | Loc: Rec Courts | Food: false | Tags: Sports, Basketball, Fitness | Desc: Weekend 3-on-3 double-elimination basketball tournament.
-- [EV-12] Sunrise Yoga — Library Terrace | Category: sports | Date: 2026-04-13 06:30 AM | Loc: Library Terrace | Food: false | Tags: Wellness, Yoga, Mindfulness | Desc: Gentle guided vinyasa flow with sunrise views. Mats and tea provided.
-- [EV-13] Genie Ideathon — 48h Virtual Build | Category: hackathon | Date: 2026-04-20 02:00 PM | Loc: Discord & Virtual | Food: false | Tags: Hackathon, Genie Agents, Cloud | Desc: Asynchronous global build sprint creating autonomous student tools with Databricks Genie.
-- [EV-14] Delta Lake Deep-Dive with Genie | Category: workshop | Date: 2026-04-13 03:00 PM | Loc: Virtual Teams | Food: false | Tags: Data, Delta Lake, SQL, Genie | Desc: Interactive tutorial on ACID transactions, time travel, and Genie Text-to-SQL.
-
-2. Clubs & Research Labs (workspace.campus_explorer.clubs_and_labs):
-- CruX Coding Club (Lead: Alex Chen | Focus: Systems & Competitive Programming | Open Recruitment: true | Req: C++, Rust, Python)
-- Centre for AI & Robotics Labs (Lead: Dr. V. Rao | Focus: Embodied AI & ROS2 | Open Recruitment: true | Req: PyTorch, Linux)
-- Campus Quantum Computing Group (Lead: Maya Lin | Focus: Qiskit & Algorithms | Open Recruitment: false)
-- GDG On-Campus (Lead: Priya Nair | Focus: Cloud & Genie Workflows | Open Recruitment: true)
-
-3. Active Surveys (workspace.campus_explorer.campus_surveys):
-- [SURV-01] HackDavis 2026 Track & Swag Survey (Target: EV-10, Featured: true, Responses: 142)
-- [SURV-02] Campus Cafe Summer Flavors & Restock Poll (Featured: false, Responses: 89)
-
-4. City Tech Meetups (workspace.campus_explorer.city_tech_events):
-- Bengaluru Generative AI Mixer (Indiranagar · 18 mins commute · Free)
-- Koramangala Systems Hack Night (Koramangala 4th Block · 25 mins commute · Free)
+Governed Unity Catalog Delta Tables in schema 'workspace.campus_explorer':
+1. workspace.campus_explorer.campus_events (event_id, title, category, host_organization, host_code, location, is_virtual, event_date, start_time, duration, capacity, registered_count, food_provided, is_featured, status, visibility, tags, description)
+2. workspace.campus_explorer.campus_surveys (survey_id, title, description, target_event_id, is_published, is_featured, audience, response_count, questions_json)
+3. workspace.campus_explorer.knowledge_sources (source_id, name, type, category, description, chunk_count, file_size, status, content_sample, uploaded_by)
+4. workspace.campus_explorer.clubs_and_labs (entity_id, name, type, faculty_lead, student_lead, primary_focus, recruitment_open, weekly_commitment_hrs, required_skills, meeting_schedule, location, contact_email, open_projects)
+5. workspace.campus_explorer.city_tech_events (meetup_id, title, organizer, neighborhood, venue_address, event_date, start_time, entry_fee_inr, attendee_count, domain, commute_mins_from_campus)
+6. workspace.campus_explorer.alumni_career_pathways (alumni_id, graduation_year, major, campus_clubs_joined, research_labs_joined, first_job_title, first_company, current_role, current_organization, primary_domain, advice_summary)
+7. workspace.campus_explorer.procurement_inventory (item_id, item_name, category, current_stock, min_reorder_threshold, preferred_supplier, unit_price_inr, lead_time_days, last_restock_date)
 
 Available Governed Tools:
-- "show_events_grid": Render interactive campus event cards in the chat UI. Parameter: { eventIds: string[] } e.g. ["EV-10", "EV-08", "EV-01"]
-- "ask_questions": Present interactive clarifying questions (ApprovalCard with radio/checkbox choices) when you need to know student preferences, dietary needs, or availability before recommending events or research tracks.
-- "show_approval_card": Present action approval cards to the student (e.g. "Want me to place this restock order?", "Confirm RSVP & Add to Google Calendar", "Join Research Lab").
-- "show_fine_tune_card": Present parameter adjustment sliders.
-- "show_recommendation_card": Present curated event/club recommendation cards.
+- query_lakehouse_sql: Execute SQL on Unity Catalog tables (e.g. SELECT * FROM workspace.campus_explorer.campus_events ORDER BY event_date ASC).
+- search_knowledge_sources: Search documents and policies.
+- show_events_grid: Render interactive campus event cards in the chat UI. Parameter: { eventIds: string[] } e.g. ["EV-10", "EV-08", "EV-01"].
+- ask_questions: Present interactive clarifying questions (ApprovalCard with radio/checkbox choices).
+- show_approval_card, show_fine_tune_card, show_recommendation_card.
 
-CRITICAL INSTRUCTIONS:
-- Do NOT output placeholder text like "I am digging through the database", "I will query...", or "Checking records...".
-- Keep internal reasoning concise (1-2 sentences maximum). Directly provide the complete, detailed, helpful markdown answer in your response!
-- When recommending or discussing campus events, ALWAYS cite the event IDs (e.g. EV-01, EV-08, EV-10, etc.) in your response, and call the "show_events_grid" tool with their eventIds so the interactive event cards render directly in chat.
-- Format responses in clean GitHub-flavored markdown with bullet points, dates, venues, food availability, and bold key points.
+Instructions:
+- When a student asks about events, research labs, alumni paths, cafe inventory, or meetups, call "query_lakehouse_sql" to fetch the live governed Delta records.
+- When presenting event recommendations, ALWAYS call "show_events_grid" with their event_ids (e.g. ['EV-01', 'EV-10']) so the interactive event cards render directly in chat.
+- Format responses in clean GitHub-flavored markdown with dates, venues, food availability, and bold key points.
 `;
 
 export async function POST(req: NextRequest) {
@@ -62,7 +40,6 @@ export async function POST(req: NextRequest) {
       customBaseUrl,
     } = body;
 
-    // Resolve actual model name (defaults to .env LLM_MODEL)
     const model = (!inputModel || inputModel === "env-default")
       ? (process.env.LLM_MODEL || process.env.NEXT_PUBLIC_DEFAULT_MODEL || "gpt-4o")
       : inputModel;
@@ -77,7 +54,6 @@ export async function POST(req: NextRequest) {
       else provider = "openai";
     }
 
-    // Resolve API Key from custom input or environment variables
     const apiKey =
       customApiKey ||
       process.env.LLM_API_KEY ||
@@ -86,7 +62,6 @@ export async function POST(req: NextRequest) {
       (provider === "gemini" ? process.env.GEMINI_API_KEY : undefined) ||
       (provider === "anthropic" ? process.env.ANTHROPIC_API_KEY : undefined);
 
-    // Resolve Base URL
     let baseUrl = customBaseUrl || process.env.LLM_BASE_URL;
     let endpoint = "";
     const headers: Record<string, string> = {
@@ -120,7 +95,6 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Set authorization headers
     if (apiKey) {
       if (provider === "anthropic" && endpoint.includes("api.anthropic.com")) {
         headers["x-api-key"] = apiKey;
@@ -130,85 +104,207 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Format messages with system prompt
-    const fullMessages = [
+    const conversationMessages: any[] = [
       { role: "system", content: SYSTEM_PROMPT },
       ...messages,
     ];
 
-    let payload: any = {
-      model,
-      messages: fullMessages,
-      tools: LLM_TOOLS,
-      tool_choice: "auto",
-      stream: true,
-      temperature: 0.3,
-      max_tokens: 3500,
-    };
-
-    // Special payload adaptation for Anthropic direct endpoint if not using proxy
-    if (provider === "anthropic" && endpoint.includes("api.anthropic.com")) {
-      payload = {
-        model,
-        system: SYSTEM_PROMPT,
-        messages: messages.map((m: any) => ({
-          role: m.role === "assistant" ? "assistant" : "user",
-          content: m.content,
-        })),
-        max_tokens: 4096,
-        stream: true,
-      };
-    }
-
-    // Execute with auto-retry (3 attempts, exponential backoff)
-    let upstreamRes: Response;
-    try {
-      upstreamRes = await fetchWithAutoRetry(endpoint, {
-        method: "POST",
-        headers,
-        body: JSON.stringify(payload),
-      });
-    } catch (err: any) {
-      return NextResponse.json(
-        {
-          error: `Failed to connect to ${provider} endpoint (${endpoint}) after 3 auto-retries: ${err.message}`,
-          provider,
-          endpoint,
-        },
-        { status: 502 }
-      );
-    }
-
-    if (!upstreamRes.ok) {
-      const errorText = await upstreamRes.text();
-      return NextResponse.json(
-        {
-          error: `API error from ${provider} (${upstreamRes.status} ${upstreamRes.statusText}): ${errorText}`,
-          status: upstreamRes.status,
-          provider,
-          endpoint,
-        },
-        { status: upstreamRes.status }
-      );
-    }
-
-    // Stream the SSE response back to the client
+    // Stream response with tool execution loop
     const stream = new ReadableStream({
       async start(controller) {
-        if (!upstreamRes.body) {
-          controller.close();
-          return;
-        }
-        const reader = upstreamRes.body.getReader();
+        const encoder = new TextEncoder();
+        const decoder = new TextDecoder();
+
+        const sendEvent = (data: any) => {
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
+        };
 
         try {
-          while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            controller.enqueue(value);
+          let loopCount = 0;
+          const maxLoops = 3;
+
+          while (loopCount < maxLoops) {
+            loopCount++;
+
+            const payload = {
+              model,
+              messages: conversationMessages,
+              tools: LLM_TOOLS,
+              tool_choice: "auto",
+              stream: true,
+              temperature: 0.3,
+            };
+
+            const upstreamRes = await fetchWithAutoRetry(endpoint, {
+              method: "POST",
+              headers,
+              body: JSON.stringify(payload),
+            });
+
+            if (!upstreamRes.ok || !upstreamRes.body) {
+              const errText = await upstreamRes.text().catch(() => "");
+              sendEvent({
+                error: `Upstream error (${upstreamRes.status}): ${errText}`,
+              });
+              break;
+            }
+
+            const reader = upstreamRes.body.getReader();
+            let lineBuffer = "";
+            let assistantContent = "";
+            let assistantThinking = "";
+            const toolCallsMap = new Map<number, { id?: string; name: string; args: string }>();
+
+            while (true) {
+              const { done, value } = await reader.read();
+              if (done) break;
+
+              lineBuffer += decoder.decode(value, { stream: true });
+              const lines = lineBuffer.split("\n");
+              lineBuffer = lines.pop() ?? "";
+
+              for (const line of lines) {
+                const trimmed = line.trim();
+                if (!trimmed.startsWith("data: ")) continue;
+                const dataStr = trimmed.replace(/^data: /, "").trim();
+                if (dataStr === "[DONE]") continue;
+
+                try {
+                  const parsed = JSON.parse(dataStr);
+                  const delta = parsed.choices?.[0]?.delta;
+
+                  if (delta?.reasoning_content || delta?.reasoning || delta?.thinking || delta?.thought) {
+                    const r = delta.reasoning_content || delta.reasoning || delta.thinking || delta.thought;
+                    assistantThinking += r;
+                    sendEvent({
+                      choices: [{ delta: { reasoning_content: r } }],
+                    });
+                  }
+
+                  if (delta?.content) {
+                    assistantContent += delta.content;
+                    sendEvent({
+                      choices: [{ delta: { content: delta.content } }],
+                    });
+                  }
+
+                  if (delta?.tool_calls) {
+                    for (const tc of delta.tool_calls) {
+                      const idx = tc.index ?? 0;
+                      const cur = toolCallsMap.get(idx) || { name: "", args: "" };
+                      if (tc.id) cur.id = tc.id;
+                      if (tc.function?.name) cur.name = tc.function.name;
+                      if (tc.function?.arguments) cur.args += tc.function.arguments;
+                      toolCallsMap.set(idx, cur);
+                    }
+                  }
+                } catch {
+                  // ignore partial JSON parse during stream
+                }
+              }
+            }
+
+            const toolCalls = Array.from(toolCallsMap.values());
+            
+            // Check if any server-executable tools were called (query_lakehouse_sql, search_knowledge_sources)
+            const serverToolCalls = toolCalls.filter(
+              (tc) => tc.name === "query_lakehouse_sql" || tc.name === "search_knowledge_sources"
+            );
+
+            // Forward UI tool calls to client if present
+            const uiToolCalls = toolCalls.filter(
+              (tc) => tc.name !== "query_lakehouse_sql" && tc.name !== "search_knowledge_sources"
+            );
+            if (uiToolCalls.length > 0) {
+              sendEvent({
+                choices: [{
+                  delta: {
+                    tool_calls: uiToolCalls.map((tc, idx) => ({
+                      index: idx,
+                      id: tc.id || `call_${idx}`,
+                      function: { name: tc.name, arguments: tc.args },
+                    })),
+                  },
+                }],
+              });
+            }
+
+            if (serverToolCalls.length === 0) {
+              // No server tools to execute; turn is complete!
+              break;
+            }
+
+            // We have server tools to execute!
+            conversationMessages.push({
+              role: "assistant",
+              content: assistantContent || null,
+              tool_calls: toolCalls.map((tc, idx) => ({
+                id: tc.id || `call_${idx}`,
+                type: "function",
+                function: { name: tc.name, arguments: tc.args },
+              })),
+            });
+
+            for (const stc of serverToolCalls) {
+              let toolResultContent = "";
+              try {
+                const parsedArgs = JSON.parse(stc.args || "{}");
+
+                if (stc.name === "query_lakehouse_sql") {
+                  sendEvent({
+                    type: "tool_status",
+                    toolName: "query_lakehouse_sql",
+                    label: `Executing Lakehouse SQL: ${parsedArgs.query?.slice(0, 60)}…`,
+                    active: true,
+                  });
+
+                  const queryRes = await executeLakehouseSql(parsedArgs.query);
+                  toolResultContent = JSON.stringify(queryRes.records || queryRes.rows || queryRes);
+
+                  sendEvent({
+                    type: "tool_status",
+                    toolName: "query_lakehouse_sql",
+                    label: `Lakehouse SQL succeeded (${queryRes.rowCount ?? queryRes.records?.length ?? 0} rows)`,
+                    active: false,
+                    rowsCount: queryRes.rowCount,
+                  });
+                } else if (stc.name === "search_knowledge_sources") {
+                  sendEvent({
+                    type: "tool_status",
+                    toolName: "search_knowledge_sources",
+                    label: `Searching Knowledge Base for "${parsedArgs.query}"…`,
+                    active: true,
+                  });
+
+                  const searchRes = await executeLakehouseSql(
+                    `SELECT * FROM workspace.campus_explorer.knowledge_sources LIMIT 5`
+                  );
+                  toolResultContent = JSON.stringify(searchRes.records || []);
+
+                  sendEvent({
+                    type: "tool_status",
+                    toolName: "search_knowledge_sources",
+                    label: `Knowledge Base search complete`,
+                    active: false,
+                  });
+                }
+              } catch (toolErr: any) {
+                toolResultContent = JSON.stringify({ error: toolErr.message });
+              }
+
+              conversationMessages.push({
+                role: "tool",
+                tool_call_id: stc.id || "call_0",
+                content: toolResultContent,
+              });
+            }
+
+            // Continue loop: Next iteration calls LLM with tool responses to stream the final answer
           }
-        } catch (streamErr) {
-          controller.error(streamErr);
+
+          controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+        } catch (streamErr: any) {
+          sendEvent({ error: streamErr?.message || "Stream processing error" });
         } finally {
           controller.close();
         }
