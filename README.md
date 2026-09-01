@@ -1,6 +1,6 @@
-11# Campus Genie
+### Campus Genie
 
-> A Databricks-powered campus intelligence platform for discovering events, joining communities, exploring research opportunities, managing campus data, and making better use of student life.
+### A Databricks-powered campus intelligence platform for discovering events, joining communities, exploring research opportunities, managing campus data, and making better use of student life.
 
 Campus Genie brings fragmented campus information into one conversational, governed interface. Students can ask natural-language questions, explore event cards, refine recommendations through interactive surveys, inspect trusted knowledge sources, and compare clubs, labs, alumni pathways, city meetups, and campus operations data. Administrators can manage events and surveys through the same application.
 
