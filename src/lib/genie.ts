@@ -110,6 +110,7 @@ export async function streamGenieConversation(
   const answer = attachments.find((attachment) => attachment.text?.purpose?.includes("ANSWER"))?.text?.content;
   const queries = attachments.filter((attachment) => attachment.query?.query);
   const thoughts = queries.flatMap((attachment) => attachment.query?.thoughts || []).map((thought) => thought.content).filter(Boolean);
+  const eventIds = new Set<string>();
 
   for (const thought of thoughts) send({ choices: [{ delta: { reasoning_content: `${thought}\n` } }] });
   for (const attachment of queries) {
@@ -120,8 +121,38 @@ export async function streamGenieConversation(
       const result = await genieFetch(config, `/spaces/${config.spaceId}/conversations/${conversationId}/messages/${messageId}/attachments/${attachment.attachment_id}/query-result`, { signal });
       if (result.ok) records = recordsFromStatementResponse(await result.json());
     }
+    for (const record of records) {
+      const id = record.event_id || record.id;
+      if (typeof id === "string" && /^EV-?\d+$/i.test(id)) {
+        eventIds.add(id.toUpperCase().replace(/^EV(\d+)$/, "EV-$1"));
+      }
+    }
     send({ type: "tool_status", toolName: "genie_agent", label: `Genie SQL completed (${records.length} rows)`, active: false });
     send({ choices: [{ delta: { reasoning_content: `\n\`\`\`sql\n${query}\n\`\`\`\n` } }] });
+  }
+
+  // Reuse the existing interactive card renderer for Genie event queries.
+  // Genie remains read-only; this is only a presentation event for the UI.
+  if (eventIds.size === 0 && answer) {
+    for (const raw of answer.match(/EV-?\d+/gi) || []) {
+      eventIds.add(raw.toUpperCase().replace(/^EV(\d+)$/, "EV-$1"));
+    }
+  }
+  if (eventIds.size > 0) {
+    send({
+      choices: [{
+        delta: {
+          tool_calls: [{
+            index: 0,
+            id: "genie_events",
+            function: {
+              name: "show_events_grid",
+              arguments: JSON.stringify({ eventIds: Array.from(eventIds), summary: "Events selected by Campus Genie." }),
+            },
+          }],
+        },
+      }],
+    });
   }
 
   send({ choices: [{ delta: { content: answer || "Genie completed the query but did not return an answer." } }] });
