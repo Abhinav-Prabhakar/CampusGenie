@@ -184,12 +184,17 @@ export default function CampusGenieChatPage() {
   const [lakehouseEvents, setLakehouseEvents] = useState<EventRecord[]>([]);
   const [toolActivity, setToolActivity] = useState<{ label: string; active: boolean } | null>(null);
   const requestAbortRef = useRef<AbortController | null>(null);
+  const lakehouseEventsRef = useRef<EventRecord[]>([]);
+  const lakehouseEventsLoadRef = useRef<Promise<EventRecord[]> | null>(null);
 
   useEffect(() => {
-    fetch("/api/events")
+    const load = fetch("/api/events")
       .then((r) => r.json())
-      .then((data) => {
-        if (data.events) setLakehouseEvents(data.events);
+      .then((data) => (Array.isArray(data.events) ? data.events as EventRecord[] : []));
+    lakehouseEventsLoadRef.current = load;
+    load.then((events) => {
+        lakehouseEventsRef.current = events;
+        setLakehouseEvents(events);
       })
       .catch((err) => console.warn("Failed to load events for chat matching", err));
   }, []);
@@ -508,12 +513,17 @@ export default function CampusGenieChatPage() {
         } catch {}
       }
 
+      const availableEvents = lakehouseEventsRef.current.length > 0
+        ? lakehouseEventsRef.current
+        : await (lakehouseEventsLoadRef.current || Promise.resolve([]));
+      lakehouseEventsRef.current = availableEvents;
+
       const finalMatchedEvents = resolveRelevantEvents(
         finalToolEventIds,
         assistantContent,
         assistantThinking,
         text,
-        lakehouseEvents
+        availableEvents
       );
 
       // If no text content and no tool calls, report error
