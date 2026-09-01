@@ -371,6 +371,7 @@ export default function CampusGenieChatPage() {
       let assistantThinking = "";
       const toolMap = new Map<number, { name: string; args: string }>();
       let lineBuffer = "";
+      let streamError: string | null = null;
 
       const assistantMsgId = (Date.now() + 1).toString();
 
@@ -392,6 +393,11 @@ export default function CampusGenieChatPage() {
 
             try {
               const parsed = JSON.parse(dataStr);
+
+              if (parsed.error) {
+                streamError = parsed.error;
+                continue;
+              }
 
               if (parsed.type === "tool_status") {
                 setToolActivity({
@@ -478,6 +484,8 @@ export default function CampusGenieChatPage() {
           }
         }
       }
+
+      if (streamError) throw new Error(streamError);
 
       const finalToolInvocations = Array.from(toolMap.values());
       let finalQuestions: any = null;
