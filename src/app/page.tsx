@@ -139,6 +139,67 @@ function normalizeQuestions(raw: any): ApprovalQuestion[] | null {
   });
 }
 
+function extractStructuredJson(content: string): {
+  cleanContent: string;
+  eventIds: string[];
+  survey?: any;
+  approval?: any;
+} {
+  let cleanContent = content;
+  const eventIds: string[] = [];
+  let survey: any = null;
+  let approval: any = null;
+
+  if (!content || typeof content !== "string") {
+    return { cleanContent: "", eventIds };
+  }
+
+  // Match ```json ... ``` blocks containing eventIds, survey, or questions
+  const jsonBlockRegex = /```(?:json)?\s*(\{[\s\S]*?\})\s*```/gi;
+  let match;
+  while ((match = jsonBlockRegex.exec(content)) !== null) {
+    try {
+      const parsed = JSON.parse(match[1]);
+      let isStructuredMetadata = false;
+      if (Array.isArray(parsed.eventIds)) {
+        eventIds.push(...parsed.eventIds);
+        isStructuredMetadata = true;
+      }
+      if (parsed.survey || parsed.questions) {
+        survey = parsed.survey || parsed.questions;
+        isStructuredMetadata = true;
+      }
+      if (parsed.approval || parsed.approvalCard) {
+        approval = parsed.approval || parsed.approvalCard;
+        isStructuredMetadata = true;
+      }
+      if (isStructuredMetadata) {
+        cleanContent = cleanContent.replace(match[0], "").trim();
+      }
+    } catch {}
+  }
+
+  // Also check if the end of content has a raw JSON object with eventIds
+  const rawJsonMatch = cleanContent.match(/(\{[\s\r\n]*"eventIds"[\s\S]*?\})\s*$/);
+  if (rawJsonMatch) {
+    try {
+      const parsed = JSON.parse(rawJsonMatch[1]);
+      if (Array.isArray(parsed.eventIds)) {
+        eventIds.push(...parsed.eventIds);
+      }
+      if (parsed.survey || parsed.questions) {
+        survey = parsed.survey || parsed.questions;
+      }
+      if (parsed.approval || parsed.approvalCard) {
+        approval = parsed.approval || parsed.approvalCard;
+      }
+      cleanContent = cleanContent.replace(rawJsonMatch[0], "").trim();
+    } catch {}
+  }
+
+  return { cleanContent, eventIds, survey, approval };
+}
+
 function resolveRelevantEvents(
   toolEventIds: string[],
   content: string,
@@ -146,30 +207,34 @@ function resolveRelevantEvents(
 ): EventRecord[] {
   const matched = new Map<string, EventRecord>();
 
-  // 1. Explicit tool call IDs (from show_events_grid or search_events)
+  const matchAndAdd = (rawId: string) => {
+    if (!rawId || typeof rawId !== "string") return;
+    const cleanId = rawId.trim().toUpperCase().replace(/^EV(\d+)$/, "EV-$1");
+    const numId = cleanId.replace(/^EV-0?/, "");
+    const ev = allEvents.find(
+      (e) =>
+        e.id.toUpperCase() === cleanId ||
+        e.id.replace("-", "").toUpperCase() === cleanId.replace("-", "") ||
+        e.id === numId
+    );
+    if (ev) matched.set(ev.id, ev);
+  };
+
+  // 1. Explicit tool call IDs
   if (Array.isArray(toolEventIds)) {
-    for (const id of toolEventIds) {
-      if (!id || typeof id !== "string") continue;
-      const cleanId = id.trim().toUpperCase().replace(/^EV(\d+)$/, "EV-$1");
-      const ev = allEvents.find(
-        (e) =>
-          e.id.toUpperCase() === cleanId ||
-          e.id.replace("-", "").toUpperCase() === cleanId.replace("-", "")
-      );
-      if (ev) matched.set(ev.id, ev);
-    }
+    for (const id of toolEventIds) matchAndAdd(id);
   }
 
-  // 2. Mentioned event IDs in the assistant's final response text (e.g. EV-01, EV-10)
+  // 2. Extracted JSON block IDs
+  const { eventIds } = extractStructuredJson(content);
+  for (const id of eventIds) matchAndAdd(id);
+
+  // 3. Mentioned event IDs in the assistant's final response text (e.g. EV-01, EV-10)
   if (content && typeof content === "string") {
     const idMatches = content.match(/\bEV-?\d+\b/gi) || [];
-    for (const raw of idMatches) {
-      const norm = raw.toUpperCase().replace(/^EV(\d+)$/, "EV-$1");
-      const ev = allEvents.find((e) => e.id === norm || e.id.replace("-", "") === norm.replace("-", ""));
-      if (ev) matched.set(ev.id, ev);
-    }
+    for (const raw of idMatches) matchAndAdd(raw);
 
-    // 3. Exact full title match in the assistant's response text
+    // 4. Exact full title match in the assistant's response text
     for (const ev of allEvents) {
       if (ev.title && ev.title.length > 6) {
         if (content.toLowerCase().includes(ev.title.toLowerCase())) {
@@ -179,7 +244,6 @@ function resolveRelevantEvents(
     }
   }
 
-  // Return strictly matching events; if none explicitly referenced, return empty array (no random cards)
   return Array.from(matched.values());
 }
 
@@ -618,15 +682,24 @@ export default function CampusGenieChatPage() {
         availableEvents
       );
 
+      const { cleanContent, survey: extractedSurvey, approval: extractedApproval } = extractStructuredJson(assistantContent);
+      if (extractedSurvey && !finalQuestions) {
+        finalQuestions = normalizeQuestions(extractedSurvey);
+      }
+      if (extractedApproval && !finalApproval) {
+        finalApproval = extractedApproval;
+      }
+
       // If no text content and no tool calls, report error
-      if (!assistantContent && finalToolInvocations.length === 0) {
-        assistantContent = "Unable to process query. No response returned from Lakehouse LLM.";
+      let displayContent = cleanContent || assistantContent;
+      if (!displayContent && finalToolInvocations.length === 0) {
+        displayContent = "Unable to process query. No response returned from Lakehouse LLM.";
       }
 
       const finalAssistantMsg: ChatMessage = {
         id: assistantMsgId,
         role: "assistant",
-        content: assistantContent,
+        content: displayContent,
         thinking: assistantThinking || undefined,
         toolCalls: finalToolInvocations.length > 0 ? finalToolInvocations : undefined,
         questions: finalQuestions || undefined,

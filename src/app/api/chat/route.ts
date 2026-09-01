@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { fetchWithAutoRetry, LLM_TOOLS } from "@/lib/llm";
+import { fetchWithAutoRetry } from "@/lib/llm";
 import { executeLakehouseSql } from "@/lib/lakehouse";
 import { streamGenieConversation } from "@/lib/genie";
 import { checkRateLimit } from "@/lib/rateLimiter";
@@ -63,7 +63,44 @@ function createGenieResponse(req: NextRequest, prompt: string) {
   });
 }
 
-const SYSTEM_PROMPT = `You are "Campus Genie", the official AI lakehouse intelligence assistant for Databricks University powered natively by Databricks Lakehouse with Unity Catalog (workspace.campus_explorer schema).
+const STATIC_FALLBACK_EVENTS = `
+- [EV-01] "ACM Weekly — Systems & Pizza" | Category: meeting | Date: Wed Apr 09, 6:30 PM | Location: Ocean Eng 214 | Host: ACM | Food: Yes | Tags: systems, pizza, networking
+- [EV-02] "Figma 101 — Campus Design Systems" | Category: workshop | Date: Wed Apr 09, 4:00 PM | Location: Virtual | Host: Design Club | Food: No | Tags: figma, design, ui/ux
+- [EV-03] "Transfer Student Firepit Mixer" | Category: social | Date: Wed Apr 09, 7:30 PM | Location: Quad Firepit | Host: Peer Mentors | Food: Yes | Tags: mixer, bonfire
+- [EV-04] "Databricks Coffee Chats" | Category: career | Date: Thu Apr 10, 1:00 PM | Location: Alumni Lounge | Host: Career Center | Food: Yes | Tags: career, databricks, coffee
+- [EV-05] "Robotics Lab Open House" | Category: meeting | Date: Thu Apr 10, 5:00 PM | Location: High Bay 102 | Host: Robotics Club | Food: No | Tags: robotics, lab, hardware
+- [EV-06] "Intramural 3v3 Hoops" | Category: sports | Date: Fri Apr 11, 4:00 PM | Location: RSF Court 2 | Host: Rec Sports | Food: No | Tags: basketball, sports, rec
+- [EV-07] "CruX Web3 & Distributed Systems" | Category: meeting | Date: Fri Apr 11, 6:00 PM | Location: Soda 306 | Host: CruX | Food: Yes | Tags: web3, crypto, systems
+- [EV-08] "Alumni in AI Panel" | Category: career | Date: Sat Apr 12, 11:00 AM | Location: Banatao Aud | Host: IEEE | Food: Yes | Tags: ai, alumni, career, panel
+- [EV-09] "Sunset Yoga on the Glade" | Category: sports | Date: Sun Apr 13, 5:30 PM | Location: Memorial Glade | Host: Mind & Body | Food: No | Tags: yoga, wellness, outdoor
+- [EV-10] "Hack the Lake — 48h Genie Build Sprint" | Category: hackathon | Date: Sat Apr 25, 9:00 AM | Location: Colt Arena | Host: AI Student Alliance | Food: Yes | Tags: hackathon, ai, lakehouse, prizes
+`.trim();
+
+async function getCampusEventsPromptSnippet(): Promise<string> {
+  try {
+    const res = await executeLakehouseSql(
+      "SELECT * FROM workspace.campus_explorer.campus_events ORDER BY event_date ASC, start_time ASC",
+      undefined,
+      30
+    );
+    if (res.state === "SUCCEEDED" && Array.isArray(res.records) && res.records.length > 0) {
+      return res.records
+        .map((r: any) => {
+          const id = r.event_id || r.id || "";
+          const cleanId = String(id).toUpperCase().replace(/^EV(\d+)$/, "EV-$1");
+          const tags = Array.isArray(r.tags) ? r.tags.join(", ") : r.tags || "";
+          return `- [${cleanId}] "${r.title}" | Category: ${r.category} | Date: ${r.event_date || ""} ${r.start_time || ""} | Location: ${r.location} | Host: ${r.host_organization || r.host} | Food: ${r.food_provided ? "Yes" : "No"} | Tags: ${tags} | Desc: ${r.description || ""}`;
+        })
+        .join("\n");
+    }
+  } catch (e) {
+    console.error("Failed to query Lakehouse events for prompt snippet:", e);
+  }
+  return STATIC_FALLBACK_EVENTS;
+}
+
+function buildSystemPrompt(eventsSnippet: string): string {
+  return `You are "Campus Genie", the official AI lakehouse intelligence assistant for Databricks University powered natively by Databricks Lakehouse with Unity Catalog (workspace.campus_explorer schema).
 You help university students explore campus events, courses, attendance tracking, academic recovery plans, research labs, student clubs, hackathons, surveys, alumni career pathways, and student administrative workflows.
 
 CRITICAL SCOPE & RELEVANCE ENFORCEMENT:
@@ -71,44 +108,33 @@ CRITICAL SCOPE & RELEVANCE ENFORCEMENT:
 - You must NOT answer questions that are completely irrelevant to the campus, academics, or university operations (such as general pop-culture trivia, non-campus political discussions, unrelated coding questions, celebrity gossip, or general creative writing).
 - If a user prompt is outside the scope of campus life and university operations, politely decline to answer and guide them back to campus events, coursework, attendance, or academic resources.
 
-Governed Unity Catalog Delta Tables in schema 'workspace.campus_explorer':
-1. workspace.campus_explorer.campus_events (event_id, title, category, host_organization, host_code, location, is_virtual, event_date, start_time, duration, capacity, registered_count, food_provided, is_featured, status, visibility, tags, description)
-2. workspace.campus_explorer.campus_surveys (survey_id, title, description, target_event_id, is_published, is_featured, audience, response_count, questions_json)
-3. workspace.campus_explorer.knowledge_sources (source_id, name, type, category, description, chunk_count, file_size, status, content_sample, uploaded_by)
-4. workspace.campus_explorer.clubs_and_labs (entity_id, name, type, faculty_lead, student_lead, primary_focus, recruitment_open, weekly_commitment_hrs, required_skills, meeting_schedule, location, contact_email, open_projects)
-5. workspace.campus_explorer.city_tech_events (meetup_id, title, organizer, neighborhood, venue_address, event_date, start_time, entry_fee_inr, attendee_count, domain, commute_mins_from_campus)
-6. workspace.campus_explorer.alumni_career_pathways (alumni_id, graduation_year, major, campus_clubs_joined, research_labs_joined, first_job_title, first_company, current_role, current_organization, primary_domain, advice_summary)
-7. workspace.campus_explorer.procurement_inventory (item_id, item_name, category, current_stock, min_reorder_threshold, preferred_supplier, unit_price_inr, lead_time_days, last_restock_date)
-8. workspace.campus_explorer.student_attendance_logs (log_id, student_id, course_id, session_date, status, check_in_time, verification_method, notes)
+LIVE CAMPUS EVENTS DIRECTORY (Delta Table: workspace.campus_explorer.campus_events):
+${eventsSnippet}
 
-Available Governed Tools:
-- ask_questions: Trigger an interactive multi-step MCQ survey in the chat to collect student preferences, interests, experience level, dietary restrictions, event tracks, or schedule availability. Use this tool autonomously whenever the student asks for recommendations, asks to be guided, or when you need structured inputs.
-- search_events: Search and display campus events by keyword, category ('hackathon' | 'workshop' | 'meeting' | 'social' | 'career' | 'sports'), food availability, or tags.
-- query_lakehouse_sql: Execute SQL on Unity Catalog tables (e.g. SELECT * FROM workspace.campus_explorer.campus_events ORDER BY event_date ASC).
-- search_knowledge_sources: Search documents and policies.
-- show_events_grid: Render interactive campus event cards in the chat UI. Parameter: { eventIds: string[] } e.g. ["EV-10", "EV-08", "EV-01"].
-- show_approval_card, show_fine_tune_card, show_recommendation_card.
-
-Instructions:
-- Autonomous Multi-Step MCQ Survey ('ask_questions'):
-  1. Whenever the student wants recommendations (e.g. "Recommend a hackathon or club for me", "Help me find events for my major", "Help me choose a track"), or when multiple clarifying questions are needed, CALL 'ask_questions' with 2 to 4 structured MCQ questions.
-  2. Each question must include 'q' (the question text), 'type' ('radio' for single-choice or 'check' for multi-select), and 'options' (array of choice strings).
-  3. When the student completes the survey, their answers will be automatically forwarded back to you in the chat so you can provide personalized Lakehouse recommendations.
-- Event Card Rules:
-  1. ONLY call "show_events_grid" when the student specifically asks to view, discover, or recommend campus events, hackathons, workshops, or activities.
-  2. Only provide the exact, well-matched event IDs (e.g. ['EV-10', 'EV-08']).
-  3. Never call "show_events_grid" for general questions, database schemas, inventory, attendance, surveys, or unrelated topics.
-- When an event query is received, call "search_events" or "query_lakehouse_sql" first, then call "show_events_grid" with the filtered IDs.
-- Format responses in clean GitHub-flavored markdown.
+RESPONSE FORMAT & CARD SELECTION (STRICT RULES):
+1. First, provide your helpful, friendly, natural markdown response directly answering the student's question or recommendation request. Mention event details (e.g. title, date, time, location, perks).
+2. At the very end of your response, ALWAYS output a structured JSON block specifying the exact event IDs you recommended or referenced so the interface can render the interactive cards:
+\`\`\`json
+{
+  "eventIds": ["EV-10", "EV-01"]
+}
+\`\`\`
+If no campus events are relevant or referenced in your answer, provide an empty list:
+\`\`\`json
+{
+  "eventIds": []
+}
+\`\`\`
+3. If the student asks for a multi-step survey or preference questionnaire, you can include a "survey" key in that JSON block:
+\`\`\`json
+{
+  "eventIds": ["EV-10"],
+  "survey": [
+    { "id": "q1", "q": "What track are you interested in?", "type": "radio", "options": ["AI / Lakehouse", "Web3 / Systems", "Design / UI"] }
+  ]
+}
+\`\`\`
 `;
-
-function isEventDiscoveryRequest(prompt: unknown): boolean {
-  if (typeof prompt !== "string") return false;
-  const value = prompt.toLowerCase();
-  const mentionsEvents = /\b(events?|hackathons?|workshops?|activities|meetups?|mixers?)\b/.test(value);
-  const asksToDiscover = /\b(show|find|list|discover|recommend|suggest|browse|explore|upcoming|happening|available|attend|calendar|this week|weekend|today|tomorrow)\b/.test(value);
-  const requestsMutation = /\b(create|update|edit|delete|cancel|set|rsvp|register|submit|approve)\b/.test(value);
-  return mentionsEvents && asksToDiscover && !requestsMutation;
 }
 
 export async function POST(req: NextRequest) {
@@ -223,12 +249,16 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // Dynamic prompt with live events catalog embedded directly (no tool calls required!)
+    const eventsSnippet = await getCampusEventsPromptSnippet();
+    const systemPrompt = buildSystemPrompt(eventsSnippet);
+
     const conversationMessages: any[] = [
-      { role: "system", content: SYSTEM_PROMPT },
+      { role: "system", content: systemPrompt },
       ...messages,
     ];
 
-    // Stream response with tool execution loop
+    // Direct LLM stream (no function tool calls to prevent Qwen stalls)
     const stream = new ReadableStream({
       async start(controller) {
         const encoder = new TextEncoder();
@@ -240,248 +270,112 @@ export async function POST(req: NextRequest) {
         };
 
         try {
-          let loopCount = 0;
-          const maxLoops = 3;
-          const requireEventSearch = isEventDiscoveryRequest(latestPrompt);
+          const payload = {
+            model,
+            messages: conversationMessages,
+            stream: true,
+            temperature: 0.3,
+          };
 
-          while (loopCount < maxLoops) {
-            loopCount++;
+          const upstreamRes = await fetchWithAutoRetry(endpoint, {
+            method: "POST",
+            headers,
+            body: JSON.stringify(payload),
+            signal: req.signal,
+          });
 
-            // Qwen's reasoning stream can end after a tool-intent preamble when
-            // the first tool is optional. Event discovery always needs a live,
-            // governed lookup, so require that first search instead of relying
-            // on the model to transition from reasoning to an auto tool call.
-            const toolChoice = requireEventSearch && loopCount === 1
-              ? { type: "function" as const, function: { name: "search_events" } }
-              : "auto";
-            const payload = {
-              model,
-              messages: conversationMessages,
-              tools: LLM_TOOLS,
-              tool_choice: toolChoice,
-              parallel_tool_calls: false,
-              stream: true,
-              temperature: 0.3,
-            };
-
-            const upstreamRes = await fetchWithAutoRetry(endpoint, {
-              method: "POST",
-              headers,
-              body: JSON.stringify(payload),
-              signal: req.signal,
+          if (!upstreamRes.ok || !upstreamRes.body) {
+            const errText = await upstreamRes.text().catch(() => "");
+            sendEvent({
+              error: `Upstream error (${upstreamRes.status}): ${errText}`,
             });
+            controller.close();
+            return;
+          }
 
-            if (!upstreamRes.ok || !upstreamRes.body) {
-              const errText = await upstreamRes.text().catch(() => "");
-              sendEvent({
-                error: `Upstream error (${upstreamRes.status}): ${errText}`,
-              });
-              break;
+          const reader = upstreamRes.body.getReader();
+          let lineBuffer = "";
+          let fullAssistantContent = "";
+
+          while (true) {
+            if (req.signal.aborted) {
+              await reader.cancel();
+              return;
             }
+            const { done, value } = await reader.read();
+            if (done) break;
 
-            const reader = upstreamRes.body.getReader();
-            let lineBuffer = "";
-            let assistantContent = "";
-            let assistantThinking = "";
-            const toolCallsMap = new Map<number, { id?: string; name: string; args: string }>();
+            lineBuffer += decoder.decode(value, { stream: true });
+            const lines = lineBuffer.split("\n");
+            lineBuffer = lines.pop() ?? "";
 
-            while (true) {
-              if (req.signal.aborted) {
-                await reader.cancel();
-                return;
-              }
-              const { done, value } = await reader.read();
-              if (done) break;
+            for (const line of lines) {
+              const trimmed = line.trim();
+              if (!trimmed.startsWith("data: ")) continue;
+              const dataStr = trimmed.replace(/^data: /, "").trim();
+              if (dataStr === "[DONE]") continue;
 
-              lineBuffer += decoder.decode(value, { stream: true });
-              const lines = lineBuffer.split("\n");
-              lineBuffer = lines.pop() ?? "";
-
-              for (const line of lines) {
-                const trimmed = line.trim();
-                if (!trimmed.startsWith("data: ")) continue;
-                const dataStr = trimmed.replace(/^data: /, "").trim();
-                if (dataStr === "[DONE]") continue;
-
-                try {
-                  const parsed = JSON.parse(dataStr);
-                  const delta = parsed.choices?.[0]?.delta;
-
-                  if (delta?.reasoning_content || delta?.reasoning || delta?.thinking || delta?.thought) {
-                    const r = delta.reasoning_content || delta.reasoning || delta.thinking || delta.thought;
-                    assistantThinking += r;
-                    sendEvent({
-                      choices: [{ delta: { reasoning_content: r } }],
-                    });
-                  }
-
-                  if (delta?.content) {
-                    assistantContent += delta.content;
-                    sendEvent({
-                      choices: [{ delta: { content: delta.content } }],
-                    });
-                  }
-
-                  if (delta?.tool_calls) {
-                    for (const tc of delta.tool_calls) {
-                      const idx = tc.index ?? 0;
-                      const cur = toolCallsMap.get(idx) || { name: "", args: "" };
-                      if (tc.id) cur.id = tc.id;
-                      if (tc.function?.name) cur.name = tc.function.name;
-                      if (tc.function?.arguments) cur.args += tc.function.arguments;
-                      toolCallsMap.set(idx, cur);
-                    }
-                    sendEvent({
-                      choices: [{ delta: { tool_calls: delta.tool_calls } }],
-                    });
-                  }
-                } catch {
-                  // ignore partial JSON parse during stream
-                }
-              }
-            }
-
-            const toolCalls = Array.from(toolCallsMap.values());
-            
-            // Check if any server-executable tools were called (query_lakehouse_sql, search_events, search_knowledge_sources)
-            const serverToolCalls = toolCalls.filter(
-              (tc) => tc.name === "query_lakehouse_sql" || tc.name === "search_events" || tc.name === "search_knowledge_sources"
-            );
-
-            if (serverToolCalls.length === 0) {
-              // No server tools to execute; turn is complete!
-              break;
-            }
-
-            // We have server tools to execute!
-            conversationMessages.push({
-              role: "assistant",
-              content: assistantContent || null,
-              tool_calls: toolCalls.map((tc, idx) => ({
-                id: tc.id || `call_${idx}`,
-                type: "function",
-                function: { name: tc.name, arguments: tc.args },
-              })),
-            });
-
-            for (const stc of serverToolCalls) {
-              if (req.signal.aborted) return;
-              let toolResultContent = "";
               try {
-                const parsedArgs = JSON.parse(stc.args || "{}");
+                const parsed = JSON.parse(dataStr);
+                const delta = parsed.choices?.[0]?.delta;
 
-                if (stc.name === "search_events") {
+                if (delta?.reasoning_content || delta?.reasoning || delta?.thinking || delta?.thought) {
+                  const r = delta.reasoning_content || delta.reasoning || delta.thinking || delta.thought;
                   sendEvent({
-                    type: "tool_status",
-                    toolName: "search_events",
-                    label: `Searching campus events for "${parsedArgs.query || "events"}"…`,
-                    active: true,
+                    choices: [{ delta: { reasoning_content: r } }],
                   });
+                }
 
-                  const queryTerm = (parsedArgs.query || "").replace(/'/g, "''").toLowerCase();
-                  // `tags` is ARRAY<STRING> in Unity Catalog. Calling LOWER on
-                  // it made every Qwen event search fail before cards could be
-                  // rendered, even when the title itself matched.
-                  let whereClause = `(COALESCE(LOWER(title), '') LIKE '%${queryTerm}%' OR COALESCE(LOWER(category), '') LIKE '%${queryTerm}%' OR COALESCE(LOWER(array_join(tags, ' ')), '') LIKE '%${queryTerm}%' OR COALESCE(LOWER(description), '') LIKE '%${queryTerm}%')`;
-                  if (parsedArgs.category && parsedArgs.category !== "all") {
-                    whereClause += ` AND LOWER(category) = '${parsedArgs.category.toLowerCase()}'`;
-                  }
-                  if (parsedArgs.foodOnly) {
-                    whereClause += ` AND food_provided = true`;
-                  }
+                if (delta?.content) {
+                  fullAssistantContent += delta.content;
+                  sendEvent({
+                    choices: [{ delta: { content: delta.content } }],
+                  });
+                }
+              } catch {
+                // ignore partial stream JSON parse errors
+              }
+            }
+          }
 
-                  const sql = `SELECT * FROM workspace.campus_explorer.campus_events WHERE ${whereClause} ORDER BY event_date ASC LIMIT 10`;
-                  const queryRes = await executeLakehouseSql(sql);
-                  const records = queryRes.records || [];
-                  toolResultContent = JSON.stringify(records.length > 0 ? records : queryRes);
-
-                  // Extract event IDs and immediately emit show_events_grid for the UI
-                  const eventIds = records
-                    .map((r: any) => r.event_id || r.id)
-                    .filter((id: any) => typeof id === "string" && /^EV-?\d+$/i.test(id))
-                    .map((id: string) => id.toUpperCase().replace(/^EV(\d+)$/, "EV-$1"));
-
-                  if (eventIds.length > 0) {
-                    sendEvent({
-                      choices: [{
-                        delta: {
-                          tool_calls: [{
-                            index: 0,
-                            id: `events_grid_${Date.now()}`,
-                            function: {
-                              name: "show_events_grid",
-                              arguments: JSON.stringify({ eventIds, summary: `Matched ${eventIds.length} campus events` }),
-                            },
-                          }],
+          // Check if assistant provided event IDs or survey JSON block and emit show_events_grid / ask_questions
+          const jsonMatch = fullAssistantContent.match(/```(?:json)?\s*(\{[\s\S]*?\})\s*```/i);
+          if (jsonMatch) {
+            try {
+              const parsed = JSON.parse(jsonMatch[1]);
+              if (Array.isArray(parsed.eventIds) && parsed.eventIds.length > 0) {
+                sendEvent({
+                  choices: [{
+                    delta: {
+                      tool_calls: [{
+                        index: 0,
+                        id: `events_grid_${Date.now()}`,
+                        function: {
+                          name: "show_events_grid",
+                          arguments: JSON.stringify({ eventIds: parsed.eventIds }),
                         },
                       }],
-                    });
-                  }
-
-                  sendEvent({
-                    type: "tool_status",
-                    toolName: "search_events",
-                    label: `Found ${records.length} campus events`,
-                    active: false,
-                    rowsCount: records.length,
-                  });
-                } else if (stc.name === "query_lakehouse_sql") {
-                  sendEvent({
-                    type: "tool_status",
-                    toolName: "query_lakehouse_sql",
-                    label: `Executing Lakehouse SQL: ${parsedArgs.query?.slice(0, 60)}…`,
-                    active: true,
-                  });
-
-                  const queryRes = await executeLakehouseSql(parsedArgs.query);
-                  const records = queryRes.records ?? queryRes.rows ?? [];
-                  toolResultContent = JSON.stringify(
-                    queryRes.state === "SUCCEEDED"
-                      ? records
-                      : { error: queryRes.error || `SQL execution ended with state: ${queryRes.state}` }
-                  );
-
-                  sendEvent({
-                    type: "tool_status",
-                    toolName: "query_lakehouse_sql",
-                    label: queryRes.state === "SUCCEEDED"
-                      ? `Lakehouse SQL succeeded (${queryRes.rowCount ?? (Array.isArray(records) ? records.length : 0)} rows)`
-                      : `Lakehouse SQL failed: ${queryRes.error || queryRes.state}`,
-                    active: false,
-                    rowsCount: queryRes.rowCount,
-                  });
-                } else if (stc.name === "search_knowledge_sources") {
-                  sendEvent({
-                    type: "tool_status",
-                    toolName: "search_knowledge_sources",
-                    label: `Searching Knowledge Base for "${parsedArgs.query}"…`,
-                    active: true,
-                  });
-
-                  const searchRes = await executeLakehouseSql(
-                    `SELECT * FROM workspace.campus_explorer.knowledge_sources LIMIT 5`
-                  );
-                  toolResultContent = JSON.stringify(searchRes.records || []);
-
-                  sendEvent({
-                    type: "tool_status",
-                    toolName: "search_knowledge_sources",
-                    label: `Knowledge Base search complete`,
-                    active: false,
-                  });
-                }
-              } catch (toolErr: any) {
-                toolResultContent = JSON.stringify({ error: toolErr.message });
+                    },
+                  }],
+                });
               }
-
-              conversationMessages.push({
-                role: "tool",
-                tool_call_id: stc.id || "call_0",
-                content: toolResultContent,
-              });
-            }
-
-            // Continue loop: Next iteration calls LLM with tool responses to stream the final answer
+              if (parsed.survey || parsed.questions) {
+                sendEvent({
+                  choices: [{
+                    delta: {
+                      tool_calls: [{
+                        index: 1,
+                        id: `survey_${Date.now()}`,
+                        function: {
+                          name: "ask_questions",
+                          arguments: JSON.stringify(parsed.survey || parsed.questions),
+                        },
+                      }],
+                    },
+                  }],
+                });
+              }
+            } catch {}
           }
 
           controller.enqueue(encoder.encode("data: [DONE]\n\n"));
