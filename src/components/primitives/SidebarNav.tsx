@@ -364,7 +364,7 @@ export default function SidebarNav({
   onDeleteChat,
   activeNav,
   onNavigate,
-  footerLabel = "Upgrade",
+  footerLabel = "Profile",
   footerIcon,
   onFooterClick,
   recents = DEFAULT_RECENTS,
@@ -650,10 +650,18 @@ export default function SidebarNav({
         <div className="sidebar-copy mx-2 mt-3 w-[208px] border-t border-line pt-3">
           <button
             type="button"
-            onClick={onFooterClick ?? onNewChat}
-            className="flex h-8 w-full items-center justify-center gap-1.5 rounded-control bg-hover-2 text-[12.5px] font-medium text-ink transition-[background-color,transform] duration-150 hover:bg-line-strong active:scale-[0.98]"
+            onClick={onFooterClick ?? (() => router.push("/profile"))}
+            className={`flex h-8 w-full items-center justify-center gap-1.5 rounded-control text-[12.5px] font-medium transition-[background-color,transform] duration-150 active:scale-[0.98] ${
+              currentNav === "profile"
+                ? "bg-hover-2 text-ink shadow-hairline"
+                : "bg-hover text-ink-2 hover:bg-hover-2 hover:text-ink cursor-pointer"
+            }`}
           >
-            {footerIcon}
+            {footerIcon ?? (
+              <span className="flex size-4.5 items-center justify-center rounded-full border border-line bg-surface text-[9px] font-semibold text-ink">
+                AK
+              </span>
+            )}
             {footerLabel}
           </button>
         </div>

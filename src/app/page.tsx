@@ -720,12 +720,7 @@ export default function CampusGenieChatPage() {
           setActiveThreadId(null);
           setErrorMessage(null);
         }}
-        footerLabel="Campus Genie v1.0"
-        footerIcon={
-          <span className="flex size-2">
-            <span className="size-2 rounded-full bg-green" />
-          </span>
-        }
+        footerLabel="Profile"
       />
 
       <div className="flex min-w-0 flex-1 flex-col gap-2.5">

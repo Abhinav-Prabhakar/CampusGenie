@@ -57,7 +57,7 @@ export default function GalleryPage() {
         className="hidden lg:flex"
         activeTitle="UI Components Gallery"
         activeNav="gallery"
-        footerLabel="Campus Genie v1.0"
+        footerLabel="Profile"
       />
 
       <div className="flex min-w-0 flex-1 flex-col gap-2.5">

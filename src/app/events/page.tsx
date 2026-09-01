@@ -26,7 +26,7 @@ export default function EventsPage() {
         className="hidden lg:flex"
         activeTitle="Campus Events"
         activeNav="events"
-        footerLabel="Campus Genie v1.0"
+        footerLabel="Profile"
       />
 
       <div className="flex min-w-0 flex-1 flex-col gap-2.5">

@@ -23,9 +23,9 @@ export default function SourcesPage() {
       <SidebarNav
         fill
         className="hidden lg:flex"
-        activeTitle="Knowledge Sources"
+        activeTitle="Lakehouse Sources"
         activeNav="sources"
-        footerLabel="Campus Genie v1.0"
+        footerLabel="Profile"
       />
 
       <div className="flex min-w-0 flex-1 flex-col gap-2.5">

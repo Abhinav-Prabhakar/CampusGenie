@@ -127,6 +127,10 @@
   --color-field: var(--field);
   --color-line: var(--line);
   --color-line-strong: var(--line-strong);
+  --color-line-soft: var(--line-soft);
+  --color-grid-line: var(--grid-line);
+  --color-stripe: var(--stripe);
+  --color-stripe-bg: var(--stripe-bg);
   --color-accent: var(--accent);
   --color-accent-ink: var(--accent-ink);
   --color-accent-tint: var(--accent-tint);

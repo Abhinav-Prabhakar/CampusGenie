@@ -510,8 +510,8 @@ export default function EventsView({ onAskGenie }: { onAskGenie?: (prompt: strin
 
           {/* Featured Active Survey Banner from Student Admin */}
           {activeSurvey && (
-            <div className="mt-2.5 rounded-[12px] border border-line-soft/60 bg-surface p-3.5 shadow-card transition-all">
-              <div className="flex items-center justify-between border-b border-line-soft/30 pb-2.5 mb-3">
+            <div className="survey-banner">
+              <div className="survey-banner-head">
                 <div className="flex items-center gap-2">
                   <span className="flex size-6 items-center justify-center rounded-[6px] bg-accent-tint text-accent-ink text-[12px]">
                     <svg className="i i13" aria-hidden="true"><use href="#i-chart"/></svg>
@@ -533,7 +533,7 @@ export default function EventsView({ onAskGenie }: { onAskGenie?: (prompt: strin
                   <button
                     type="button"
                     onClick={() => setSurveyOpen((p) => !p)}
-                    className="flex size-6 items-center justify-center rounded-[5px] text-ink-3 hover:bg-hover hover:text-ink transition-colors"
+                    className="flex size-6 items-center justify-center rounded-[5px] text-ink-3 hover:bg-hover hover:text-ink transition-colors cursor-pointer"
                   >
                     <svg className={`i i12 transition-transform ${surveyOpen ? "rotate-180" : ""}`} aria-hidden="true"><use href="#i-chev"/></svg>
                   </button>
@@ -554,7 +554,7 @@ export default function EventsView({ onAskGenie }: { onAskGenie?: (prompt: strin
                     <form onSubmit={handleSurveySubmit} className="space-y-3">
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
                         {activeSurvey.questions?.slice(0, 4).map((q: any) => (
-                          <div key={q.id} className="rounded-[8px] border border-line bg-canvas p-2.5 space-y-1.5">
+                          <div key={q.id} className="survey-qcard space-y-1.5">
                             <label className="text-[12px] font-medium text-ink flex items-center justify-between">
                               <span>{q.title}</span>
                               {q.required && <span className="text-red text-[10px]">*Required</span>}
@@ -565,7 +565,7 @@ export default function EventsView({ onAskGenie }: { onAskGenie?: (prompt: strin
                                 placeholder="Type your answer…"
                                 value={surveyAnswers[q.id] || ""}
                                 onChange={(e) => setSurveyAnswers({ ...surveyAnswers, [q.id]: e.target.value })}
-                                className="w-full h-7 rounded-[6px] border border-line bg-surface px-2 text-[12px] text-ink outline-none placeholder:text-ink-3 focus:border-accent"
+                                className="survey-input"
                               />
                             )}
                             {q.type === "radio" && q.options && (
@@ -593,9 +593,7 @@ export default function EventsView({ onAskGenie }: { onAskGenie?: (prompt: strin
                                   return (
                                     <label
                                       key={opt}
-                                      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-[5px] border text-[11px] cursor-pointer transition-colors ${
-                                        isChecked ? "border-accent bg-accent-tint text-accent-ink" : "border-line bg-surface text-ink-3 hover:text-ink"
-                                      }`}
+                                      className={`survey-opt ${isChecked ? "active" : ""}`}
                                     >
                                       <input
                                         type="checkbox"
@@ -621,9 +619,7 @@ export default function EventsView({ onAskGenie }: { onAskGenie?: (prompt: strin
                                       key={num}
                                       type="button"
                                       onClick={() => setSurveyAnswers({ ...surveyAnswers, [q.id]: num })}
-                                      className={`size-6 rounded-[4px] border text-[11px] font-medium transition-colors ${
-                                        surveyAnswers[q.id] === num ? "border-accent bg-accent text-white" : "border-line bg-surface text-ink-2 hover:bg-hover"
-                                      }`}
+                                      className={`survey-scale-btn ${surveyAnswers[q.id] === num ? "active" : ""}`}
                                     >
                                       {num}
                                     </button>
@@ -639,7 +635,7 @@ export default function EventsView({ onAskGenie }: { onAskGenie?: (prompt: strin
                                     key={star}
                                     type="button"
                                     onClick={() => setSurveyAnswers({ ...surveyAnswers, [q.id]: star })}
-                                    className={`text-[14px] transition-colors ${(surveyAnswers[q.id] || 0) >= star ? "text-amber-400" : "text-ink-3"}`}
+                                    className={`text-[14px] transition-colors cursor-pointer ${(surveyAnswers[q.id] || 0) >= star ? "text-amber-400" : "text-ink-3"}`}
                                   >
                                     ★
                                   </button>
@@ -652,7 +648,7 @@ export default function EventsView({ onAskGenie }: { onAskGenie?: (prompt: strin
                       <div className="flex items-center justify-end gap-2 pt-1">
                         <button
                           type="submit"
-                          className="h-7 px-3 rounded-[6px] bg-accent text-white text-[12px] font-medium hover:opacity-90 active:scale-[0.98] transition-all flex items-center gap-1.5"
+                          className="h-7 px-3 rounded-[6px] bg-accent text-white text-[12px] font-medium hover:opacity-90 active:scale-[0.98] transition-all flex items-center gap-1.5 cursor-pointer"
                         >
                           <svg className="i i11" aria-hidden="true"><use href="#i-check"/></svg>
                           Submit Survey Response
