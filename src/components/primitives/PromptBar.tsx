@@ -184,6 +184,17 @@ export default function PromptBar({
   const modelRowRefs = useRef<(HTMLButtonElement | null)[]>([]);
   const glimmRef = useRef<HTMLCanvasElement>(null);
   const shaderRef = useRef<ReturnType<typeof createShader> | null>(null);
+  const recognitionRef = useRef<any>(null);
+  const voiceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const sampleVoiceIndexRef = useRef(0);
+
+  const SAMPLE_VOICE_PROMPTS = [
+    "Find upcoming hackathons and workshops with free food this weekend",
+    "Show my attendance rates and generate an academic recovery schedule for CS301",
+    "What student clubs and AI research labs are recruiting this term?",
+    "Recommend campus career panels with alumni working at Databricks and Stripe",
+    "Help me prepare for Hack the Lake build sprint and find teammates",
+  ];
 
   const currentModeOption = ROUTING_MODES.find((m) => m.key === routingMode) || ROUTING_MODES[0];
 
@@ -249,6 +260,127 @@ export default function PromptBar({
       playSweep(shaderRef.current, { sweepMs: 900 });
     }
   };
+
+  /* voice dictation & auto sample input */
+  const fallbackToSampleVoice = () => {
+    const sample = SAMPLE_VOICE_PROMPTS[sampleVoiceIndexRef.current % SAMPLE_VOICE_PROMPTS.length];
+    sampleVoiceIndexRef.current += 1;
+    setDraft("");
+    setListening(true);
+    setDismissed(true);
+
+    const words = sample.split(" ");
+    let curIndex = 0;
+
+    if (voiceTimerRef.current) clearTimeout(voiceTimerRef.current);
+
+    const streamNextWord = () => {
+      if (curIndex < words.length) {
+        curIndex++;
+        setDraft(words.slice(0, curIndex).join(" "));
+        const delay = Math.floor(Math.random() * 80) + 120;
+        voiceTimerRef.current = setTimeout(streamNextWord, delay);
+      } else {
+        setListening(false);
+        if (shaderRef.current) {
+          playSweep(shaderRef.current, { sweepMs: 900 });
+        }
+        inputRef.current?.focus();
+      }
+    };
+
+    voiceTimerRef.current = setTimeout(streamNextWord, 180);
+  };
+
+  const startVoiceInput = () => {
+    if (rateLimitBlocked) return;
+    setListening(true);
+    setDismissed(true);
+
+    const SpeechRecognition =
+      typeof window !== "undefined"
+        ? (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
+        : null;
+
+    let nativeStarted = false;
+
+    if (SpeechRecognition) {
+      try {
+        const recognition = new SpeechRecognition();
+        recognition.continuous = true;
+        recognition.interimResults = true;
+        recognition.lang = "en-US";
+
+        recognition.onresult = (event: any) => {
+          let currentTranscript = "";
+          for (let i = 0; i < event.results.length; i++) {
+            currentTranscript += event.results[i][0].transcript;
+          }
+          if (currentTranscript.trim()) {
+            setDraft(currentTranscript);
+          }
+        };
+
+        recognition.onerror = (e: any) => {
+          console.warn("Speech recognition notice, using sample voice simulation:", e?.error);
+          try {
+            recognition.stop();
+          } catch {}
+          fallbackToSampleVoice();
+        };
+
+        recognition.onend = () => {
+          setListening(false);
+          if (shaderRef.current) {
+            playSweep(shaderRef.current, { sweepMs: 800 });
+          }
+        };
+
+        recognitionRef.current = recognition;
+        recognition.start();
+        nativeStarted = true;
+      } catch (err) {
+        console.warn("Could not start speech recognition, using sample simulation:", err);
+      }
+    }
+
+    if (!nativeStarted) {
+      fallbackToSampleVoice();
+    }
+  };
+
+  const stopVoiceInput = () => {
+    setListening(false);
+    if (voiceTimerRef.current) {
+      clearTimeout(voiceTimerRef.current);
+      voiceTimerRef.current = null;
+    }
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.stop();
+      } catch {}
+      recognitionRef.current = null;
+    }
+  };
+
+  const toggleVoiceInput = () => {
+    if (listening) {
+      stopVoiceInput();
+    } else {
+      startVoiceInput();
+    }
+  };
+
+  useEffect(() => {
+    return () => {
+      if (voiceTimerRef.current) clearTimeout(voiceTimerRef.current);
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.stop();
+        } catch {}
+      }
+    };
+  }, []);
 
   /* keyboard navigation */
   const onKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -650,7 +782,7 @@ export default function PromptBar({
               aria-label={listening ? "Stop dictation" : "Start dictation"}
               aria-pressed={listening}
               disabled={rateLimitBlocked}
-              onClick={() => setListening((current) => !current)}
+              onClick={toggleVoiceInput}
               className={`flex size-7 shrink-0 items-center justify-center transition-[background-color,color,transform] duration-150 active:scale-[0.94] ${
                 pill ? "rounded-full" : "rounded-[8px]"
               } ${listening ? "bg-accent-tint text-accent-ink" : "text-ink-3 hover:bg-hover hover:text-ink"} ${
