@@ -34,7 +34,13 @@ async function getDatabricksToken(): Promise<string> {
   let lastError: unknown;
   for (const executable of candidates) {
     try {
-      const { stdout } = await execFileAsync(executable, ["auth", "token"], { maxBuffer: 1024 * 1024 });
+      const { stdout } = await execFileAsync(executable, ["auth", "token"], {
+        maxBuffer: 1024 * 1024,
+        env: {
+          ...process.env,
+          PATH: `/opt/homebrew/bin:/usr/local/bin:${process.env.PATH || ""}`,
+        },
+      });
       const token = JSON.parse(stdout).access_token;
       if (token) return token;
     } catch (error: any) {
