@@ -110,6 +110,7 @@ function mapRowToEvent(r: Record<string, any>): EventRecord {
     month,
     day,
     dow,
+    date: r.event_date ? String(r.event_date) : undefined,
     time: r.start_time || "6:00 PM",
     duration: r.duration || "1h",
     loc: r.location || "Campus Hub",
@@ -143,7 +144,7 @@ export async function GET() {
       events,
       source: "lakehouse",
       count: events.length,
-    });
+    }, { headers: { "Cache-Control": "no-store, max-age=0" } });
   }
 
   return NextResponse.json(
@@ -164,13 +165,13 @@ export async function POST(req: NextRequest) {
     const host = (body.host || body.host_organization || "Student Org").replace(/'/g, "''");
     const hostCode = (body.hostCode || host.slice(0, 2)).toUpperCase();
     const location = (body.location || "Campus Hub").replace(/'/g, "''");
-    const isVirtual = Boolean(body.isVirtual);
+    const isVirtual = Boolean(body.isVirtual ?? body.isHybrid ?? false);
     const date = body.date || "2026-04-15";
     const time = (body.time || "6:00 PM").replace(/'/g, "''");
     const duration = (body.duration || "1h").replace(/'/g, "''");
     const capacity = parseInt(body.capacity) || 50;
-    const food = Boolean(body.food || body.hasFood);
-    const featured = Boolean(body.featured || body.isFeatured);
+    const food = Boolean(body.food ?? body.hasFood ?? false);
+    const featured = Boolean(body.featured ?? body.isFeatured ?? false);
     const status = body.status || "live";
     const visibility = body.visibility || "public";
     const description = (body.description || body.desc || "").replace(/'/g, "''");
@@ -220,13 +221,13 @@ export async function PUT(req: NextRequest) {
     const host = (body.host || body.host_organization || "Student Org").replace(/'/g, "''");
     const hostCode = (body.hostCode || host.slice(0, 2)).toUpperCase();
     const location = (body.location || "Campus Hub").replace(/'/g, "''");
-    const isVirtual = Boolean(body.isVirtual || body.isHybrid);
+    const isVirtual = Boolean(body.isVirtual ?? body.isHybrid ?? false);
     const date = body.date || "2026-04-15";
     const time = (body.time || "6:00 PM").replace(/'/g, "''");
     const duration = (body.duration || "1h").replace(/'/g, "''");
     const capacity = parseInt(body.capacity || body.capNumber) || 50;
-    const food = Boolean(body.food || body.hasFood);
-    const featured = Boolean(body.featured || body.isFeatured);
+    const food = Boolean(body.food ?? body.hasFood ?? false);
+    const featured = Boolean(body.featured ?? body.isFeatured ?? false);
     const status = body.status || "live";
     const visibility = body.visibility || "public";
     const description = (body.description || body.desc || "").replace(/'/g, "''");
@@ -287,6 +288,13 @@ export async function PUT(req: NextRequest) {
     `;
 
     const result = await executeLakehouseSql(mergeSql);
+
+    if (result.state !== "SUCCEEDED") {
+      return NextResponse.json(
+        { success: false, eventId, state: result.state, error: result.error || "Lakehouse update failed" },
+        { status: 500 }
+      );
+    }
 
     return NextResponse.json({
       success: true,

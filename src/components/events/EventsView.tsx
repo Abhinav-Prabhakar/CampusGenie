@@ -353,7 +353,7 @@ export default function EventsView({ onAskGenie }: { onAskGenie?: (prompt: strin
 
   // Fetch live events from Lakehouse API
   useEffect(() => {
-    fetch("/api/events")
+    const refreshEvents = () => fetch("/api/events", { cache: "no-store" })
       .then((r) => r.json())
       .then((data) => {
         if (data.events && data.events.length > 0) {
@@ -361,6 +361,11 @@ export default function EventsView({ onAskGenie }: { onAskGenie?: (prompt: strin
         }
       })
       .catch((err) => console.warn("Failed to fetch live events, using cached seed data:", err));
+
+    refreshEvents();
+    window.addEventListener("cg-events-updated", refreshEvents);
+    window.addEventListener("focus", refreshEvents);
+    window.addEventListener("storage", refreshEvents);
 
     // Fetch featured surveys
     fetch("/api/surveys?featured=true")
@@ -372,6 +377,12 @@ export default function EventsView({ onAskGenie }: { onAskGenie?: (prompt: strin
         }
       })
       .catch((err) => console.warn("Failed to fetch featured surveys:", err));
+
+    return () => {
+      window.removeEventListener("cg-events-updated", refreshEvents);
+      window.removeEventListener("focus", refreshEvents);
+      window.removeEventListener("storage", refreshEvents);
+    };
   }, []);
 
   const handleSurveySubmit = async (e: React.FormEvent) => {

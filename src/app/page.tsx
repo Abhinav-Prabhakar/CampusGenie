@@ -216,15 +216,27 @@ export default function CampusGenieChatPage() {
   const lakehouseEventsLoadRef = useRef<Promise<EventRecord[]> | null>(null);
 
   useEffect(() => {
-    const load = fetch("/api/events")
+    const refreshEvents = () => {
+      const load = fetch("/api/events", { cache: "no-store" })
       .then((r) => r.json())
       .then((data) => (Array.isArray(data.events) ? data.events as EventRecord[] : []));
-    lakehouseEventsLoadRef.current = load;
-    load.then((events) => {
+      lakehouseEventsLoadRef.current = load;
+      load.then((events) => {
         lakehouseEventsRef.current = events;
         setLakehouseEvents(events);
       })
       .catch((err) => console.warn("Failed to load events for chat matching", err));
+    };
+
+    refreshEvents();
+    window.addEventListener("cg-events-updated", refreshEvents);
+    window.addEventListener("focus", refreshEvents);
+    window.addEventListener("storage", refreshEvents);
+    return () => {
+      window.removeEventListener("cg-events-updated", refreshEvents);
+      window.removeEventListener("focus", refreshEvents);
+      window.removeEventListener("storage", refreshEvents);
+    };
   }, []);
 
   const scrollAnchorRef = useRef<HTMLDivElement>(null);

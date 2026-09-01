@@ -24,6 +24,9 @@ type AdminEvent = {
   hasFood?: boolean;
   isHybrid?: boolean;
   duration: string;
+  host?: string;
+  hostCode?: string;
+  description?: string;
   inviteLink?: string;
   feedbackSurvey?: { title: string; count: number; status: string };
 };
@@ -287,7 +290,7 @@ export default function EventAdminView() {
 
   // Fetch live events and surveys from API on mount
   useEffect(() => {
-    fetch("/api/events")
+    fetch("/api/events", { cache: "no-store" })
       .then((r) => r.json())
       .then((data) => {
         if (data.events && data.events.length > 0) {
@@ -311,6 +314,9 @@ export default function EventAdminView() {
             hasFood: e.flags?.food,
             isHybrid: e.flags?.virtual || e.isVirtual,
             duration: e.duration || "1h",
+            host: e.host,
+            hostCode: e.hostCode,
+            description: e.description,
           }));
           setEvents(mapped);
         }
@@ -416,7 +422,7 @@ export default function EventAdminView() {
 
   const fetchLiveEvents = async () => {
     try {
-      const res = await fetch("/api/events");
+      const res = await fetch("/api/events", { cache: "no-store" });
       if (res.ok) {
         const data = await res.json();
         if (data.events && data.events.length > 0) {
@@ -427,7 +433,7 @@ export default function EventAdminView() {
               category: e.cat || "meeting",
               catLabel: e.catLabel || "Meeting",
               catIcon: e.catIcon || "i-msg",
-              date: `${e.month || "APR"} ${e.day || "15"}`,
+              date: e.date || `${e.month || "APR"} ${e.day || "15"}`,
               time: e.time || "6:00 PM",
               location: e.loc || "Campus Hub",
               attendees: `${typeof e.registered === "number" ? e.registered : 0}/${e.capacity || 60}`,
@@ -440,6 +446,9 @@ export default function EventAdminView() {
               hasFood: e.flags?.food,
               isHybrid: e.isVirtual,
               duration: e.duration || "1h",
+              host: e.host,
+              hostCode: e.hostCode,
+              description: e.description,
             }))
           );
         }
@@ -458,14 +467,18 @@ export default function EventAdminView() {
     const target = events.find((e) => e.id === id);
     if (target) {
       try {
-        await fetch("/api/events", {
+        const response = await fetch("/api/events", {
           method: "PUT",
+          cache: "no-store",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             id: target.id,
             title: target.title,
             category: target.category,
+            host: target.host,
+            hostCode: target.hostCode,
             location: target.location,
+            date: /^\d{4}-\d{2}-\d{2}$/.test(target.date) ? target.date : undefined,
             time: target.time,
             duration: target.duration,
             capacity: target.capNumber,
@@ -474,10 +487,19 @@ export default function EventAdminView() {
             featured: target.isFeatured,
             status: target.status,
             visibility: target.visibility,
+            description: target.description,
           }),
         });
+        if (!response.ok) {
+          const result = await response.json().catch(() => ({}));
+          throw new Error(result.error || `HTTP ${response.status}`);
+        }
+        window.dispatchEvent(new Event("cg-events-updated"));
+        localStorage.setItem("cg-events-updated", String(Date.now()));
       } catch (err) {
         console.error("Failed to update event in Lakehouse:", err);
+        setSavedRowId(null);
+        return;
       }
     }
     setTimeout(() => setSavedRowId(null), 1200);
