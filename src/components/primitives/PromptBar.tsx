@@ -85,7 +85,7 @@ const COMMANDS = [
   { key: "sources", name: "/sources", desc: "Search uploaded university policies & PDFs" },
 ];
 
-export type RoutingMode = "auto" | "genie" | "qwen";
+export type RoutingMode = "auto" | "genie" | "gemini" | "qwen";
 
 export interface RoutingOption {
   key: RoutingMode;
@@ -101,7 +101,7 @@ export const ROUTING_MODES: RoutingOption[] = [
     name: "Auto (Smart Hybrid)",
     shortName: "Auto",
     tag: "Default",
-    desc: "Auto-routes read queries to Genie Space & actions to Campus Genie Qwen LLM",
+    desc: "Auto-routes read queries to Genie Space & actions to Campus Genie Gemini LLM",
   },
   {
     key: "genie",
@@ -111,11 +111,11 @@ export const ROUTING_MODES: RoutingOption[] = [
     desc: "Direct queries to Databricks Lakehouse Genie Space",
   },
   {
-    key: "qwen",
-    name: "Campus Genie (Qwen LLM)",
-    shortName: "Qwen",
-    tag: "App LLM",
-    desc: "Full LLM reasoning with Unity Catalog SQL tools & survey actions",
+    key: "gemini",
+    name: "Campus Genie (Gemini 3.6 Flash)",
+    shortName: "Gemini",
+    tag: "Gemini 3.6",
+    desc: "Direct high-speed Gemini 3.6 Flash reasoning & campus actions",
   },
 ];
 

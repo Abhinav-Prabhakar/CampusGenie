@@ -15,6 +15,7 @@ export type LLMModelConfig = {
 
 export const DEFAULT_AVAILABLE_MODELS: LLMModelConfig[] = [
   { id: "env-default", name: "Campus Genie Agent", provider: "databricks", isReasoning: true },
+  { id: "gemini-3.6-flash", name: "Gemini 3.6 Flash", provider: "gemini", isReasoning: false },
   { id: "gpt-4o", name: "OpenAI GPT-4o", provider: "openai", isReasoning: false },
   { id: "o3-mini", name: "OpenAI o3-mini (Reasoning)", provider: "openai", isReasoning: true },
   { id: "deepseek/deepseek-r1", name: "DeepSeek R1 (Reasoning)", provider: "openai", isReasoning: true },

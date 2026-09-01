@@ -166,7 +166,7 @@ export async function POST(req: NextRequest) {
       messages = [],
       model: inputModel,
       provider: inputProvider = "openai",
-      routingMode = "auto", // "auto" | "genie" | "qwen"
+      routingMode = "auto", // "auto" | "genie" | "gemini" | "qwen"
       customApiKey,
       customBaseUrl,
     } = body;
@@ -179,14 +179,14 @@ export async function POST(req: NextRequest) {
       return createGenieResponse(req, latestPrompt);
     }
 
-    // Mode "auto": Auto-classify read-only queries to Genie, updates to Qwen/App LLM
+    // Mode "auto": Auto-classify read-only queries to Genie, updates to Gemini/App LLM
     const requestsGenie = routingMode === "auto" && (inputModel === "env-default" || inputModel === "databricks-genie-agent" || inputProvider === "databricks");
     const routeToGenie = requestsGenie && latestPrompt ? await canAnswerWithGenie(latestPrompt, req.signal) : false;
     if (routeToGenie && latestPrompt) return createGenieResponse(req, latestPrompt);
 
-    // Mode "qwen" or App LLM execution
-    const model = (requestsGenie || !inputModel || inputModel === "env-default" || inputModel === "qwen")
-      ? (process.env.LLM_MODEL || process.env.NEXT_PUBLIC_DEFAULT_MODEL || "gpt-4o")
+    // Mode "gemini" or App LLM execution
+    const model = (requestsGenie || !inputModel || inputModel === "env-default" || inputModel === "gemini" || inputModel === "qwen")
+      ? (process.env.LLM_MODEL || process.env.NEXT_PUBLIC_DEFAULT_MODEL || "gemini-3.6-flash")
       : inputModel;
 
     let provider = requestsGenie && !routeToGenie ? "custom" : inputProvider;
