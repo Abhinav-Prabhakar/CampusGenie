@@ -18,9 +18,8 @@ const RAINBOW = accentChain([
 /* ─────────────────────────────────────────────────────────
  * PROMPT BAR
  * A composer with real controls: attach, @ data sources,
- * / commands, a model picker, dictation, and send.
- * Type @ or / to open the menus; ↑↓ + Enter to pick.
- * Variants: Rounded (card radius) · Pill (full radius).
+ * / commands, a 3-way routing mode picker (Auto, Genie, Qwen),
+ * dictation, rate-limit cooldown blocker, and send.
  * ───────────────────────────────────────────────────────── */
 
 function Icon({ children, size = 15, strokeWidth = 1.8 }: { children: React.ReactNode; size?: number; strokeWidth?: number }) {
@@ -38,7 +37,7 @@ const GLYPHS: Record<string, React.ReactNode> = {
   globe: <g><circle cx="12" cy="12" r="10" /><path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" /></g>,
 };
 
-/* real product marks, inline so the file stays self-contained */
+/* real product marks */
 const BRANDS: Record<string, React.ReactNode> = {
   figma: (
     <svg width="11" height="16" viewBox="0 0 38 57" aria-hidden="true">
@@ -57,15 +56,6 @@ const BRANDS: Record<string, React.ReactNode> = {
       <path d="M80.1 99.8c7.3 0 13.2 5.9 13.2 13.2 0 7.3-5.9 13.2-13.2 13.2-7.3 0-13.2-5.9-13.2-13.2V99.8h13.2zm0-6.6c-7.3 0-13.2-5.9-13.2-13.2 0-7.3 5.9-13.2 13.2-13.2h33.1c7.3 0 13.2 5.9 13.2 13.2 0 7.3-5.9 13.2-13.2 13.2H80.1z" fill="#ECB22E" />
     </svg>
   ),
-  gmail: (
-    <svg width="15" height="12" viewBox="0 0 256 193" aria-hidden="true">
-      <path d="M58.182 192.05V93.14L27.507 65.077 0 49.504v125.091c0 9.658 7.825 17.455 17.455 17.455h40.727Z" fill="#4285F4" />
-      <path d="M197.818 192.05h40.727c9.659 0 17.455-7.826 17.455-17.455V49.505l-31.156 17.837-27.026 25.798v98.91Z" fill="#34A853" />
-      <path d="m58.182 93.14-4.174-38.647 4.174-36.989L128 69.868l69.818-52.364 4.669 34.992-4.669 40.644L128 145.504 58.182 93.14Z" fill="#EA4335" />
-      <path d="M197.818 17.504V93.14L256 49.504V26.231c0-21.585-24.64-33.89-41.89-20.945l-16.292 12.218Z" fill="#FBBC04" />
-      <path d="m0 49.504 26.759 20.07L58.182 93.14V17.504L41.89 5.286C24.61-7.66 0 4.646 0 26.23v23.273Z" fill="#C5221F" />
-    </svg>
-  ),
 };
 
 type Source = {
@@ -80,59 +70,57 @@ type Source = {
 
 const SOURCES: Source[] = [
   { key: "attach", name: "Add photos & files", desc: "Upload from your computer", glyph: "clip", attach: true },
-  { key: "scoop", name: "Scoop Data", desc: "Sales & churn metrics", glyph: "chart" },
-  { key: "flavors", name: "Flavor records", desc: "26 makers, tags, links", glyph: "layers" },
-  { key: "web", name: "Web search", desc: "Real-time news and info", glyph: "globe" },
+  { key: "events", name: "Campus Events", desc: "Live Lakehouse events & RSVP status", glyph: "chart" },
+  { key: "attendance", name: "Attendance Logs", desc: "Course check-ins & recovery plans", glyph: "layers" },
+  { key: "sources", name: "Knowledge Sources", desc: "University catalog documents & policies", glyph: "globe" },
   { key: "figma", name: "Figma", desc: "Design-to-code workflows", brand: "figma" },
   { key: "slack", name: "Slack", desc: "Read and manage Slack", brand: "slack" },
-  { key: "gmail", name: "Gmail", desc: "Read and manage Gmail", brand: "gmail", connect: true },
 ];
 
 const COMMANDS = [
-  { key: "compare", name: "/compare", desc: "Flavor vs. last summer" },
-  { key: "churn-plan", name: "/churn-plan", desc: "Draft a churn schedule" },
-  { key: "restock", name: "/restock", desc: "Build a reorder list" },
-  { key: "draft-email", name: "/draft-email", desc: "Write a supplier email" },
-  { key: "summarize", name: "/summarize", desc: "Digest the thread so far" },
+  { key: "events", name: "/events", desc: "Discover campus hackathons & workshops" },
+  { key: "attendance", name: "/attendance", desc: "View attendance rates & risk status" },
+  { key: "recovery", name: "/recovery", desc: "Generate an academic recovery schedule" },
+  { key: "survey", name: "/survey", desc: "Trigger guided student preference survey" },
+  { key: "sources", name: "/sources", desc: "Search uploaded university policies & PDFs" },
 ];
 
-const MODELS = [
-  { key: "sprinkles-5", name: "Sprinkles 5", tag: "Flagship" },
-  { key: "vanilla-1", name: "Vanilla 1", tag: "Basic" },
-  { key: "freezer-burn", name: "Freezer Burn 0.4", tag: "Stale" },
+export type RoutingMode = "auto" | "genie" | "qwen";
+
+export interface RoutingOption {
+  key: RoutingMode;
+  name: string;
+  shortName: string;
+  tag: string;
+  desc: string;
+}
+
+export const ROUTING_MODES: RoutingOption[] = [
+  {
+    key: "auto",
+    name: "Auto (Smart Hybrid)",
+    shortName: "Auto",
+    tag: "Default",
+    desc: "Auto-routes read queries to Genie Space & actions to Campus Genie Qwen LLM",
+  },
+  {
+    key: "genie",
+    name: "Databricks Genie Agent",
+    shortName: "Genie",
+    tag: "Genie Space",
+    desc: "Direct queries to Databricks Lakehouse Genie Space",
+  },
+  {
+    key: "qwen",
+    name: "Campus Genie (Qwen LLM)",
+    shortName: "Qwen",
+    tag: "App LLM",
+    desc: "Full LLM reasoning with Unity Catalog SQL tools & survey actions",
+  },
 ];
 
-const FILES = ["flavor-chart.png", "summer-menu.pdf", "pos-export.csv"];
-const DICTATION = "Compare pistachio weekends to last summer";
+const FILES = ["syllabus.pdf", "attendance-export.csv", "project-proposal.md"];
 
-/* self-running demo: walk the @ menu, then the / menu, and repeat.
- * Any pointer or key interaction hands control to the user. */
-const AUTO_STEPS: {
-  draft: string;
-  active?: number;
-  connect?: boolean;
-  modelOpen?: boolean;
-  model?: string;
-  hold: number;
-}[] = [
-  { draft: "", connect: false, model: "vanilla-1", hold: 1100 },
-  { draft: "@", active: 0, hold: 900 },
-  { draft: "@", active: 1, hold: 620 },
-  { draft: "@", active: 4, hold: 620 },
-  { draft: "@", active: 6, hold: 700 },
-  { draft: "@", active: 6, connect: true, hold: 1000 },
-  { draft: "", hold: 700 },
-  { draft: "/", active: 0, hold: 900 },
-  { draft: "/", active: 1, hold: 620 },
-  { draft: "/", active: 3, hold: 1000 },
-  { draft: "", hold: 800 },
-  // open the model picker and upgrade to the flagship → rainbow sweep
-  { draft: "", modelOpen: true, hold: 1200 },
-  { draft: "", model: "sprinkles-5", hold: 2400 },
-  { draft: "", hold: 900 },
-];
-
-/* the last @word or /word being typed, if any */
 function parseToken(draft: string): { kind: "at" | "slash"; query: string; start: number } | null {
   const match = /(^|\s)([@/])([\w-]*)$/.exec(draft);
   if (!match) return null;
@@ -145,35 +133,40 @@ function parseToken(draft: string): { kind: "at" | "slash"; query: string; start
 
 export default function PromptBar({
   variant = "Rounded",
-  demo = true,
+  demo = false,
   tall = false,
   placeholder,
   onSend,
   isWorking = false,
   onStop,
+  routingMode = "auto",
+  onSelectRoutingMode,
+  rateLimitBlocked = false,
+  rateLimitSecondsRemaining = 0,
+  rateLimitMessage,
 }: {
   variant?: string;
-  /** the self-running walkthrough; turn off when embedding in a real surface */
   demo?: boolean;
-  /** hero sizing: a multi-line input with controls on their own row */
   tall?: boolean;
   placeholder?: string;
   onSend?: (text: string) => void;
   isWorking?: boolean;
   onStop?: () => void;
+  routingMode?: RoutingMode;
+  onSelectRoutingMode?: (mode: RoutingMode) => void;
+  rateLimitBlocked?: boolean;
+  rateLimitSecondsRemaining?: number;
+  rateLimitMessage?: string | null;
 }) {
   const pill = variant === "Pill";
   const [draft, setDraft] = useState("");
   const [dismissed, setDismissed] = useState(false);
   const [plusOpen, setPlusOpen] = useState(false);
   const [modelOpen, setModelOpen] = useState(false);
-  const [model, setModel] = useState(MODELS[1]);
   const [attachments, setAttachments] = useState<string[]>([]);
   const [connected, setConnected] = useState(false);
   const [active, setActive] = useState(0);
   const [listening, setListening] = useState(false);
-  const [auto, setAuto] = useState(demo);
-  const [autoStep, setAutoStep] = useState(0);
   const [expanded, setExpanded] = useState(false);
   const wide = expanded || tall;
   const [rowBox, setRowBox] = useState<{ top: number; height: number } | null>(null);
@@ -191,14 +184,8 @@ export default function PromptBar({
   const modelRowRefs = useRef<(HTMLButtonElement | null)[]>([]);
   const glimmRef = useRef<HTMLCanvasElement>(null);
   const shaderRef = useRef<ReturnType<typeof createShader> | null>(null);
-  const sweepingRef = useRef(false);
 
-  /* hand control to the user: stop the demo loop, and when they aim at
-   * the input itself, clear the demo's leftover draft for a clean start */
-  const takeOver = (event: { target: EventTarget | null }) => {
-    setAuto(false);
-    if (auto && event.target === inputRef.current) setDraft("");
-  };
+  const currentModeOption = ROUTING_MODES.find((m) => m.key === routingMode) || ROUTING_MODES[0];
 
   const token = dismissed ? null : parseToken(draft);
   const menu: "at" | "slash" | null = plusOpen ? "at" : token?.kind ?? null;
@@ -216,153 +203,127 @@ export default function PromptBar({
     setEngaged(false);
   }, [menu, query]);
 
-  /* a single highlight glides to the active row instead of each row
-   * toggling its own background — matches the gliding pill in the nav */
   useLayoutEffect(() => {
     const target = rowRefs.current[active];
     if (target) setRowBox({ top: target.offsetTop, height: target.offsetHeight });
   }, [menu, query, active, connected, rows.length]);
 
-  /* same gliding highlight in the model menu — floats to the hovered
-   * row, falling back to the currently-selected model */
-  const modelIndex = MODELS.findIndex((m) => m.key === model.key);
+  const modelIndex = ROUTING_MODES.findIndex((m) => m.key === routingMode);
   useLayoutEffect(() => {
     if (!modelOpen) return;
     const target = modelRowRefs.current[modelHovered ?? modelIndex];
     if (target) setModelBox({ top: target.offsetTop, height: target.offsetHeight });
   }, [modelOpen, modelHovered, modelIndex]);
 
-  /* The menu is outside the clipped composer, so align it to the model
-   * trigger by measurement instead of pinning it to the far-right edge. */
   useLayoutEffect(() => {
     if (!modelOpen || !composerAnchorRef.current || !modelRef.current) return;
     const anchorRect = composerAnchorRef.current.getBoundingClientRect();
     const triggerRect = modelRef.current.getBoundingClientRect();
-    setModelMenuLeft(Math.max(0, Math.min(triggerRect.left - anchorRect.left, anchorRect.width - 176)));
+    setModelMenuLeft(Math.max(0, Math.min(triggerRect.left - anchorRect.left, anchorRect.width - 240)));
     setModelMenuBottom(anchorRect.bottom - triggerRect.top + 8);
-  }, [modelOpen, wide, model.name]);
+  }, [modelOpen, wide, routingMode]);
 
   useEffect(() => {
     if (!modelOpen) setModelHovered(null);
   }, [modelOpen]);
 
-  /* Build the shader with a pinned hue phase. createShader seeds its
-   * internal hueShift from Math.random(), which made the sweep a different
-   * colour on every reload — pin it so the rainbow is identical each time. */
-  const makeShader = () => {
+  useLayoutEffect(() => {
     const canvas = glimmRef.current;
-    if (!canvas) return null;
-    const random = Math.random;
-    Math.random = () => 0;
-    try {
-      return createShader({
-        canvas,
-        palette: RAINBOW,
-        direction: "ltr",
-        bandTight: 10,
-        swellAmount: 0.85,
-      });
-    } finally {
-      Math.random = random;
-    }
-  };
-
-  /* Glimm shader lives inside the composer, invisible at rest. Selecting
-   * the flagship model fires a one-shot rainbow sweep across the interior. */
-  useEffect(() => {
-    shaderRef.current = makeShader();
+    if (!canvas) return;
+    const shader = createShader({
+      canvas,
+      palette: RAINBOW,
+      brightness: 1,
+      direction: "ltr",
+    });
+    shaderRef.current = shader;
     return () => {
-      shaderRef.current?.destroy();
-      shaderRef.current = null;
+      shader?.destroy();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const celebrate = () => {
-    if (sweepingRef.current) return;
-    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-    // Recreate the shader per sweep so uTime restarts at 0 — the hue phase
-    // (which drifts with time) is then identical on every trigger.
-    shaderRef.current?.destroy();
-    const shader = makeShader();
-    shaderRef.current = shader;
-    if (!shader) return;
-    sweepingRef.current = true;
-    const sweep = playSweep(shader, {
-      palette: RAINBOW,
-      direction: "ltr",
-      sweepMs: 570,
-      outroMs: 80,
-      peakAlpha: 1.3,
-      bandTight: 10,
-      brightness: 1.4,
-      swellAmount: 1,
-      waveSpeed: 1.8,
-      easing: "easeOutExpo",
-    });
-    sweep.done.finally(() => {
-      sweepingRef.current = false;
-    });
-  };
-
-  const selectModel = (next: (typeof MODELS)[number]) => {
-    setModel(next);
+  const selectRoutingMode = (mode: RoutingOption) => {
+    onSelectRoutingMode?.(mode.key);
     setModelOpen(false);
-    if (next.key === "sprinkles-5") celebrate();
+    if (shaderRef.current) {
+      playSweep(shaderRef.current, { sweepMs: 900 });
+    }
   };
 
-  /* autoplay: apply the current step, then advance after its hold */
-  useEffect(() => {
-    if (!auto) return;
-    const step = AUTO_STEPS[autoStep % AUTO_STEPS.length];
-    setDraft(step.draft);
-    if (step.active !== undefined) setActive(step.active);
-    if (step.connect !== undefined) setConnected(step.connect);
-    if (step.modelOpen !== undefined) setModelOpen(step.modelOpen);
-    if (step.model) {
-      const next = MODELS.find((m) => m.key === step.model);
-      if (next) selectModel(next);
+  /* keyboard navigation */
+  const onKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (rateLimitBlocked) {
+      event.preventDefault();
+      return;
     }
-    const t = setTimeout(() => setAutoStep((s) => s + 1), step.hold);
-    return () => clearTimeout(t);
-  }, [auto, autoStep]);
 
-  /* dictation resolves after a beat, like a real transcript landing */
-  useEffect(() => {
-    if (!listening) return;
-    const t = setTimeout(() => {
-      setDraft((current) => (current ? `${current.trimEnd()} ${DICTATION}` : DICTATION));
-      setListening(false);
-      inputRef.current?.focus();
-    }, 2200);
-    return () => clearTimeout(t);
-  }, [listening]);
+    if (modelOpen) {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setModelOpen(false);
+        return;
+      }
+      if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+        event.preventDefault();
+        const current = modelHovered ?? modelIndex;
+        const delta = event.key === "ArrowDown" ? 1 : -1;
+        const next = (current + delta + ROUTING_MODES.length) % ROUTING_MODES.length;
+        setModelHovered(next);
+        return;
+      }
+      if (event.key === "Enter") {
+        event.preventDefault();
+        selectRoutingMode(ROUTING_MODES[modelHovered ?? modelIndex]);
+        return;
+      }
+    }
 
-  /* Move wrapped text above the controls, then grow to a compact maximum. */
+    if (menu) {
+      if (event.key === "ArrowDown") {
+        event.preventDefault();
+        setActive((current) => (current + 1) % rows.length);
+        setEngaged(true);
+        return;
+      }
+      if (event.key === "ArrowUp") {
+        event.preventDefault();
+        setActive((current) => (current - 1 + rows.length) % rows.length);
+        setEngaged(true);
+        return;
+      }
+      if (event.key === "Enter" || event.key === "Tab") {
+        if (rows[active]) {
+          event.preventDefault();
+          pick(rows[active]);
+          return;
+        }
+      }
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setDismissed(true);
+        setPlusOpen(false);
+        return;
+      }
+    }
+
+    if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault();
+      send();
+    }
+  };
+
+  /* auto-grow the textarea */
   useLayoutEffect(() => {
     const input = inputRef.current;
-    const controls = controlsRef.current;
-    const measure = measureRef.current;
-    const modelButton = modelRef.current;
-    if (!input || !controls || !measure || !modelButton) return;
-
-    const fixedControlsWidth = 28 * 3 + modelButton.offsetWidth;
-    const inlineGaps = 4 * 4;
-    const inlineInputWidth = controls.clientWidth - fixedControlsWidth - inlineGaps;
-    const needsFullWidth = draft.includes("\n") || measure.offsetWidth + 8 > inlineInputWidth;
-    if (needsFullWidth !== expanded) {
-      setExpanded(needsFullWidth);
-    }
-
-    const minHeight = 28;
-    const maxHeight = 100;
-    input.style.height = "0px";
+    if (!input) return;
+    input.style.height = "auto";
+    const minHeight = 22;
+    const maxHeight = 160;
     const contentHeight = input.scrollHeight;
     input.style.height = `${Math.min(Math.max(contentHeight, minHeight), maxHeight)}px`;
     input.style.overflowY = contentHeight > maxHeight ? "auto" : "hidden";
   }, [draft, expanded]);
 
-  /* clicking anywhere outside the composer closes the open menus */
   useEffect(() => {
     if (!modelOpen && !plusOpen) return;
     const close = (event: PointerEvent) => {
@@ -395,7 +356,7 @@ export default function PromptBar({
     inputRef.current?.focus();
   };
 
-  const canSend = draft.trim().length > 0 || attachments.length > 0;
+  const canSend = (draft.trim().length > 0 || attachments.length > 0) && !rateLimitBlocked;
   const send = () => {
     if (isWorking) {
       onStop?.();
@@ -408,317 +369,334 @@ export default function PromptBar({
     closeMenus();
   };
 
+  // Format seconds into MM:SS
+  const formatCountdown = (secs: number) => {
+    const m = Math.floor(secs / 60);
+    const s = secs % 60;
+    return `${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
+  };
+
   return (
-    <div
-      data-promptbar
-      className={demo ? "flex min-h-[384px] w-full max-w-105 flex-col justify-end pb-8" : "w-full"}
-      onPointerDownCapture={takeOver}
-      onKeyDownCapture={takeOver}
-    >
-      {/* composer is the anchor — menus grow up from its top edge */}
-      <div ref={composerAnchorRef} className="relative">
-      {/* ── @ / slash menu ─────────────────────────────── */}
-      {menu && (
-        <div
-          onMouseLeave={() => setEngaged(false)}
-          className="absolute inset-x-0 bottom-full z-10 mb-2 rounded-[10px] bg-surface p-1 shadow-raised"
-          style={{ animation: "pop-in 180ms cubic-bezier(0.23,1,0.32,1) both", transformOrigin: "bottom center" }}
-        >
-          {/* single gliding highlight — appears once a row is hovered */}
-          <span
-            aria-hidden
-            className="pointer-events-none absolute inset-x-1 rounded-[6px] bg-hover"
-            style={{
-              top: rowBox?.top ?? 0,
-              height: rowBox?.height ?? 0,
-              opacity: rowBox && engaged && rows.length > 0 ? 1 : 0,
-              transition:
-                "top 220ms cubic-bezier(0.23,1,0.32,1), height 220ms cubic-bezier(0.23,1,0.32,1), opacity 150ms ease",
-            }}
-          />
-          {rows.map((row, i) => {
-            const source = menu === "at" ? SOURCES.find((s) => s.key === row.key) : undefined;
-            return (
-              <button
-                key={row.key}
-                type="button"
-                ref={(el) => {
-                  rowRefs.current[i] = el;
-                }}
-                onMouseDown={(event) => event.preventDefault()}
-                onMouseEnter={() => {
-                  setActive(i);
-                  setEngaged(true);
-                }}
-                onClick={() => pick(row)}
-                className="relative z-10 flex h-9 w-full items-center gap-2.5 rounded-[6px] px-2 text-left"
-              >
-                {source && (
-                  <span className="flex size-5.5 shrink-0 items-center justify-center text-ink-2">
-                    {source.brand ? BRANDS[source.brand] : <Icon size={15}>{GLYPHS[source.glyph ?? "clip"]}</Icon>}
-                  </span>
-                )}
-                <span className="shrink-0 text-[12.5px] font-medium text-ink">
-                  {row.name}
+    <div data-promptbar className="w-full">
+      {/* ── Rate Limit Quota Cooldown Banner (design.md compliant) ── */}
+      {rateLimitBlocked && (
+        <div className="mb-2.5 flex items-center justify-between gap-3 rounded-[12px] border border-red/40 bg-red-tint/30 p-3 shadow-sm backdrop-blur-md animate-fade-in">
+          <div className="flex items-center gap-2.5">
+            <span className="flex size-7.5 shrink-0 items-center justify-center rounded-[8px] bg-red text-white shadow-sm">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="10" />
+                <polyline points="12 6 12 12 16 14" />
+              </svg>
+            </span>
+            <div>
+              <div className="flex items-center gap-2">
+                <b className="text-[13px] font-semibold text-red">Rate Limit Quota Active</b>
+                <span className="rounded-full bg-red/15 px-2 py-0.2 font-mono text-[10.5px] font-semibold text-red">
+                  Temporary Cooldown
                 </span>
-                <span className="min-w-0 flex-1 truncate text-[12px] text-ink-3">{row.desc}</span>
-                {source?.connect && (
-                  <span
-                    role="button"
-                    tabIndex={-1}
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      setConnected((current) => !current);
-                    }}
-                    className={`shrink-0 text-[12px] font-medium transition-colors duration-100 ${
-                      connected ? "text-green" : "text-accent-ink hover:underline"
-                    }`}
-                  >
-                    {connected ? "Connected" : "Connect"}
-                  </span>
-                )}
-              </button>
-            );
-          })}
-          {rows.length === 0 && (
-            <div className="flex h-9 items-center px-2 text-[12px] text-ink-3">
-              No matches for “{query}”
+              </div>
+              <p className="text-[11.5px] text-ink-2 mt-0.5">
+                {rateLimitMessage || "High request volume detected. Your composer is paused to ensure fair platform usage."}
+              </p>
             </div>
-          )}
-          <div className="mt-1 border-t border-line px-2 pt-1.5 pb-1 text-[11px] text-ink-3">
-            {menu === "at" ? "Type to search sources & files" : "Type to search commands"}
+          </div>
+
+          <div className="flex items-center gap-1.5 rounded-[8px] border border-red/30 bg-surface px-2.5 py-1 text-[12px] font-mono font-bold text-red tabular-nums shadow-sm shrink-0">
+            <span className="size-2 rounded-full bg-red animate-ping" />
+            <span>Unlocks in {formatCountdown(rateLimitSecondsRemaining)}</span>
           </div>
         </div>
       )}
 
-      {/* ── model menu ─────────────────────────────────── */}
-      {modelOpen && (
-        <div
-          onMouseLeave={() => setModelHovered(null)}
-          className="absolute z-10 w-44 rounded-[10px] bg-surface p-1 shadow-raised"
-          style={{ left: modelMenuLeft, bottom: modelMenuBottom, animation: "pop-in 180ms cubic-bezier(0.23,1,0.32,1) both", transformOrigin: "bottom left" }}
-        >
-          {/* single gliding highlight — floats to the hovered / selected row */}
-          <span
-            aria-hidden
-            className="pointer-events-none absolute inset-x-1 rounded-[6px] bg-hover"
-            style={{
-              top: modelBox?.top ?? 0,
-              height: modelBox?.height ?? 0,
-              opacity: modelBox && modelHovered !== null ? 1 : 0,
-              transition:
-                "top 220ms cubic-bezier(0.23,1,0.32,1), height 220ms cubic-bezier(0.23,1,0.32,1), opacity 150ms ease",
-            }}
-          />
-          {MODELS.map((m, i) => (
-            <button
-              key={m.key}
-              type="button"
-              ref={(el) => {
-                modelRowRefs.current[i] = el;
+      {/* composer is the anchor — menus grow up from its top edge */}
+      <div ref={composerAnchorRef} className="relative">
+        {/* ── @ / slash menu ─────────────────────────────── */}
+        {menu && (
+          <div
+            onMouseLeave={() => setEngaged(false)}
+            className="absolute bottom-full left-0 z-10 mb-2 w-72 rounded-[10px] bg-surface p-1 shadow-raised"
+            style={{ animation: "pop-in 180ms cubic-bezier(0.23,1,0.32,1) both", transformOrigin: "bottom left" }}
+          >
+            <span
+              aria-hidden
+              className="pointer-events-none absolute inset-x-1 rounded-[6px] bg-hover"
+              style={{
+                top: rowBox?.top ?? 0,
+                height: rowBox?.height ?? 0,
+                opacity: rowBox && engaged && rows.length > 0 ? 1 : 0,
+                transition: "top 220ms cubic-bezier(0.23,1,0.32,1), height 220ms cubic-bezier(0.23,1,0.32,1), opacity 150ms ease",
               }}
-              onMouseDown={(event) => event.preventDefault()}
-              onMouseEnter={() => setModelHovered(i)}
-              onClick={() => {
-                selectModel(m);
-                inputRef.current?.focus();
-              }}
-              className="relative z-10 flex h-7.5 w-full items-center gap-2 rounded-[6px] px-2 text-left"
-            >
-              <span className="min-w-0 flex-1 truncate text-[12.5px] font-medium text-ink">{m.name}</span>
-              <span className="shrink-0 text-[11px] text-ink-3">{m.tag}</span>
-              <span className={`shrink-0 text-ink ${m.key === model.key ? "" : "invisible"}`}>
-                <Icon size={13} strokeWidth={2.5}><path d="M20 6L9 17l-5-5" /></Icon>
-              </span>
-            </button>
-          ))}
-        </div>
-      )}
-
-      {/* ── composer ───────────────────────────────────── */}
-      <div
-        className={`relative isolate flex flex-col overflow-hidden border border-line bg-surface shadow-card transition-[border-color,border-radius] duration-150 focus-within:border-line-strong ${
-          tall ? "gap-2.5 p-3.5" : "gap-1.5 p-1.5"
-        } ${
-          pill ? (attachments.length > 0 || wide ? "rounded-[24px]" : "rounded-full") : tall ? "rounded-[22px]" : "rounded-[14px]"
-        }`}
-      >
-        {/* rainbow glimm sweep — plays across the interior on model change.
-            explicit w/h: a <canvas> is a replaced element and won't stretch
-            to inset-0 alone, which feeds back into the shader's ResizeObserver. */}
-        <canvas
-          ref={glimmRef}
-          aria-hidden="true"
-          className="pointer-events-none absolute inset-0 -z-10 h-full w-full"
-          style={{ borderRadius: "inherit" }}
-        />
-        <span
-          ref={measureRef}
-          aria-hidden="true"
-          className="pointer-events-none absolute invisible whitespace-pre text-[13px] leading-[18px]"
-        >
-          {draft}
-        </span>
-
-        {attachments.length > 0 && (
-          <div className={`flex flex-wrap gap-1.5 pt-0.5 ${pill ? "px-1" : "px-0.5"}`}>
-            {attachments.map((file, i) => (
-              <span
-                key={`${file}-${i}`}
-                className={`flex h-6.5 items-center gap-1.5 bg-field py-1 pr-1 pl-1.5 text-[11.5px] text-ink-2 shadow-hairline ${
-                  pill ? "rounded-full" : "rounded-chip"
-                }`}
-                style={{ animation: "pop-in 200ms cubic-bezier(0.23,1,0.32,1) both" }}
-              >
-                <Icon size={12}><g><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><path d="M14 2v6h6" /></g></Icon>
-                <span className="max-w-36 truncate">{file}</span>
+            />
+            {rows.map((row, i) => {
+              const source = menu === "at" ? SOURCES.find((s) => s.key === row.key) : undefined;
+              return (
                 <button
+                  key={row.key}
                   type="button"
-                  aria-label={`Remove ${file}`}
-                  onClick={() => setAttachments((current) => current.filter((_, j) => j !== i))}
-                  className={`-my-1 flex size-6 items-center justify-center text-ink-3 transition-colors duration-100 hover:bg-line/70 hover:text-ink ${
-                    pill ? "rounded-full" : "rounded-[5px]"
-                  }`}
+                  ref={(el) => {
+                    rowRefs.current[i] = el;
+                  }}
+                  onMouseDown={(event) => event.preventDefault()}
+                  onMouseEnter={() => {
+                    setActive(i);
+                    setEngaged(true);
+                  }}
+                  onClick={() => pick(row)}
+                  className="relative z-10 flex h-9 w-full items-center gap-2.5 rounded-[6px] px-2 text-left"
                 >
-                  <Icon size={10} strokeWidth={2.5}><path d="M18 6L6 18M6 6l12 12" /></Icon>
+                  {source && (
+                    <span className="flex size-5.5 shrink-0 items-center justify-center text-ink-2">
+                      {source.brand ? BRANDS[source.brand] : <Icon size={15}>{GLYPHS[source.glyph ?? "clip"]}</Icon>}
+                    </span>
+                  )}
+                  <span className="shrink-0 text-[12.5px] font-medium text-ink">
+                    {row.name}
+                  </span>
+                  <span className="min-w-0 flex-1 truncate text-[12px] text-ink-3">{row.desc}</span>
                 </button>
-              </span>
-            ))}
+              );
+            })}
+            {rows.length === 0 && (
+              <div className="flex h-9 items-center px-2 text-[12px] text-ink-3">
+                No matches for “{query}”
+              </div>
+            )}
+            <div className="mt-1 border-t border-line px-2 pt-1.5 pb-1 text-[11px] text-ink-3">
+              {menu === "at" ? "Type to search sources & files" : "Type to search commands"}
+            </div>
           </div>
         )}
 
+        {/* ── 3-Way Mode / Model Selector Popover ──────────── */}
+        {modelOpen && (
+          <div
+            onMouseLeave={() => setModelHovered(null)}
+            className="absolute z-30 w-64 rounded-[12px] border border-line bg-surface p-1.5 shadow-2xl"
+            style={{ left: modelMenuLeft, bottom: modelMenuBottom, animation: "pop-in 180ms cubic-bezier(0.23,1,0.32,1) both", transformOrigin: "bottom left" }}
+          >
+            <div className="px-2 py-1.5 border-b border-line mb-1">
+              <span className="text-[11px] font-semibold text-ink-3 uppercase tracking-wider block">Routing Strategy</span>
+              <span className="text-[10.5px] text-ink-3">Select how prompts are processed</span>
+            </div>
+
+            <span
+              aria-hidden
+              className="pointer-events-none absolute inset-x-1.5 rounded-[8px] bg-hover"
+              style={{
+                top: modelBox?.top ?? 0,
+                height: modelBox?.height ?? 0,
+                opacity: modelBox && modelHovered !== null ? 1 : 0,
+                transition: "top 220ms cubic-bezier(0.23,1,0.32,1), height 220ms cubic-bezier(0.23,1,0.32,1), opacity 150ms ease",
+              }}
+            />
+            {ROUTING_MODES.map((m, i) => {
+              const isSelected = m.key === routingMode;
+              return (
+                <button
+                  key={m.key}
+                  type="button"
+                  ref={(el) => {
+                    modelRowRefs.current[i] = el;
+                  }}
+                  onMouseDown={(event) => event.preventDefault()}
+                  onMouseEnter={() => setModelHovered(i)}
+                  onClick={() => selectRoutingMode(m)}
+                  className={`relative z-10 flex w-full flex-col gap-0.5 rounded-[8px] p-2 text-left transition-colors cursor-pointer ${
+                    isSelected ? "bg-accent-tint/30" : ""
+                  }`}
+                >
+                  <div className="flex items-center justify-between w-full">
+                    <span className="text-[12.5px] font-semibold text-ink flex items-center gap-1.5">
+                      {m.name}
+                    </span>
+                    <span className={`text-[10px] font-mono font-semibold px-1.5 py-0.2 rounded-full border ${
+                      isSelected ? "border-accent/40 bg-accent-tint text-accent" : "border-line bg-field text-ink-3"
+                    }`}>
+                      {m.tag}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-ink-3 leading-tight pr-2">{m.desc}</p>
+                </button>
+              );
+            })}
+          </div>
+        )}
+
+        {/* ── composer ───────────────────────────────────── */}
         <div
-          ref={controlsRef}
-          className={`grid items-end gap-x-1 gap-y-1.5 ${
-            wide
-              ? "grid-cols-[28px_auto_minmax(0,1fr)_28px_28px]"
-              : "grid-cols-[28px_minmax(0,1fr)_auto_28px_28px]"
-          }`}
+          className={`relative isolate flex flex-col overflow-hidden border border-line bg-surface shadow-card transition-[border-color,border-radius] duration-150 focus-within:border-line-strong ${
+            tall ? "gap-2.5 p-3.5" : "gap-1.5 p-1.5"
+          } ${
+            pill ? (attachments.length > 0 || wide ? "rounded-[24px]" : "rounded-full") : tall ? "rounded-[22px]" : "rounded-[14px]"
+          } ${rateLimitBlocked ? "opacity-75 border-red/40" : ""}`}
         >
-          <button
-            type="button"
-            aria-label="Add attachments and sources"
-            aria-expanded={plusOpen}
-            onClick={() => {
-              setModelOpen(false);
-              setPlusOpen((current) => !current);
-              inputRef.current?.focus();
-            }}
-            className={`flex size-7 shrink-0 items-center justify-center justify-self-start text-ink-3 transition-[background-color,color,transform] duration-150 hover:bg-hover hover:text-ink active:scale-[0.94] ${
-              pill ? "rounded-full" : "rounded-[8px]"
-            } ${plusOpen ? "bg-hover text-ink" : ""} ${wide ? "col-start-1 row-start-2" : "col-start-1 row-start-1"}`}
-          >
-            <Icon size={16} strokeWidth={2}><path d="M12 5v14M5 12h14" /></Icon>
-          </button>
-
-          <textarea
-            ref={inputRef}
-            rows={1}
-            value={draft}
-            onChange={(event) => {
-              setDraft(event.target.value);
-              setDismissed(false);
-              setPlusOpen(false);
-            }}
-            onKeyDown={(event) => {
-              if (menu && rows.length > 0) {
-                if (event.key === "ArrowDown" || event.key === "ArrowUp") {
-                  event.preventDefault();
-                  setEngaged(true);
-                  setActive((current) => (current + (event.key === "ArrowDown" ? 1 : rows.length - 1)) % rows.length);
-                  return;
-                }
-                if ((event.key === "Enter" && !event.shiftKey) || event.key === "Tab") {
-                  event.preventDefault();
-                  pick(rows[active]);
-                  return;
-                }
-              }
-              if (event.key === "Escape") {
-                setDismissed(true);
-                closeMenus();
-                return;
-              }
-              if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
-                event.preventDefault();
-                send();
-              }
-            }}
-            placeholder={listening ? "Listening…" : placeholder ?? "Ask Campus Genie anything"}
-            aria-label="Prompt"
-            className={`${tall ? "min-h-[68px] px-2 py-2 text-[14px] leading-5" : "min-h-7 px-1 py-[5px] text-[13px] leading-[18px]"} min-w-0 w-full resize-none bg-transparent text-ink outline-none [overflow-wrap:anywhere] placeholder:text-ink-3 ${
-              wide ? "col-span-full col-start-1 row-start-1" : "col-start-2 row-start-1"
-            }`}
+          {/* rainbow glimm sweep */}
+          <canvas
+            ref={glimmRef}
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-0 -z-10 h-full w-full"
+            style={{ borderRadius: "inherit" }}
           />
-
-          {/* model picker */}
-          <button
-            ref={modelRef}
-            type="button"
-            aria-expanded={modelOpen}
-            aria-label="Choose model"
-            onClick={() => {
-              setPlusOpen(false);
-              setModelOpen((current) => !current);
-            }}
-            className={`flex h-7 shrink-0 items-center gap-1 px-1.5 text-[12px] font-medium text-ink-2 transition-colors duration-150 hover:bg-hover hover:text-ink ${
-              pill ? "rounded-full" : "rounded-[8px]"
-            } ${wide ? "col-start-2 row-start-2 justify-self-start" : "col-start-3 row-start-1"}`}
+          <span
+            ref={measureRef}
+            aria-hidden="true"
+            className="pointer-events-none absolute invisible whitespace-pre text-[13px] leading-[18px]"
           >
-            {model.name}
-            <span className="text-ink-3">
-              <Icon size={11} strokeWidth={2.4}><path d="M6 9l6 6 6-6" /></Icon>
-            </span>
-          </button>
+            {draft}
+          </span>
 
-          {/* dictation */}
-          <button
-            type="button"
-            aria-label={listening ? "Stop dictation" : "Start dictation"}
-            aria-pressed={listening}
-            onClick={() => setListening((current) => !current)}
-            className={`flex size-7 shrink-0 items-center justify-center transition-[background-color,color,transform] duration-150 active:scale-[0.94] ${
-              pill ? "rounded-full" : "rounded-[8px]"
-            } ${listening ? "bg-accent-tint text-accent-ink" : "text-ink-3 hover:bg-hover hover:text-ink"} ${wide ? "col-start-4 row-start-2" : "col-start-4 row-start-1"}`}
+          {attachments.length > 0 && (
+            <div className={`flex flex-wrap gap-1.5 pt-0.5 ${pill ? "px-1" : "px-0.5"}`}>
+              {attachments.map((file, i) => (
+                <span
+                  key={`${file}-${i}`}
+                  className={`flex h-6.5 items-center gap-1.5 bg-field py-1 pr-1 pl-1.5 text-[11.5px] text-ink-2 shadow-hairline ${
+                    pill ? "rounded-full" : "rounded-chip"
+                  }`}
+                >
+                  <Icon size={12} strokeWidth={2}>
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                    <polyline points="14 2 14 8 20 8" />
+                  </Icon>
+                  <span className="max-w-28 truncate">{file}</span>
+                  <button
+                    type="button"
+                    aria-label={`Remove ${file}`}
+                    onClick={() => setAttachments((current) => current.filter((_, idx) => idx !== i))}
+                    className="flex size-4.5 items-center justify-center rounded-full text-ink-3 transition-colors hover:bg-hover hover:text-ink"
+                  >
+                    <Icon size={10} strokeWidth={2.4}><path d="M18 6 6 18M6 6l12 12" /></Icon>
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
+
+          {/* input grid */}
+          <div
+            ref={controlsRef}
+            className={`grid items-end gap-1.5 ${
+              wide ? "grid-cols-[auto_1fr_auto_auto_auto] gap-y-1.5" : "grid-cols-[auto_1fr_auto_auto_auto]"
+            }`}
           >
-            {listening ? (
-              <span className="flex h-3.5 items-center gap-[2.5px]">
-                {[0, 1, 2].map((i) => (
-                  <span
-                    key={i}
-                    className="w-[2.5px] rounded-full bg-current"
-                    style={{ height: "100%", animation: `eq-bounce 900ms ease-in-out ${i * 150}ms infinite` }}
-                  />
-                ))}
+            {/* plus button: opens the @ sources menu */}
+            <button
+              type="button"
+              aria-label="Add sources or files"
+              data-prompt-attach
+              aria-expanded={plusOpen}
+              disabled={rateLimitBlocked}
+              onClick={() => {
+                setModelOpen(false);
+                setPlusOpen((current) => !current);
+              }}
+              className={`flex size-7 shrink-0 items-center justify-center transition-colors duration-150 ${
+                pill ? "rounded-full" : "rounded-[8px]"
+              } ${
+                plusOpen ? "bg-hover text-ink" : "text-ink-3 hover:bg-hover hover:text-ink"
+              } ${wide ? "col-start-1 row-start-2" : "col-start-1 row-start-1"}`}
+            >
+              <Icon size={16} strokeWidth={2}><path d="M12 5v14M5 12h14" /></Icon>
+            </button>
+
+            {/* main composer input */}
+            <textarea
+              ref={inputRef}
+              rows={1}
+              value={draft}
+              disabled={rateLimitBlocked}
+              onChange={(e) => {
+                setDraft(e.target.value);
+                setDismissed(false);
+              }}
+              onKeyDown={onKeyDown}
+              placeholder={
+                rateLimitBlocked
+                  ? `Cooldown active: unlocks in ${formatCountdown(rateLimitSecondsRemaining)}`
+                  : placeholder || "Ask Campus Genie anything (Type @ for sources, / for commands)"
+              }
+              className={`w-full resize-none bg-transparent px-1 py-1 text-[13.5px] leading-[20px] text-ink outline-none placeholder:text-ink-3 ${
+                wide ? "col-span-full col-start-1 row-start-1" : "col-start-2 row-start-1"
+              } ${rateLimitBlocked ? "cursor-not-allowed opacity-60" : ""}`}
+            />
+
+            {/* 3-Way Mode selector pill button */}
+            <button
+              ref={modelRef}
+              type="button"
+              aria-expanded={modelOpen}
+              aria-label="Choose routing mode"
+              disabled={rateLimitBlocked}
+              onClick={() => {
+                setPlusOpen(false);
+                setModelOpen((current) => !current);
+              }}
+              className={`flex h-7 shrink-0 items-center gap-1.5 px-2 text-[12px] font-medium text-ink-2 transition-colors duration-150 hover:bg-hover hover:text-ink border border-line bg-surface ${
+                pill ? "rounded-full" : "rounded-[8px]"
+              } ${wide ? "col-start-2 row-start-2 justify-self-start" : "col-start-3 row-start-1"}`}
+            >
+              <span className={`size-1.5 rounded-full ${
+                routingMode === "auto" ? "bg-cyan-500" : routingMode === "genie" ? "bg-accent animate-pulse" : "bg-emerald-500"
+              }`} />
+              <span>{currentModeOption.name}</span>
+              <span className="text-ink-3">
+                <Icon size={11} strokeWidth={2.4}><path d="M6 9l6 6 6-6" /></Icon>
               </span>
-            ) : (
-              <Icon size={15} strokeWidth={2}><g><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z" /><path d="M19 10v2a7 7 0 0 1-14 0v-2M12 19v3" /></g></Icon>
-            )}
-          </button>
+            </button>
 
-          {/* send/stop — the same control cancels an in-flight agent run */}
-          <button
-            type="button"
-            aria-label={isWorking ? "Stop response" : "Send"}
-            title={isWorking ? "Stop response" : "Send"}
-            disabled={!isWorking && !canSend}
-            onClick={send}
-            className={`flex size-7 shrink-0 items-center justify-center transition-[background-color,color,transform] duration-200 enabled:active:scale-[0.94] ${
-              pill ? "rounded-full" : "rounded-[8px]"
-            } ${wide ? "col-start-5 row-start-2" : "col-start-5 row-start-1"}`}
-            style={{
-              background: isWorking || canSend ? "var(--ink)" : "var(--line-strong)",
-              color: isWorking || canSend ? "var(--surface)" : "var(--ink-2)",
-            }}
-          >
-            {isWorking ? (
-              <Icon size={14} strokeWidth={2.5}><rect x="7" y="7" width="10" height="10" rx="1.5" /></Icon>
-            ) : (
-              <Icon size={16} strokeWidth={2.4}><path d="M12 19V5M5 12l7-7 7 7" /></Icon>
-            )}
-          </button>
+            {/* dictation button */}
+            <button
+              type="button"
+              aria-label={listening ? "Stop dictation" : "Start dictation"}
+              aria-pressed={listening}
+              disabled={rateLimitBlocked}
+              onClick={() => setListening((current) => !current)}
+              className={`flex size-7 shrink-0 items-center justify-center transition-[background-color,color,transform] duration-150 active:scale-[0.94] ${
+                pill ? "rounded-full" : "rounded-[8px]"
+              } ${listening ? "bg-accent-tint text-accent-ink" : "text-ink-3 hover:bg-hover hover:text-ink"} ${
+                wide ? "col-start-4 row-start-2" : "col-start-4 row-start-1"
+              }`}
+            >
+              {listening ? (
+                <span className="flex h-3.5 items-center gap-[2.5px]">
+                  {[0, 1, 2].map((i) => (
+                    <span
+                      key={i}
+                      className="w-[2.5px] rounded-full bg-current"
+                      style={{ height: "100%", animation: `eq-bounce 900ms ease-in-out ${i * 150}ms infinite` }}
+                    />
+                  ))}
+                </span>
+              ) : (
+                <Icon size={15} strokeWidth={2}><g><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z" /><path d="M19 10v2a7 7 0 0 1-14 0v-2M12 19v3" /></g></Icon>
+              )}
+            </button>
+
+            {/* send/stop button */}
+            <button
+              type="button"
+              aria-label={isWorking ? "Stop response" : "Send"}
+              data-prompt-send={!isWorking ? "true" : undefined}
+              data-prompt-stop={isWorking ? "true" : undefined}
+              title={isWorking ? "Stop response" : "Send"}
+              disabled={(!isWorking && !canSend) || rateLimitBlocked}
+              onClick={send}
+              className={`flex size-7 shrink-0 items-center justify-center transition-[background-color,color,transform] duration-200 enabled:active:scale-[0.94] ${
+                pill ? "rounded-full" : "rounded-[8px]"
+              } ${wide ? "col-start-5 row-start-2" : "col-start-5 row-start-1"}`}
+              style={{
+                background: isWorking || canSend ? "var(--ink)" : "var(--line-strong)",
+                color: isWorking || canSend ? "var(--surface)" : "var(--ink-2)",
+              }}
+            >
+              {isWorking ? (
+                <Icon size={14} strokeWidth={2.5}><rect x="7" y="7" width="10" height="10" rx="1.5" /></Icon>
+              ) : (
+                <Icon size={16} strokeWidth={2.4}><path d="M12 19V5M5 12l7-7 7 7" /></Icon>
+              )}
+            </button>
+          </div>
         </div>
-      </div>
       </div>
     </div>
   );

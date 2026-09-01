@@ -76,6 +76,7 @@ export default function AdminPage() {
       <KeyboardShortcutsModal
         isOpen={shortcutsOpen}
         onClose={() => setShortcutsOpen(false)}
+        onOpen={() => setShortcutsOpen(true)}
       />
     </main>
   );

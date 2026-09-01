@@ -432,6 +432,7 @@ export default function GalleryPage() {
       <KeyboardShortcutsModal
         isOpen={shortcutsOpen}
         onClose={() => setShortcutsOpen(false)}
+        onOpen={() => setShortcutsOpen(true)}
       />
     </main>
   );

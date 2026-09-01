@@ -1134,6 +1134,7 @@ export default function AttendancePage() {
       <KeyboardShortcutsModal
         isOpen={shortcutsOpen}
         onClose={() => setShortcutsOpen(false)}
+        onOpen={() => setShortcutsOpen(true)}
       />
     </main>
   );

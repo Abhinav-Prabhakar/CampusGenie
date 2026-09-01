@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { fetchWithAutoRetry, LLM_TOOLS } from "@/lib/llm";
 import { executeLakehouseSql } from "@/lib/lakehouse";
 import { streamGenieConversation } from "@/lib/genie";
+import { checkRateLimit } from "@/lib/rateLimiter";
 
 export const runtime = "nodejs";
 
@@ -62,8 +63,13 @@ function createGenieResponse(req: NextRequest, prompt: string) {
   });
 }
 
-const SYSTEM_PROMPT = `You are "Campus Genie", an AI lakehouse intelligence agent powered natively by Databricks Lakehouse with Unity Catalog (workspace.campus_explorer schema).
-You help university students explore campus events, research labs, student clubs, hackathons, surveys, alumni career pathways, cafe supply chain inventory, and city tech ecosystems (e.g. Bengaluru Indiranagar & Koramangala tech meetups).
+const SYSTEM_PROMPT = `You are "Campus Genie", the official AI lakehouse intelligence assistant for Databricks University powered natively by Databricks Lakehouse with Unity Catalog (workspace.campus_explorer schema).
+You help university students explore campus events, courses, attendance tracking, academic recovery plans, research labs, student clubs, hackathons, surveys, alumni career pathways, and student administrative workflows.
+
+CRITICAL SCOPE & RELEVANCE ENFORCEMENT:
+- You must ONLY answer questions and assist with topics strictly relevant to Databricks University campus life, academics, courses, attendance, recovery plans, student clubs, hackathons, campus navigation, Lakehouse data queries, and student administrative tasks.
+- You must NOT answer questions that are completely irrelevant to the campus, academics, or university operations (such as general pop-culture trivia, non-campus political discussions, unrelated coding questions, celebrity gossip, or general creative writing).
+- If a user prompt is outside the scope of campus life and university operations, politely decline to answer and guide them back to campus events, coursework, attendance, or academic resources.
 
 Governed Unity Catalog Delta Tables in schema 'workspace.campus_explorer':
 1. workspace.campus_explorer.campus_events (event_id, title, category, host_organization, host_code, location, is_virtual, event_date, start_time, duration, capacity, registered_count, food_provided, is_featured, status, visibility, tags, description)
@@ -73,6 +79,7 @@ Governed Unity Catalog Delta Tables in schema 'workspace.campus_explorer':
 5. workspace.campus_explorer.city_tech_events (meetup_id, title, organizer, neighborhood, venue_address, event_date, start_time, entry_fee_inr, attendee_count, domain, commute_mins_from_campus)
 6. workspace.campus_explorer.alumni_career_pathways (alumni_id, graduation_year, major, campus_clubs_joined, research_labs_joined, first_job_title, first_company, current_role, current_organization, primary_domain, advice_summary)
 7. workspace.campus_explorer.procurement_inventory (item_id, item_name, category, current_stock, min_reorder_threshold, preferred_supplier, unit_price_inr, lead_time_days, last_restock_date)
+8. workspace.campus_explorer.student_attendance_logs (log_id, student_id, course_id, session_date, status, check_in_time, verification_method, notes)
 
 Available Governed Tools:
 - ask_questions: Trigger an interactive multi-step MCQ survey in the chat to collect student preferences, interests, experience level, dietary restrictions, event tracks, or schedule availability. Use this tool autonomously whenever the student asks for recommendations, asks to be guided, or when you need structured inputs.
@@ -97,27 +104,56 @@ Instructions:
 
 export async function POST(req: NextRequest) {
   try {
+    // 1. Quota & Rate Limiter Check (RPM & RPD)
+    const clientIp =
+      req.headers.get("x-forwarded-for")?.split(",")[0].trim() ||
+      req.headers.get("x-real-ip") ||
+      "client_user";
+
+    const rateLimitCheck = checkRateLimit(clientIp);
+    if (!rateLimitCheck.allowed) {
+      return NextResponse.json(
+        {
+          error: `Rate limit quota exceeded (${rateLimitCheck.limitType === "RPM" ? "Requests per minute limit reached" : "Daily prompt quota reached"}). Please wait before sending more prompts.`,
+          rateLimit: {
+            isBlocked: true,
+            limitType: rateLimitCheck.limitType,
+            retryAfterSeconds: rateLimitCheck.retryAfterSeconds || 60,
+            resetAt: rateLimitCheck.resetAt || Date.now() + 60000,
+          },
+        },
+        { status: 429 }
+      );
+    }
+
     const body = await req.json();
     const {
       messages = [],
       model: inputModel,
       provider: inputProvider = "openai",
+      routingMode = "auto", // "auto" | "genie" | "qwen"
       customApiKey,
       customBaseUrl,
     } = body;
 
     const latestPrompt = [...messages].reverse().find((message: { role?: string }) => message.role === "user")?.content;
-    const requestsGenie = inputModel === "env-default" || inputModel === "databricks-genie-agent" || inputProvider === "databricks";
+
+    // 2. Routing Mode Resolution
+    // Mode "genie": Force Databricks Genie Space directly
+    if (routingMode === "genie" && latestPrompt) {
+      return createGenieResponse(req, latestPrompt);
+    }
+
+    // Mode "auto": Auto-classify read-only queries to Genie, updates to Qwen/App LLM
+    const requestsGenie = routingMode === "auto" && (inputModel === "env-default" || inputModel === "databricks-genie-agent" || inputProvider === "databricks");
     const routeToGenie = requestsGenie && latestPrompt ? await canAnswerWithGenie(latestPrompt, req.signal) : false;
     if (routeToGenie && latestPrompt) return createGenieResponse(req, latestPrompt);
 
-    const model = (requestsGenie || !inputModel || inputModel === "env-default")
+    // Mode "qwen" or App LLM execution
+    const model = (requestsGenie || !inputModel || inputModel === "env-default" || inputModel === "qwen")
       ? (process.env.LLM_MODEL || process.env.NEXT_PUBLIC_DEFAULT_MODEL || "gpt-4o")
       : inputModel;
 
-    // If Genie classification says this needs an action, use the app's own
-    // configured LLM instead of sending a write request to the read-only
-    // Genie Agent.
     let provider = requestsGenie && !routeToGenie ? "custom" : inputProvider;
     if (provider === "custom" && !customBaseUrl && !process.env.LLM_BASE_URL) {
       const lower = model.toLowerCase();

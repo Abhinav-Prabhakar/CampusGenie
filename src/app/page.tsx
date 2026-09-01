@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useMemo } from "react";
 import SidebarNav, { type SidebarRecent } from "@/components/primitives/SidebarNav";
-import PromptBar from "@/components/primitives/PromptBar";
+import PromptBar, { type RoutingMode } from "@/components/primitives/PromptBar";
 import ThinkingState from "@/components/primitives/ThinkingState";
 import LoadingState from "@/components/primitives/LoadingState";
 import ApprovalCard from "@/components/primitives/ApprovalCard";
@@ -189,6 +189,10 @@ export default function CampusGenieChatPage() {
 
   const [models, setModels] = useState<LLMModelConfig[]>(DEFAULT_AVAILABLE_MODELS);
   const [selectedModel, setSelectedModel] = useState<LLMModelConfig>(DEFAULT_AVAILABLE_MODELS[0]);
+  const [routingMode, setRoutingMode] = useState<RoutingMode>("auto");
+  const [rateLimitBlocked, setRateLimitBlocked] = useState<boolean>(false);
+  const [rateLimitSecondsRemaining, setRateLimitSecondsRemaining] = useState<number>(0);
+  const [rateLimitMessage, setRateLimitMessage] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [activeTitle, setActiveTitle] = useState<string | null>(null);
   const [currentThreadId, setCurrentThreadId] = useState<string | null>(null);
@@ -196,6 +200,31 @@ export default function CampusGenieChatPage() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState<boolean>(false);
   const [shortcutsOpen, setShortcutsOpen] = useState<boolean>(false);
+  
+  // Rate limit countdown effect
+  useEffect(() => {
+    if (!rateLimitBlocked || rateLimitSecondsRemaining <= 0) {
+      if (rateLimitBlocked && rateLimitSecondsRemaining <= 0) {
+        setRateLimitBlocked(false);
+        setRateLimitMessage(null);
+      }
+      return;
+    }
+
+    const timer = setInterval(() => {
+      setRateLimitSecondsRemaining((prev) => {
+        if (prev <= 1) {
+          clearInterval(timer);
+          setRateLimitBlocked(false);
+          setRateLimitMessage(null);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [rateLimitBlocked, rateLimitSecondsRemaining]);
   
   // Custom API settings
   const [customApiKey, setCustomApiKey] = useState<string>("");
@@ -399,6 +428,7 @@ export default function CampusGenieChatPage() {
           messages: newMessages.map((m) => ({ role: m.role, content: m.content })),
           model: selectedModel.id,
           provider: selectedModel.provider,
+          routingMode,
           customApiKey: effectiveApiKey,
           customBaseUrl: effectiveBaseUrl,
         }),
@@ -406,6 +436,11 @@ export default function CampusGenieChatPage() {
 
       if (!response.ok) {
         const errData = await response.json().catch(() => ({ error: response.statusText }));
+        if (response.status === 429 && errData.rateLimit) {
+          setRateLimitBlocked(true);
+          setRateLimitSecondsRemaining(errData.rateLimit.retryAfterSeconds || 60);
+          setRateLimitMessage(errData.error);
+        }
         throw new Error(errData.error || `HTTP ${response.status} ${response.statusText}`);
       }
 
@@ -997,6 +1032,11 @@ export default function CampusGenieChatPage() {
                 demo={false}
                 isWorking={isLoading}
                 onStop={handleStop}
+                routingMode={routingMode}
+                onSelectRoutingMode={setRoutingMode}
+                rateLimitBlocked={rateLimitBlocked}
+                rateLimitSecondsRemaining={rateLimitSecondsRemaining}
+                rateLimitMessage={rateLimitMessage}
               />
             </div>
           </div>
@@ -1220,6 +1260,7 @@ export default function CampusGenieChatPage() {
       <KeyboardShortcutsModal
         isOpen={shortcutsOpen}
         onClose={() => setShortcutsOpen(false)}
+        onOpen={() => setShortcutsOpen(true)}
       />
     </main>
   );

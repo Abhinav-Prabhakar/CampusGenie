@@ -82,6 +82,7 @@ export default function SourcesPage() {
       <KeyboardShortcutsModal
         isOpen={shortcutsOpen}
         onClose={() => setShortcutsOpen(false)}
+        onOpen={() => setShortcutsOpen(true)}
       />
     </main>
   );

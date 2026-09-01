@@ -669,7 +669,7 @@ export default function EventsView({ onAskGenie }: { onAskGenie?: (prompt: strin
         {/* Toolbar */}
         <div className="toolbar">
           <div className="seg-scroll">
-            <div className="seg" role="tablist" aria-label="Filter by category">
+            <div className="seg" role="tablist" aria-label="Filter by category" data-shortcut-filters tabIndex={0}>
               <span className="seg-glide" style={{ transform: glideTransform }} aria-hidden="true" />
               {[
                 { id: "all", label: "All" },

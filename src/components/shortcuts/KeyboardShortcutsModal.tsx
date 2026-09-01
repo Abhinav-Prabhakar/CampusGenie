@@ -353,9 +353,11 @@ const SHORTCUTS: ShortcutItem[] = [
 export default function KeyboardShortcutsModal({
   isOpen,
   onClose,
+  onOpen,
 }: {
   isOpen: boolean;
   onClose: () => void;
+  onOpen?: () => void;
 }) {
   const [platform, setPlatform] = useState<"mac" | "win" | "linux">("mac");
   const [showAdvanced, setShowAdvanced] = useState<boolean>(false);
@@ -374,24 +376,67 @@ export default function KeyboardShortcutsModal({
     }
   }, []);
 
-  // Keyboard shortcut listener
+  // Keyboard shortcut listener. Bindings invoke real controls through stable
+  // data attributes so the reference and the UI cannot drift apart.
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Toggle palette on ⌘K or Ctrl+K or ? (Shift+/)
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+      const target = e.target as HTMLElement | null;
+      const isTyping = !!target?.closest("input, textarea, select, [contenteditable=\"true\"]");
+      const isMac = typeof navigator !== "undefined" && /mac/i.test(navigator.platform);
+      const modifier = isMac ? e.metaKey : e.ctrlKey;
+      const click = (selector: string) => (document.querySelector(selector) as HTMLElement | null)?.click();
+      const focus = (selector: string) => (document.querySelector(selector) as HTMLElement | null)?.focus();
+      const run = (action: () => void) => {
+        e.preventDefault();
+        action();
+      };
+
+      if (modifier && e.key.toLowerCase() === "k") {
         e.preventDefault();
         if (isOpen) onClose();
-      } else if (e.key === "?" && !isOpen && (e.target as HTMLElement)?.tagName !== "INPUT" && (e.target as HTMLElement)?.tagName !== "TEXTAREA") {
+        else onOpen?.();
+        return;
+      }
+      if (e.key === "?" && !isOpen && !isTyping) {
         e.preventDefault();
-      } else if (isOpen) {
-        if (e.key === "Escape") {
+        onOpen?.();
+        return;
+      }
+      if (e.key === "Escape") {
+        if (isOpen) {
           e.preventDefault();
           onClose();
-        } else if (e.key === "/" && (e.target as HTMLElement)?.tagName !== "INPUT") {
+        }
+        return;
+      }
+      if (isOpen) {
+        if (e.key === "/" && target?.tagName !== "INPUT") {
           e.preventDefault();
           searchInputRef.current?.focus();
         }
+        return;
       }
+      if (isTyping && !(modifier && e.key === "Enter")) return;
+
+      const key = e.key.toLowerCase();
+      if (modifier && key === "n") run(() => click("[data-shortcut-new-thread]"));
+      else if (modifier && key === "enter") run(() => click("[data-prompt-send]"));
+      else if (modifier && key === ".") run(() => click("[data-prompt-stop]"));
+      else if (modifier && key === "/") run(() => click("[data-shortcut-sql]"));
+      else if (modifier && e.shiftKey && key === "a") run(() => click("[data-prompt-attach]"));
+      else if (modifier && e.shiftKey && key === "c") run(() => click("[aria-label=\"Copy code\"]"));
+      else if (modifier && e.shiftKey && key === "l") run(() => click("[title=\"Toggle Theme\"]"));
+      else if (modifier && key === "b") run(() => click("[aria-label=\"Collapse sidebar\"]:not([aria-hidden=\"true\"]), [aria-label=\"Expand sidebar\"]:not([aria-hidden=\"true\"])") );
+      else if (modifier && key === "[") run(() => window.history.back());
+      else if (key === "/") run(() => focus("[aria-label=\"Search events\"]"));
+      else if (key === "f") run(() => focus("[data-shortcut-filters]"));
+      else if (key === "j") run(() => window.scrollBy({ top: Math.max(240, window.innerHeight * 0.7), behavior: "smooth" }));
+      else if (key === "k") run(() => window.scrollBy({ top: -Math.max(240, window.innerHeight * 0.7), behavior: "smooth" }));
+      else if (key === "s") run(() => click("article:hover .save"));
+      else if (key === "enter") run(() => click("article:hover .rsvp"));
+      else if (e.altKey && key === "f") run(() => click("[data-shortcut-freeze]"));
+      else if (e.key === "ArrowRight") run(() => click("[data-shortcut-next-week]"));
+      else if (e.key === "ArrowLeft") run(() => click("[data-shortcut-prev-week]"));
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
