@@ -21,8 +21,30 @@ type GenieConfig = {
 
 async function getDatabricksToken(): Promise<string> {
   if (process.env.DATABRICKS_TOKEN) return process.env.DATABRICKS_TOKEN;
-  const { stdout } = await execFileAsync("databricks", ["auth", "token"], { maxBuffer: 1024 * 1024 });
-  return JSON.parse(stdout).access_token;
+
+  // Desktop-launched Next processes may not inherit the shell PATH. Keep
+  // token auth as the preferred deployment path, but make local U2M auth
+  // work with the standard macOS/Linux CLI locations as well.
+  const candidates = [
+    process.env.DATABRICKS_CLI_PATH,
+    "/opt/homebrew/bin/databricks",
+    "/usr/local/bin/databricks",
+    "databricks",
+  ].filter((path): path is string => Boolean(path));
+  let lastError: unknown;
+  for (const executable of candidates) {
+    try {
+      const { stdout } = await execFileAsync(executable, ["auth", "token"], { maxBuffer: 1024 * 1024 });
+      const token = JSON.parse(stdout).access_token;
+      if (token) return token;
+    } catch (error: any) {
+      lastError = error;
+      if (error?.code !== "ENOENT") throw error;
+    }
+  }
+  throw new Error(
+    `Databricks authentication is not configured. Set DATABRICKS_TOKEN${lastError instanceof Error ? ` (${lastError.message})` : ""}.`
+  );
 }
 
 async function genieFetch(config: GenieConfig, path: string, init: RequestInit = {}) {
