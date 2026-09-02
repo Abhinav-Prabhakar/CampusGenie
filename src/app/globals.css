@@ -1494,6 +1494,39 @@ th.is-colsel .records-header-icon {
   }
 }
 
+/* Teammate stat bars grow from the left when a card enters (final width is
+ * set inline; the transform animates relative to it). */
+@keyframes bar-scale {
+  from {
+    transform: scaleX(0);
+  }
+}
+
+/* Campus Wrapped counter block entrance */
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+}
+
+@keyframes confetti-drift {
+  0% {
+    opacity: 0;
+    transform: translateY(-8px) rotate(0deg);
+  }
+  12% {
+    opacity: 1;
+  }
+  85% {
+    opacity: 0.9;
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(52px) rotate(150deg);
+  }
+}
+
 @keyframes eq-bounce {
   0%,
   100% {
