@@ -9,7 +9,9 @@ type AttendanceItem = { courseCode: string; title: string; present: number; tota
 type SourceItem = { id: string; name: string; category: string; description: string; status: string; chunks: number };
 type ChatMessage = { role: "user" | "assistant"; content: string; events?: EventItem[] };
 
-const API_BASE = (import.meta.env.VITE_API_BASE_URL || "").replace(/\/$/, "");
+const API_BASE = (
+  import.meta.env.VITE_API_BASE_URL || "https://campus-genie-ivory.vercel.app"
+).replace(/\/$/, "");
 const nav: Array<[Tab, string, typeof Home]> = [["home", "Today", Home], ["genie", "Genie", Sparkles], ["events", "Events", CalendarDays], ["attendance", "Classes", GraduationCap], ["sources", "Sources", Library]];
 const features = [
   ["Ask Genie", "Answers grounded in your campus Lakehouse", Sparkles, "genie"],

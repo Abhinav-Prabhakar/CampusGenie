@@ -7,7 +7,7 @@ const config: CapacitorConfig = {
   server: {
     url: "https://campus-genie-mobile-7474648667884734.aws.databricksapps.com",
     androidScheme: "https",
-    allowNavigation: ["*.databricks.com", "*.databricksapps.com"]
+    allowNavigation: ["*.databricks.com", "*.databricksapps.com", "campus-genie-ivory.vercel.app"]
   }
 };
 export default config;

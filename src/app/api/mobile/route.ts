@@ -5,10 +5,22 @@ import { streamGenieConversation } from "@/lib/genie";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const allowedOrigins = new Set(["https://localhost", "http://localhost", "capacitor://localhost"]);
+const allowedOrigins = new Set([
+  "https://localhost",
+  "http://localhost",
+  "capacitor://localhost",
+  "https://campus-genie-mobile-7474648667884734.aws.databricksapps.com",
+]);
 function headers(request: NextRequest) {
   const origin = request.headers.get("origin") || "";
-  return { "Access-Control-Allow-Origin": allowedOrigins.has(origin) ? origin : "https://localhost", "Access-Control-Allow-Methods": "GET,POST,OPTIONS", "Access-Control-Allow-Headers": "Content-Type", Vary: "Origin", "Cache-Control": "no-store" };
+  const corsOrigin = allowedOrigins.has(origin) ? origin : "https://localhost";
+  return {
+    "Access-Control-Allow-Origin": corsOrigin,
+    "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization",
+    Vary: "Origin",
+    "Cache-Control": "no-store",
+  };
 }
 function json(request: NextRequest, body: unknown, status = 200) { return NextResponse.json(body, { status, headers: headers(request) }); }
 function text(value: unknown) { return value == null ? "" : String(value); }
