@@ -22,10 +22,13 @@ CREATE TABLE IF NOT EXISTS app_users (
 USING DELTA
 TBLPROPERTIES ('delta.enableChangeDataFeed' = 'true');
 
--- Lazy migration for tables provisioned before newer columns existed.
-ALTER TABLE app_users ADD COLUMN IF NOT EXISTS college STRING;
-ALTER TABLE app_users ADD COLUMN IF NOT EXISTS phone_number STRING;
-ALTER TABLE campus_events ADD COLUMN IF NOT EXISTS whatsapp_url STRING;
+-- Lazy migrations for tables provisioned before these columns existed.
+-- NOTE: SQL warehouses reject `ADD COLUMN IF NOT EXISTS`, so these are plain
+-- ALTERs — on re-runs they fail with FIELD_ALREADY_EXISTS, which the init
+-- script tolerates and continues past.
+ALTER TABLE app_users ADD COLUMN college STRING;
+ALTER TABLE app_users ADD COLUMN phone_number STRING;
+ALTER TABLE campus_events ADD COLUMN whatsapp_url STRING;
 
 -- 0b. Per-user chat threads (server-side chat history)
 CREATE TABLE IF NOT EXISTS chat_threads (

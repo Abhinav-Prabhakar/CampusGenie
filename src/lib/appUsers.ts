@@ -80,15 +80,21 @@ export async function ensureAppUser(userId: string): Promise<AppUser | null> {
   }
 
   // Tables provisioned before the college/phone columns existed need a lazy migration.
+  // SQL warehouses reject `ADD COLUMN IF NOT EXISTS`, so use plain ALTERs and
+  // tolerate FIELD_ALREADY_EXISTS on tables that already have the columns.
   try {
     await executeLakehouseSql(
-      "ALTER TABLE workspace.campus_explorer.app_users ADD COLUMN IF NOT EXISTS college STRING"
-    );
-    await executeLakehouseSql(
-      "ALTER TABLE workspace.campus_explorer.app_users ADD COLUMN IF NOT EXISTS phone_number STRING"
+      "ALTER TABLE workspace.campus_explorer.app_users ADD COLUMN college STRING"
     );
   } catch {
-    console.warn("[ensureAppUser] column migration skipped");
+    // college column already exists (or migration otherwise skipped) — proceed.
+  }
+  try {
+    await executeLakehouseSql(
+      "ALTER TABLE workspace.campus_explorer.app_users ADD COLUMN phone_number STRING"
+    );
+  } catch {
+    // phone_number column already exists (or migration otherwise skipped) — proceed.
   }
 
   const insertRes = await executeLakehouseSql(`
