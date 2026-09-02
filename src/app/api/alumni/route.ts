@@ -20,11 +20,11 @@ export type AlumniRecord = {
 
 /** Mentorship availability is derived deterministically from the alumni id so
  *  the mapping is stable across reloads without extra storage. */
-export type AlumniAvailability = "strong" | "weak" | "veryweak" | "none";
+type AlumniAvailability = "strong" | "weak" | "veryweak" | "none";
 
 const AVAILABILITY_BY_HASH: AlumniAvailability[] = ["strong", "weak", "strong", "veryweak", "strong", "none", "weak", "strong"];
 
-export function availabilityFor(alumniId: string): AlumniAvailability {
+function availabilityFor(alumniId: string): AlumniAvailability {
   let hash = 0;
   for (let i = 0; i < alumniId.length; i++) {
     hash = (hash * 31 + alumniId.charCodeAt(i)) >>> 0;
