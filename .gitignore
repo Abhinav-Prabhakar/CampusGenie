@@ -79,3 +79,4 @@ __pycache__/
 /mobile/android/app/build/
 /mobile/android/app/src/main/assets/
 /mobile/android/app/src/main/res/xml/config.xml
+.clerk/

@@ -16,10 +16,11 @@ export const clerkAppearance = {
     fontFamily: "var(--font-inter), Inter, sans-serif",
   },
   elements: {
-    rootBox: "w-full",
-    cardBox: "w-full",
-    card: "bg-transparent shadow-none",
-    headerSubtitle: "text-ink-2",
+    rootBox: "w-full flex justify-center items-center m-0 p-0",
+    cardBox: "w-full flex justify-center items-center m-0 p-0 shadow-none border-none bg-transparent",
+    card: "w-full bg-transparent shadow-none border-none p-0 m-0",
+    headerTitle: "text-center text-ink font-semibold",
+    headerSubtitle: "text-center text-ink-2",
     socialButtonsBlockButton: "!bg-inset !border-line !text-ink hover:!bg-hover",
     formFieldLabel: "text-ink-2",
     formButtonPrimary:
