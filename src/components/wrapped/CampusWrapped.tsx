@@ -252,7 +252,7 @@ export default function CampusWrapped() {
                     className="flex size-10 shrink-0 items-center justify-center rounded-[10px] border"
                     style={{ color: card.color, background: card.tint, borderColor: "color-mix(in srgb, currentColor 24%, transparent)" }}
                   >
-                    {card.icon}
+                    <Icon size={18}>{card.icon}</Icon>
                   </span>
                   <div className="min-w-0">
                     <div className="text-[24px] font-semibold leading-none text-ink tabular-nums">
