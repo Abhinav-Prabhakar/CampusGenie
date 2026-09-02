@@ -82,8 +82,8 @@ function GenieScreen({ initialPrompt }: { initialPrompt: string }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const end = useRef<HTMLDivElement>(null);
-  useEffect(() => setText(initialPrompt), [initialPrompt]);
-  useEffect(() => end.current?.scrollIntoView({ behavior: "smooth" }), [messages, busy]);
+  useEffect(() => { setText(initialPrompt); }, [initialPrompt]);
+  useEffect(() => { end.current?.scrollIntoView({ behavior: "smooth" }); }, [messages, busy]);
   const send = async (value = text) => {
     const prompt = value.trim(); if (!prompt || busy) return;
     setText(""); setError(""); setMessages(current => [...current, { role: "user", content: prompt }]); setBusy(true);
