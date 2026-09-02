@@ -250,3 +250,29 @@ CREATE TABLE IF NOT EXISTS teammate_swipes (
   created_at TIMESTAMP
 )
 USING DELTA;
+
+-- 14. Complaint Box (per-user grievance submissions; anonymous rows have NULL user_id)
+CREATE TABLE IF NOT EXISTS complaints (
+  complaint_id STRING,
+  user_id STRING,                   -- Clerk user id; NULL when submitted anonymously
+  title STRING,
+  category STRING,
+  location STRING,
+  urgency STRING,                   -- 'low' | 'medium' | 'high' | 'urgent'
+  description STRING,
+  is_anonymous BOOLEAN,
+  status STRING,                    -- 'open' | 'in_review' | 'resolved'
+  created_at TIMESTAMP
+)
+USING DELTA;
+
+-- 15. Alumni intro requests (student → alumni office mentorship intros)
+CREATE TABLE IF NOT EXISTS alumni_intro_requests (
+  request_id STRING,
+  user_id STRING NOT NULL,          -- Clerk user id of the requesting student
+  alumni_id STRING,                 -- alumni_career_pathways.alumni_id
+  note STRING,                      -- optional context for the alumni office
+  status STRING,                    -- 'pending' | 'approved' | 'declined' | 'introduced'
+  created_at TIMESTAMP
+)
+USING DELTA;

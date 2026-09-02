@@ -85,13 +85,17 @@ const CAMPUS_TOOLS = [
     function: {
       name: "ask_user_questions",
       description:
-        "Present the user with MCQ questions to gather preferences before making a tailored recommendation. Use when you need to clarify the student's interests, availability, or tech stack.",
+        "Present the student with 2-4 MCQ questions YOU write yourself to gather context that is genuinely missing from the conversation before making a tailored recommendation (interests, availability, tech stack, constraints). " +
+        "Rules: write original questions and options tailored to their request — never reuse or fetch stored survey questions; " +
+        "scan the conversation history FIRST and do not ask anything the student has already answered; " +
+        "call this at most ONCE per conversation, and only when a recommendation would otherwise be guesswork. " +
+        "If the request is already specific enough, answer directly without this tool.",
       parameters: {
         type: "object",
         properties: {
           questions: {
             type: "array",
-            description: "List of questions to ask the user",
+            description: "Questions written by you for this specific request",
             items: {
               type: "object",
               properties: {
@@ -105,7 +109,7 @@ const CAMPUS_TOOLS = [
                 options: {
                   type: "array",
                   items: { type: "string" },
-                  description: "List of answer choices",
+                  description: "3-5 answer choices written by you",
                 },
               },
               required: ["id", "q", "type", "options"],
@@ -154,8 +158,12 @@ KNOWLEDGE SOURCES IN LAKEHOUSE:
 ${sourcesSnippet}
 You can query more details from any source using: SELECT content_sample FROM workspace.campus_explorer.knowledge_sources WHERE source_id = 'DOC-XX'
 
-SURVEY / MCQ:
-If the student asks you to help them choose between options, recommend events, or guide them through preferences, call ask_user_questions first to gather their context.
+SURVEY / MCQ (ask_user_questions tool):
+- The ask_user_questions tool renders an interactive MCQ card. Use it ONLY when the student's request lacks context you genuinely need (interests, availability, tech stack) — and a recommendation without it would be a guess.
+- You WRITE the questions and options yourself, tailored to their request. Never fetch questions from campus_surveys for this card; stored surveys are data to *report on*, not to re-ask.
+- BEFORE calling it, scan the conversation history. If the student already stated preferences or submitted answers (e.g. a "Survey Responses" message), use those and do NOT ask again.
+- At most ONE ask_user_questions call per conversation. Re-asking answered questions is a bug.
+- If the request is already specific ("any hackathon with food this weekend"), skip the card and answer directly.
 
 RESPONSE STYLE:
 - Friendly, knowledgeable campus AI persona
@@ -371,7 +379,10 @@ async function executeToolCall(
       sseEvents.push({ type: "survey", questions });
     }
     return {
-      content: `Survey questions presented to the user (${Array.isArray(questions) ? questions.length : 0} questions).`,
+      content:
+        "The MCQ card is now displayed to the student. STOP here: end your turn with a short line telling them you'll continue once they answer. " +
+        "Do NOT answer the questions yourself, do NOT continue with a recommendation, and do NOT call ask_user_questions again — " +
+        "their answers will arrive as their next message, and you must use those instead of re-asking.",
       sseEvents,
     };
   }
