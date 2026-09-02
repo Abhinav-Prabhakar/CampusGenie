@@ -13,10 +13,6 @@ type ThreadPayload = {
   updatedAt: number;
 };
 
-function sqlString(value: string | null | undefined): string {
-  return `'${String(value ?? "").replace(/'/g, "''")}'`;
-}
-
 function mapRowToThread(r: Record<string, any>): ThreadPayload {
   let messages: unknown[] = [];
   if (typeof r.messages_json === "string") {
@@ -45,10 +41,11 @@ export async function GET() {
   const result = await executeLakehouseSql(
     `SELECT thread_id, title, messages_json, created_at, updated_at
      FROM workspace.campus_explorer.chat_threads
-     WHERE user_id = ${sqlString(userId)}
+     WHERE user_id = :user_id
      ORDER BY updated_at DESC`,
     undefined,
-    50
+    50,
+    [{ name: "user_id", value: userId }]
   );
 
   if (result.state === "SUCCEEDED" && result.records) {
@@ -78,7 +75,7 @@ export async function POST(req: NextRequest) {
     }
 
     const title = String(body.title || "Untitled chat").slice(0, 200);
-    const messagesJson = JSON.stringify(Array.isArray(body.messages) ? body.messages : []).replace(/'/g, "''");
+    const messagesJson = JSON.stringify(Array.isArray(body.messages) ? body.messages : []);
     const createdAt = Number(body.createdAt) || Date.now();
     const updatedAt = Number(body.updatedAt) || Date.now();
 
@@ -86,12 +83,12 @@ export async function POST(req: NextRequest) {
       MERGE INTO workspace.campus_explorer.chat_threads AS target
       USING (
         SELECT
-          ${sqlString(threadId)} AS thread_id,
-          ${sqlString(userId)} AS user_id,
-          ${sqlString(title)} AS title,
-          '${messagesJson}' AS messages_json,
-          timestamp_millis(${createdAt}) AS created_ts,
-          timestamp_millis(${updatedAt}) AS updated_ts
+          :thread_id AS thread_id,
+          :user_id AS user_id,
+          :title AS title,
+          :messages_json AS messages_json,
+          timestamp_millis(:created_at) AS created_ts,
+          timestamp_millis(:updated_at) AS updated_ts
       ) AS src
       ON target.thread_id = src.thread_id AND target.user_id = src.user_id
       WHEN MATCHED THEN UPDATE SET
@@ -102,7 +99,14 @@ export async function POST(req: NextRequest) {
         VALUES (src.thread_id, src.user_id, src.title, src.messages_json, src.created_ts, src.updated_ts)
     `;
 
-    const result = await executeLakehouseSql(mergeSql);
+    const result = await executeLakehouseSql(mergeSql, undefined, 30, [
+      { name: "thread_id", value: threadId },
+      { name: "user_id", value: userId },
+      { name: "title", value: title },
+      { name: "messages_json", value: messagesJson },
+      { name: "created_at", value: createdAt, type: "BIGINT" },
+      { name: "updated_at", value: updatedAt, type: "BIGINT" },
+    ]);
     if (result.state !== "SUCCEEDED") {
       return NextResponse.json(
         { success: false, error: result.error || "Failed to save thread to Lakehouse" },
@@ -131,7 +135,10 @@ export async function DELETE(req: NextRequest) {
     }
 
     const result = await executeLakehouseSql(
-      `DELETE FROM workspace.campus_explorer.chat_threads WHERE thread_id = ${sqlString(id)} AND user_id = ${sqlString(userId)}`
+      "DELETE FROM workspace.campus_explorer.chat_threads WHERE thread_id = :thread_id AND user_id = :user_id",
+      undefined,
+      30,
+      [{ name: "thread_id", value: id }, { name: "user_id", value: userId }]
     );
 
     return NextResponse.json({

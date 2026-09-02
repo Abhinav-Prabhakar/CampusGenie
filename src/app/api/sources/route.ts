@@ -284,21 +284,27 @@ export async function POST(req: NextRequest) {
       description = `Document extracted and indexed into Databricks Lakehouse (${fileSize}).`;
     }
 
-    const safeName = name.replace(/'/g, "''");
-    const safeCat = category.replace(/'/g, "''");
-    const safeDesc = description.replace(/'/g, "''");
-    const safeContent = content.slice(0, 10000).replace(/'/g, "''");
-    const safeUploader = uploadedBy.replace(/'/g, "''");
+    const storedContent = content.slice(0, 10000);
 
     const insertSql = `
       INSERT INTO workspace.campus_explorer.knowledge_sources VALUES (
-        '${docId}', '${safeName}', '${type}', '${safeCat}', '${safeDesc}',
-        ${chunkCount}, '${fileSize}', 'Indexed', '${safeContent}', '${safeUploader}',
+        :source_id, :name, :type, :category, :description,
+        :chunk_count, :file_size, 'Indexed', :content_sample, :uploaded_by,
         current_timestamp()
       )
     `;
 
-    const result = await executeLakehouseSql(insertSql);
+    const result = await executeLakehouseSql(insertSql, undefined, 30, [
+      { name: "source_id", value: String(docId) },
+      { name: "name", value: name },
+      { name: "type", value: type },
+      { name: "category", value: category },
+      { name: "description", value: description },
+      { name: "chunk_count", value: chunkCount, type: "INT" },
+      { name: "file_size", value: fileSize },
+      { name: "content_sample", value: storedContent },
+      { name: "uploaded_by", value: uploadedBy },
+    ]);
 
     return NextResponse.json({
       success: true,
@@ -339,8 +345,8 @@ export async function DELETE(req: NextRequest) {
       return NextResponse.json({ error: "Missing document id" }, { status: 400 });
     }
 
-    const deleteSql = `DELETE FROM workspace.campus_explorer.knowledge_sources WHERE source_id = '${id.replace(/'/g, "''")}'`;
-    const result = await executeLakehouseSql(deleteSql);
+    const deleteSql = "DELETE FROM workspace.campus_explorer.knowledge_sources WHERE source_id = :source_id";
+    const result = await executeLakehouseSql(deleteSql, undefined, 30, [{ name: "source_id", value: id }]);
 
     return NextResponse.json({
       success: true,

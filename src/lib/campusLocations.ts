@@ -38,10 +38,6 @@ export function normalizeLocationTerm(term: string): string {
   return String(term || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 }
 
-function sqlString(value: string): string {
-  return `'${String(value ?? "").replace(/'/g, "''")}'`;
-}
-
 /**
  * The college saved on the student's profile (app_users.college in the
  * Lakehouse). Falls back to the default campus when unknown.
@@ -50,9 +46,10 @@ export async function getCollegeForUser(userId?: string | null): Promise<string>
   if (!userId) return DEFAULT_COLLEGE;
   try {
     const res = await executeLakehouseSql(
-      `SELECT college FROM workspace.campus_explorer.app_users WHERE user_id = ${sqlString(userId)}`,
+      "SELECT college FROM workspace.campus_explorer.app_users WHERE user_id = :user_id",
       undefined,
-      20
+      20,
+      [{ name: "user_id", value: userId }]
     );
     if (res.state === "SUCCEEDED" && res.records && res.records.length > 0) {
       return (res.records[0].college as string) || DEFAULT_COLLEGE;
@@ -79,7 +76,9 @@ export async function fetchCampusLocations(college: string): Promise<CampusLocat
         description: String(r.description || ""),
       }));
 
-  const scoped = await executeLakehouseSql(select(` WHERE college = ${sqlString(college)}`), undefined, 20);
+  const scoped = await executeLakehouseSql(select(" WHERE college = :college"), undefined, 20, [
+    { name: "college", value: college },
+  ]);
   if (scoped.state === "SUCCEEDED" && scoped.records && scoped.records.length > 0) return mapRows(scoped.records);
 
   // Custom college names still resolve against the shared catalog.

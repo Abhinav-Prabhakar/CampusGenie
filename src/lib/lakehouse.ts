@@ -1,8 +1,7 @@
 // Databricks Lakehouse SQL execution and utility functions
-import { exec, execFile } from "child_process";
+import { execFile } from "child_process";
 import { promisify } from "util";
 
-const execAsync = promisify(exec);
 const execFileAsync = promisify(execFile);
 
 export type LakehouseQueryResult = {
@@ -14,6 +13,54 @@ export type LakehouseQueryResult = {
   rowCount?: number;
   error?: string;
 };
+
+export type LakehouseSqlParameter = {
+  name: string;
+  value: string | number | boolean | null;
+  type?: string;
+};
+
+type DatabricksStatementParameter = {
+  name: string;
+  value: string | null;
+  type?: string;
+};
+
+const PARAMETER_NAME = /^[A-Za-z][A-Za-z0-9_]*$/;
+const PARAMETER_TYPE = /^(?:STRING|BOOLEAN|BYTE|SHORT|INT|INTEGER|LONG|BIGINT|FLOAT|DOUBLE|DATE|TIMESTAMP|DECIMAL\(\d{1,2},\d{1,2}\))$/i;
+
+export function buildStatementPayload(
+  statement: string,
+  warehouseId: string,
+  maxWaitSeconds: number,
+  parameters: LakehouseSqlParameter[] = []
+) {
+  const names = new Set<string>();
+  const normalizedParameters: DatabricksStatementParameter[] = parameters.map((parameter) => {
+    if (!PARAMETER_NAME.test(parameter.name)) {
+      throw new Error(`Invalid Databricks SQL parameter name: ${parameter.name}`);
+    }
+    if (names.has(parameter.name)) {
+      throw new Error(`Duplicate Databricks SQL parameter: ${parameter.name}`);
+    }
+    names.add(parameter.name);
+    if (parameter.type && !PARAMETER_TYPE.test(parameter.type)) {
+      throw new Error(`Invalid Databricks SQL parameter type: ${parameter.type}`);
+    }
+    return {
+      name: parameter.name,
+      value: parameter.value === null ? null : String(parameter.value),
+      ...(parameter.type ? { type: parameter.type.toUpperCase() } : {}),
+    };
+  });
+
+  return {
+    warehouse_id: warehouseId,
+    statement: statement.trim().replace(/;+$/, ""),
+    wait_timeout: `${Math.min(Math.max(maxWaitSeconds, 0), 30)}s`,
+    ...(normalizedParameters.length > 0 ? { parameters: normalizedParameters } : {}),
+  };
+}
 
 export const DEFAULT_WAREHOUSE_ID = process.env.DATABRICKS_WAREHOUSE_ID || "25132a20d91813ef";
 export const DEFAULT_HOST = (process.env.DATABRICKS_HOST || "https://dbc-c69189ed-ede0.cloud.databricks.com").replace(/\/+$/, "");
@@ -79,14 +126,10 @@ export async function getDatabricksToken(): Promise<string | null> {
 export async function executeLakehouseSql(
   statement: string,
   warehouseId: string = DEFAULT_WAREHOUSE_ID,
-  maxWaitSeconds: number = 30
+  maxWaitSeconds: number = 30,
+  parameters: LakehouseSqlParameter[] = []
 ): Promise<LakehouseQueryResult> {
-  const cleanStmt = statement.trim().replace(/;+$/, "");
-  const payload = {
-    warehouse_id: warehouseId,
-    statement: cleanStmt,
-    wait_timeout: `${Math.min(maxWaitSeconds, 30)}s`,
-  };
+  const payload = buildStatementPayload(statement, warehouseId, maxWaitSeconds, parameters);
 
   // 1. First try direct REST API with token (fastest, no subshell spawning)
   const token = await getDatabricksToken();
@@ -151,9 +194,9 @@ export async function executeLakehouseSql(
   }
 
   try {
-    const escapedPayload = JSON.stringify(payload).replace(/'/g, "'\\''");
-    const { stdout, stderr } = await execAsync(
-      `"${cli}" api post /api/2.0/sql/statements --json '${escapedPayload}'`,
+    const { stdout, stderr } = await execFileAsync(
+      cli,
+      ["api", "post", "/api/2.0/sql/statements", "--json", JSON.stringify(payload)],
       {
         maxBuffer: 1024 * 1024 * 10,
         env: {
@@ -180,8 +223,9 @@ export async function executeLakehouseSql(
       attempts++;
       await new Promise((r) => setTimeout(r, 1200));
       try {
-        const { stdout: pollStdout } = await execAsync(
-          `"${cli}" api get /api/2.0/sql/statements/${stmtId}`,
+        const { stdout: pollStdout } = await execFileAsync(
+          cli,
+          ["api", "get", `/api/2.0/sql/statements/${stmtId}`],
           {
             env: {
               ...process.env,

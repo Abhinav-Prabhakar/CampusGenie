@@ -34,7 +34,12 @@ function publicEvents(rows: Record<string, unknown>[]): MobileEvent[] {
   }));
 }
 async function getPublicEvents(limit = 30): Promise<MobileEvent[]> {
-  const result = await executeLakehouseSql(`SELECT event_id, title, category, host_organization, location, event_date, start_time, description, capacity, registered_count, food_provided, is_virtual FROM workspace.campus_explorer.campus_events WHERE visibility = 'public' ORDER BY event_date, start_time LIMIT ${limit}`);
+  const result = await executeLakehouseSql(
+    "SELECT event_id, title, category, host_organization, location, event_date, start_time, description, capacity, registered_count, food_provided, is_virtual FROM workspace.campus_explorer.campus_events WHERE visibility = 'public' ORDER BY event_date, start_time LIMIT :row_limit",
+    undefined,
+    30,
+    [{ name: "row_limit", value: limit, type: "INT" }]
+  );
   if (result.state !== "SUCCEEDED") throw new Error(result.error || "Events query failed");
   return publicEvents(result.records || []);
 }

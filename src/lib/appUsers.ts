@@ -22,10 +22,6 @@ export type AppUser = {
   updatedAt?: string;
 };
 
-function sqlString(value: string | null | undefined): string {
-  return `'${String(value ?? "").replace(/'/g, "''")}'`;
-}
-
 function mapRowToAppUser(r: Record<string, any>): AppUser {
   const firstName = r.first_name || null;
   const lastName = r.last_name || null;
@@ -50,9 +46,10 @@ function mapRowToAppUser(r: Record<string, any>): AppUser {
  */
 export async function ensureAppUser(userId: string): Promise<AppUser | null> {
   const selectRes = await executeLakehouseSql(
-    `SELECT * FROM workspace.campus_explorer.app_users WHERE user_id = ${sqlString(userId)}`,
+    "SELECT * FROM workspace.campus_explorer.app_users WHERE user_id = :user_id",
     undefined,
-    20
+    20,
+    [{ name: "user_id", value: userId }]
   );
 
   if (selectRes.state === "SUCCEEDED" && selectRes.records && selectRes.records.length > 0) {
@@ -95,15 +92,23 @@ export async function ensureAppUser(userId: string): Promise<AppUser | null> {
 
   const insertRes = await executeLakehouseSql(`
     INSERT INTO workspace.campus_explorer.app_users (user_id, email, first_name, last_name, role, college, phone_number, created_at, updated_at)
-    VALUES (${sqlString(userId)}, ${sqlString(email)}, ${sqlString(firstName)}, ${sqlString(lastName)}, 'student', ${sqlString(DEFAULT_COLLEGE)}, ${phoneNumber ? sqlString(phoneNumber) : "NULL"}, current_timestamp(), current_timestamp())
-  `);
+    VALUES (:user_id, :email, :first_name, :last_name, 'student', :college, :phone_number, current_timestamp(), current_timestamp())
+  `, undefined, 30, [
+    { name: "user_id", value: userId },
+    { name: "email", value: email },
+    { name: "first_name", value: firstName },
+    { name: "last_name", value: lastName },
+    { name: "college", value: DEFAULT_COLLEGE },
+    { name: "phone_number", value: phoneNumber },
+  ]);
 
   if (insertRes.state !== "SUCCEEDED") {
     // Lost a race with a concurrent first-login insert; read the winner's row.
     const retry = await executeLakehouseSql(
-      `SELECT * FROM workspace.campus_explorer.app_users WHERE user_id = ${sqlString(userId)}`,
+      "SELECT * FROM workspace.campus_explorer.app_users WHERE user_id = :user_id",
       undefined,
-      20
+      20,
+      [{ name: "user_id", value: userId }]
     );
     if (retry.state === "SUCCEEDED" && retry.records && retry.records.length > 0) {
       return mapRowToAppUser(retry.records[0]);
@@ -135,9 +140,10 @@ export const getCurrentUser = cache(async (): Promise<AppUser | null> => {
 
 export async function getUserRole(userId: string): Promise<AppUserRole | null> {
   const res = await executeLakehouseSql(
-    `SELECT role FROM workspace.campus_explorer.app_users WHERE user_id = ${sqlString(userId)}`,
+    "SELECT role FROM workspace.campus_explorer.app_users WHERE user_id = :user_id",
     undefined,
-    20
+    20,
+    [{ name: "user_id", value: userId }]
   );
   if (res.state === "SUCCEEDED" && res.records && res.records.length > 0) {
     return res.records[0].role === "admin" ? "admin" : "student";
@@ -147,7 +153,10 @@ export async function getUserRole(userId: string): Promise<AppUserRole | null> {
 
 export async function setUserCollege(userId: string, college: string): Promise<boolean> {
   const res = await executeLakehouseSql(
-    `UPDATE workspace.campus_explorer.app_users SET college = ${sqlString(college)}, updated_at = current_timestamp() WHERE user_id = ${sqlString(userId)}`
+    "UPDATE workspace.campus_explorer.app_users SET college = :college, updated_at = current_timestamp() WHERE user_id = :user_id",
+    undefined,
+    30,
+    [{ name: "college", value: college }, { name: "user_id", value: userId }]
   );
   if (res.state !== "SUCCEEDED") {
     console.error("[setUserCollege] failed:", res.error);
@@ -158,7 +167,10 @@ export async function setUserCollege(userId: string, college: string): Promise<b
 
 export async function setUserPhoneNumber(userId: string, phone: string | null): Promise<boolean> {
   const res = await executeLakehouseSql(
-    `UPDATE workspace.campus_explorer.app_users SET phone_number = ${phone ? sqlString(phone) : "NULL"}, updated_at = current_timestamp() WHERE user_id = ${sqlString(userId)}`
+    "UPDATE workspace.campus_explorer.app_users SET phone_number = :phone_number, updated_at = current_timestamp() WHERE user_id = :user_id",
+    undefined,
+    30,
+    [{ name: "phone_number", value: phone }, { name: "user_id", value: userId }]
   );
   if (res.state !== "SUCCEEDED") {
     console.error("[setUserPhoneNumber] failed:", res.error);

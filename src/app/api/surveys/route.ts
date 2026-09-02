@@ -94,7 +94,10 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: "Missing surveyId" }, { status: 400 });
       }
       const updateRes = await executeLakehouseSql(
-        `UPDATE workspace.campus_explorer.campus_surveys SET response_count = response_count + 1 WHERE survey_id = '${surveyId}'`
+        "UPDATE workspace.campus_explorer.campus_surveys SET response_count = response_count + 1 WHERE survey_id = :survey_id",
+        undefined,
+        30,
+        [{ name: "survey_id", value: String(surveyId) }]
       );
       if (updateRes.state === "SUCCEEDED") {
         return NextResponse.json({ success: true, message: "Response recorded" });
@@ -109,26 +112,36 @@ export async function POST(req: NextRequest) {
     }
 
     const surveyId = body.id || `SRV-${Date.now().toString().slice(-4)}`;
-    const title = (body.title || "Untitled Survey").replace(/'/g, "''");
-    const desc = (body.description || body.desc || "").replace(/'/g, "''");
-    const targetEventId = body.targetEventId ? `'${body.targetEventId}'` : "NULL";
+    const title = String(body.title || "Untitled Survey");
+    const desc = String(body.description || body.desc || "");
+    const targetEventId = body.targetEventId ? String(body.targetEventId) : null;
     const isPublished = body.isPublished !== false;
     const isFeatured = Boolean(body.isFeatured);
     const audience = body.audience || "public";
-    const questionsJson = JSON.stringify(body.questions || []).replace(/'/g, "''");
-    const createdBy = guard.user.userId.replace(/'/g, "''");
+    const questionsJson = JSON.stringify(body.questions || []);
+    const createdBy = guard.user.userId;
 
     const insertSql = `
       INSERT INTO workspace.campus_explorer.campus_surveys (survey_id, title, description, target_event_id,
         is_published, is_featured, audience, response_count, questions_json, created_at, created_by)
       VALUES (
-        '${surveyId}', '${title}', '${desc}', ${targetEventId},
-        ${isPublished}, ${isFeatured}, '${audience}', 0,
-        '${questionsJson}', current_timestamp(), '${createdBy}'
+        :survey_id, :title, :description, :target_event_id,
+        :is_published, :is_featured, :audience, 0,
+        :questions_json, current_timestamp(), :created_by
       )
     `;
 
-    const result = await executeLakehouseSql(insertSql);
+    const result = await executeLakehouseSql(insertSql, undefined, 30, [
+      { name: "survey_id", value: String(surveyId) },
+      { name: "title", value: title },
+      { name: "description", value: desc },
+      { name: "target_event_id", value: targetEventId },
+      { name: "is_published", value: isPublished, type: "BOOLEAN" },
+      { name: "is_featured", value: isFeatured, type: "BOOLEAN" },
+      { name: "audience", value: String(audience) },
+      { name: "questions_json", value: questionsJson },
+      { name: "created_by", value: createdBy },
+    ]);
 
     if (result.state === "SUCCEEDED") {
       return NextResponse.json({

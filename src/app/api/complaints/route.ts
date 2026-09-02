@@ -33,15 +33,6 @@ export type ComplaintRecord = {
   reporter: string | null; // resolved name/email for admins; null when anonymous
 };
 
-function sqlString(value: string | null | undefined): string {
-  return `'${String(value ?? "").replace(/'/g, "''")}'`;
-}
-
-/** NULL for absent values so anonymous rows genuinely store NULL user_id. */
-function sqlStringOrNull(value: string | null | undefined): string {
-  return value ? sqlString(value) : "NULL";
-}
-
 function complaintId(): string {
   return `CMP-${Date.now().toString(36).toUpperCase()}${Math.floor(Math.random() * 1296).toString(36).toUpperCase().padStart(2, "0")}`;
 }
@@ -93,9 +84,19 @@ export async function POST(req: NextRequest) {
 
     const res = await executeLakehouseSql(
       `INSERT INTO workspace.campus_explorer.complaints (complaint_id, user_id, title, category, location, urgency, description, is_anonymous, status, created_at)
-       VALUES (${sqlString(id)}, ${sqlStringOrNull(userId)}, ${sqlString(title)}, ${sqlString(category)}, ${sqlString(location)}, ${sqlString(urgencyLevel)}, ${sqlString(description)}, ${isAnonymous}, 'open', current_timestamp())`,
+       VALUES (:complaint_id, :user_id, :title, :category, :location, :urgency, :description, :is_anonymous, 'open', current_timestamp())`,
       undefined,
-      20
+      20,
+      [
+        { name: "complaint_id", value: id },
+        { name: "user_id", value: userId },
+        { name: "title", value: title },
+        { name: "category", value: category },
+        { name: "location", value: location },
+        { name: "urgency", value: urgencyLevel },
+        { name: "description", value: description },
+        { name: "is_anonymous", value: isAnonymous, type: "BOOLEAN" },
+      ]
     );
 
     if (res.state !== "SUCCEEDED") {

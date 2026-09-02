@@ -5,10 +5,6 @@ import { getCurrentUser } from "@/lib/appUsers";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-function sqlString(value: string): string {
-  return `'${String(value ?? "").replace(/'/g, "''")}'`;
-}
-
 /** Submit a mentorship intro request for one alumnus. One pending request per student/alumnus pair. */
 export async function POST(req: NextRequest) {
   try {
@@ -26,9 +22,10 @@ export async function POST(req: NextRequest) {
 
     // Verify the alumnus exists so we never persist a dangling request.
     const lookup = await executeLakehouseSql(
-      `SELECT alumni_id FROM workspace.campus_explorer.alumni_career_pathways WHERE alumni_id = ${sqlString(alumniId)}`,
+      "SELECT alumni_id FROM workspace.campus_explorer.alumni_career_pathways WHERE alumni_id = :alumni_id",
       undefined,
-      20
+      20,
+      [{ name: "alumni_id", value: alumniId }]
     );
     if (lookup.state !== "SUCCEEDED" || !lookup.records?.length) {
       return NextResponse.json({ error: "Unknown alumnus" }, { status: 400 });
@@ -36,9 +33,10 @@ export async function POST(req: NextRequest) {
 
     const existing = await executeLakehouseSql(
       `SELECT request_id FROM workspace.campus_explorer.alumni_intro_requests
-       WHERE user_id = ${sqlString(user.userId)} AND alumni_id = ${sqlString(alumniId)} AND status = 'pending'`,
+       WHERE user_id = :user_id AND alumni_id = :alumni_id AND status = 'pending'`,
       undefined,
-      20
+      20,
+      [{ name: "user_id", value: user.userId }, { name: "alumni_id", value: alumniId }]
     );
     if (existing.state === "SUCCEEDED" && (existing.records?.length ?? 0) > 0) {
       return NextResponse.json({ error: "You already have a pending intro request with this alumnus." }, { status: 409 });
@@ -47,9 +45,15 @@ export async function POST(req: NextRequest) {
     const requestId = `INT-${Date.now().toString(36).toUpperCase()}${Math.floor(Math.random() * 1296).toString(36).toUpperCase().padStart(2, "0")}`;
     const res = await executeLakehouseSql(
       `INSERT INTO workspace.campus_explorer.alumni_intro_requests (request_id, user_id, alumni_id, note, status, created_at)
-       VALUES (${sqlString(requestId)}, ${sqlString(user.userId)}, ${sqlString(alumniId)}, ${sqlString(note)}, 'pending', current_timestamp())`,
+       VALUES (:request_id, :user_id, :alumni_id, :note, 'pending', current_timestamp())`,
       undefined,
-      20
+      20,
+      [
+        { name: "request_id", value: requestId },
+        { name: "user_id", value: user.userId },
+        { name: "alumni_id", value: alumniId },
+        { name: "note", value: note },
+      ]
     );
 
     if (res.state !== "SUCCEEDED") {

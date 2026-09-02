@@ -168,39 +168,51 @@ export async function POST(req: NextRequest) {
 
     const body = await req.json();
     const eventId = body.id || `EV-${Date.now().toString().slice(-4)}`;
-    const title = (body.title || "New Campus Event").replace(/'/g, "''");
+    const title = String(body.title || "New Campus Event");
     const category = (body.category || "meeting").toLowerCase();
-    const host = (body.host || body.host_organization || "Student Org").replace(/'/g, "''");
+    const host = String(body.host || body.host_organization || "Student Org");
     const hostCode = (body.hostCode || host.slice(0, 2)).toUpperCase();
-    const location = (body.location || "Campus Hub").replace(/'/g, "''");
+    const location = String(body.location || "Campus Hub");
     const isVirtual = Boolean(body.isVirtual ?? body.isHybrid ?? false);
     const date = body.date || "2026-04-15";
-    const time = (body.time || "6:00 PM").replace(/'/g, "''");
-    const duration = (body.duration || "1h").replace(/'/g, "''");
+    const time = String(body.time || "6:00 PM");
+    const duration = String(body.duration || "1h");
     const capacity = parseInt(body.capacity) || 50;
     const food = Boolean(body.food ?? body.hasFood ?? false);
     const featured = Boolean(body.featured ?? body.isFeatured ?? false);
     const status = body.status || "live";
     const visibility = body.visibility || "public";
-    const description = (body.description || body.desc || "").replace(/'/g, "''");
+    const description = String(body.description || body.desc || "");
     const tags = Array.isArray(body.tags) ? body.tags : [category, "Campus"];
-    const tagsArraySql = `ARRAY(${tags.map((t: string) => `'${t.replace(/'/g, "''")}'`).join(",")})`;
-    const createdBy = guard.user.userId.replace(/'/g, "''");
-    const whatsappUrl = typeof body.whatsappUrl === "string" && body.whatsappUrl.trim() ? body.whatsappUrl.trim().replace(/'/g, "''") : null;
+    const tagsJson = JSON.stringify(tags.map(String));
+    const createdBy = guard.user.userId;
+    const whatsappUrl = typeof body.whatsappUrl === "string" && body.whatsappUrl.trim() ? body.whatsappUrl.trim() : null;
 
     const insertSql = `
       INSERT INTO workspace.campus_explorer.campus_events (event_id, title, category, host_organization, host_code,
         location, is_virtual, event_date, start_time, duration, capacity, registered_count, food_provided,
         is_featured, status, visibility, tags, description, created_at, created_by, whatsapp_url)
       VALUES (
-        '${eventId}', '${title}', '${category}', '${host}', '${hostCode}',
-        '${location}', ${isVirtual}, '${date}', '${time}', '${duration}',
-        ${capacity}, 0, ${food}, ${featured}, '${status}', '${visibility}',
-        ${tagsArraySql}, '${description}', current_timestamp(), '${createdBy}', ${whatsappUrl ? `'${whatsappUrl}'` : "NULL"}
+        :event_id, :title, :category, :host, :host_code,
+        :location, :is_virtual, :event_date, :start_time, :duration,
+        :capacity, 0, :food, :featured, :status, :visibility,
+        from_json(:tags_json, 'array<string>'), :description, current_timestamp(), :created_by, :whatsapp_url
       )
     `;
 
-    const result = await executeLakehouseSql(insertSql);
+    const result = await executeLakehouseSql(insertSql, undefined, 30, [
+      { name: "event_id", value: String(eventId) }, { name: "title", value: title },
+      { name: "category", value: category }, { name: "host", value: host },
+      { name: "host_code", value: hostCode }, { name: "location", value: location },
+      { name: "is_virtual", value: isVirtual, type: "BOOLEAN" },
+      { name: "event_date", value: String(date), type: "DATE" },
+      { name: "start_time", value: time }, { name: "duration", value: duration },
+      { name: "capacity", value: capacity, type: "INT" }, { name: "food", value: food, type: "BOOLEAN" },
+      { name: "featured", value: featured, type: "BOOLEAN" }, { name: "status", value: String(status) },
+      { name: "visibility", value: String(visibility) }, { name: "tags_json", value: tagsJson },
+      { name: "description", value: description }, { name: "created_by", value: createdBy },
+      { name: "whatsapp_url", value: whatsappUrl },
+    ]);
 
     if (result.state === "SUCCEEDED") {
       return NextResponse.json({
@@ -229,54 +241,43 @@ export async function PUT(req: NextRequest) {
     }
 
     const body = await req.json();
-    const eventId = (body.id || body.eventId || "").replace(/'/g, "''");
+    const eventId = String(body.id || body.eventId || "");
     if (!eventId) {
       return NextResponse.json({ success: false, error: "Missing event ID" }, { status: 400 });
     }
 
-    const title = (body.title || "Campus Event").replace(/'/g, "''");
+    const title = String(body.title || "Campus Event");
     const category = (body.category || "meeting").toLowerCase();
-    const host = (body.host || body.host_organization || "Student Org").replace(/'/g, "''");
+    const host = String(body.host || body.host_organization || "Student Org");
     const hostCode = (body.hostCode || host.slice(0, 2)).toUpperCase();
-    const location = (body.location || "Campus Hub").replace(/'/g, "''");
+    const location = String(body.location || "Campus Hub");
     const isVirtual = Boolean(body.isVirtual ?? body.isHybrid ?? false);
     const date = body.date || "2026-04-15";
-    const time = (body.time || "6:00 PM").replace(/'/g, "''");
-    const duration = (body.duration || "1h").replace(/'/g, "''");
+    const time = String(body.time || "6:00 PM");
+    const duration = String(body.duration || "1h");
     const capacity = parseInt(body.capacity || body.capNumber) || 50;
     const food = Boolean(body.food ?? body.hasFood ?? false);
     const featured = Boolean(body.featured ?? body.isFeatured ?? false);
     const status = body.status || "live";
     const visibility = body.visibility || "public";
-    const description = (body.description || body.desc || "").replace(/'/g, "''");
+    const description = String(body.description || body.desc || "");
     const tags = Array.isArray(body.tags) ? body.tags : [category, "Campus"];
-    const tagsArraySql = `ARRAY(${tags.map((t: string) => `'${t.replace(/'/g, "''")}'`).join(",")})`;
+    const tagsJson = JSON.stringify(tags.map(String));
     // undefined = leave the stored link untouched; null/"" clears it.
     const waProvided = body.whatsappUrl !== undefined;
-    const whatsappUrl = typeof body.whatsappUrl === "string" && body.whatsappUrl.trim() ? body.whatsappUrl.trim().replace(/'/g, "''") : null;
+    const whatsappUrl = typeof body.whatsappUrl === "string" && body.whatsappUrl.trim() ? body.whatsappUrl.trim() : null;
 
     const mergeSql = `
       MERGE INTO workspace.campus_explorer.campus_events AS target
       USING (
         SELECT
-          '${eventId}' AS event_id,
-          '${title}' AS title,
-          '${category}' AS category,
-          '${host}' AS host_organization,
-          '${hostCode}' AS host_code,
-          '${location}' AS location,
-          ${isVirtual} AS is_virtual,
-          DATE '${date}' AS event_date,
-          '${time}' AS start_time,
-          '${duration}' AS duration,
-          ${capacity} AS capacity,
-          ${food} AS food_provided,
-          ${featured} AS is_featured,
-          '${status}' AS status,
-          '${visibility}' AS visibility,
-          ${tagsArraySql} AS tags,
-          '${description}' AS description,
-          ${whatsappUrl ? `'${whatsappUrl}'` : "CAST(NULL AS STRING)"} AS whatsapp_url
+          :event_id AS event_id, :title AS title, :category AS category,
+          :host AS host_organization, :host_code AS host_code, :location AS location,
+          :is_virtual AS is_virtual, :event_date AS event_date, :start_time AS start_time,
+          :duration AS duration, :capacity AS capacity, :food AS food_provided,
+          :featured AS is_featured, :status AS status, :visibility AS visibility,
+          from_json(:tags_json, 'array<string>') AS tags, :description AS description,
+          :whatsapp_url AS whatsapp_url
       ) AS src
       ON target.event_id = src.event_id
       WHEN MATCHED THEN UPDATE SET
@@ -306,11 +307,23 @@ export async function PUT(req: NextRequest) {
         src.event_id, src.title, src.category, src.host_organization, src.host_code,
         src.location, src.is_virtual, src.event_date, src.start_time, src.duration,
         src.capacity, 0, src.food_provided, src.is_featured, src.status, src.visibility,
-        src.tags, src.description, current_timestamp(), '${guard.user.userId.replace(/'/g, "''")}', src.whatsapp_url
+        src.tags, src.description, current_timestamp(), :created_by, src.whatsapp_url
       )
     `;
 
-    const result = await executeLakehouseSql(mergeSql);
+    const result = await executeLakehouseSql(mergeSql, undefined, 30, [
+      { name: "event_id", value: eventId }, { name: "title", value: title },
+      { name: "category", value: category }, { name: "host", value: host },
+      { name: "host_code", value: hostCode }, { name: "location", value: location },
+      { name: "is_virtual", value: isVirtual, type: "BOOLEAN" },
+      { name: "event_date", value: String(date), type: "DATE" },
+      { name: "start_time", value: time }, { name: "duration", value: duration },
+      { name: "capacity", value: capacity, type: "INT" }, { name: "food", value: food, type: "BOOLEAN" },
+      { name: "featured", value: featured, type: "BOOLEAN" }, { name: "status", value: String(status) },
+      { name: "visibility", value: String(visibility) }, { name: "tags_json", value: tagsJson },
+      { name: "description", value: description }, { name: "whatsapp_url", value: whatsappUrl },
+      { name: "created_by", value: guard.user.userId },
+    ]);
 
     if (result.state !== "SUCCEEDED") {
       return NextResponse.json(
@@ -344,13 +357,12 @@ export async function DELETE(req: NextRequest) {
       return NextResponse.json({ success: false, error: "Missing event ID" }, { status: 400 });
     }
 
-    const safeId = id.replace(/'/g, "''");
-    const deleteSql = `DELETE FROM workspace.campus_explorer.campus_events WHERE event_id = '${safeId}'`;
-    const result = await executeLakehouseSql(deleteSql);
+    const deleteSql = "DELETE FROM workspace.campus_explorer.campus_events WHERE event_id = :event_id";
+    const result = await executeLakehouseSql(deleteSql, undefined, 30, [{ name: "event_id", value: id }]);
 
     return NextResponse.json({
       success: true,
-      deletedId: safeId,
+      deletedId: id,
       state: result.state,
       message: "Event deleted from Databricks Lakehouse.",
     });

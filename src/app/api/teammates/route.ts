@@ -20,10 +20,6 @@ export type TeammateProfile = {
   contactHint: string;
 };
 
-function sqlString(value: string | null | undefined): string {
-  return `'${String(value ?? "").replace(/'/g, "''")}'`;
-}
-
 function mapRow(r: Record<string, unknown>): TeammateProfile {
   const skills: string[] = Array.isArray(r.skills) ? r.skills.map(String) : [];
   return {
@@ -66,9 +62,10 @@ export async function GET() {
   const [profilesRes, swipesRes] = await Promise.all([
     executeLakehouseSql("SELECT * FROM workspace.campus_explorer.teammate_profiles ORDER BY profile_id ASC", undefined, 50),
     executeLakehouseSql(
-      `SELECT profile_id FROM workspace.campus_explorer.teammate_swipes WHERE user_id = ${sqlString(userId)}`,
+      "SELECT profile_id FROM workspace.campus_explorer.teammate_swipes WHERE user_id = :user_id",
       undefined,
-      50
+      50,
+      [{ name: "user_id", value: userId }]
     ),
   ]);
 
@@ -108,12 +105,16 @@ export async function POST(req: NextRequest) {
 
     const merge = await executeLakehouseSql(`
       MERGE INTO workspace.campus_explorer.teammate_swipes AS target
-      USING (SELECT ${sqlString(userId)} AS user_id, ${sqlString(profileId)} AS profile_id, ${sqlString(action)} AS action) AS src
+      USING (SELECT :user_id AS user_id, :profile_id AS profile_id, :action AS action) AS src
       ON target.user_id = src.user_id AND target.profile_id = src.profile_id
       WHEN MATCHED THEN UPDATE SET target.action = src.action, target.created_at = current_timestamp()
       WHEN NOT MATCHED THEN INSERT (user_id, profile_id, action, created_at)
         VALUES (src.user_id, src.profile_id, src.action, current_timestamp())
-    `);
+    `, undefined, 30, [
+      { name: "user_id", value: userId },
+      { name: "profile_id", value: profileId },
+      { name: "action", value: action },
+    ]);
 
     if (merge.state !== "SUCCEEDED") {
       return NextResponse.json({ error: merge.error || "Failed to save swipe" }, { status: 500 });
@@ -138,7 +139,10 @@ export async function DELETE() {
   }
 
   const result = await executeLakehouseSql(
-    `DELETE FROM workspace.campus_explorer.teammate_swipes WHERE user_id = ${sqlString(userId)}`
+    "DELETE FROM workspace.campus_explorer.teammate_swipes WHERE user_id = :user_id",
+    undefined,
+    30,
+    [{ name: "user_id", value: userId }]
   );
 
   return NextResponse.json({

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
-import { executeLakehouseSql } from "@/lib/lakehouse";
+import { executeLakehouseSql, type LakehouseSqlParameter } from "@/lib/lakehouse";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -102,21 +102,36 @@ const DEFAULT_COURSES = [
  * Seed a fresh user's enrollments + term attendance history so every account
  * starts with the same demo dataset, scoped to their Clerk user id.
  */
-async function seedUserDataFor(safeUid: string): Promise<void> {
+async function seedUserDataFor(userId: string): Promise<void> {
   const termStart = new Date(2026, 1, 2); // Feb 2, 2026 (Mon)
   const termEnd = new Date(2026, 2, 19); // Mar 19, 2026
   const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
-  const courseValues = DEFAULT_COURSES.map((c) => {
+  const courseParameters: LakehouseSqlParameter[] = [{ name: "user_id", value: userId }];
+  const courseValues = DEFAULT_COURSES.map((c, index) => {
     const days = c.scheduleDays.map((d) => `'${d}'`).join(",");
-    return `('${c.courseId}', '${c.courseCode}', '${c.title.replace(/'/g, "''")}', '${c.instructor.replace(/'/g, "''")}', '${c.location.replace(/'/g, "''")}', ARRAY(${days}), '${c.startTime}', ${c.durationMins}, ${c.minAttendancePct}, '${safeUid}')`;
+    courseParameters.push(
+      { name: `course_id_${index}`, value: c.courseId },
+      { name: `course_code_${index}`, value: c.courseCode },
+      { name: `title_${index}`, value: c.title },
+      { name: `instructor_${index}`, value: c.instructor },
+      { name: `location_${index}`, value: c.location },
+      { name: `start_time_${index}`, value: c.startTime },
+      { name: `duration_${index}`, value: c.durationMins, type: "INT" },
+      { name: `minimum_${index}`, value: c.minAttendancePct, type: "INT" }
+    );
+    return `(:course_id_${index}, :course_code_${index}, :title_${index}, :instructor_${index}, :location_${index}, ARRAY(${days}), :start_time_${index}, :duration_${index}, :minimum_${index}, :user_id)`;
   }).join(",\n");
 
   await executeLakehouseSql(
-    `INSERT INTO workspace.campus_explorer.student_courses (course_id, course_code, title, instructor, location, schedule_days, start_time, duration_mins, min_attendance_pct, user_id) VALUES ${courseValues}`
+    `INSERT INTO workspace.campus_explorer.student_courses (course_id, course_code, title, instructor, location, schedule_days, start_time, duration_mins, min_attendance_pct, user_id) VALUES ${courseValues}`,
+    undefined,
+    30,
+    courseParameters
   );
 
   const logRows: string[] = [];
+  const logParameters: LakehouseSqlParameter[] = [{ name: "student_id", value: userId }];
   DEFAULT_COURSES.forEach((course, courseIdx) => {
     const cursor = new Date(termStart);
     let sessionIdx = 0;
@@ -126,9 +141,14 @@ async function seedUserDataFor(safeUid: string): Promise<void> {
         // Deterministic mix so seeded histories are stable and realistic.
         const bucket = (sessionIdx * 5 + courseIdx * 3) % 16;
         const status = bucket === 0 ? "ABSENT" : bucket === 5 || bucket === 11 ? "LATE" : "PRESENT";
-        logRows.push(
-          `('LOG-${safeUid.slice(-6)}-${course.courseId}-${dateStr.replace(/-/g, '')}', '${safeUid}', '${course.courseId}', DATE '${dateStr}', '${status}', NULL, 'seed', NULL, current_timestamp())`
+        const index = logRows.length;
+        logParameters.push(
+          { name: `log_id_${index}`, value: `LOG-${userId.slice(-6)}-${course.courseId}-${dateStr.replace(/-/g, "")}` },
+          { name: `log_course_${index}`, value: course.courseId },
+          { name: `log_date_${index}`, value: dateStr, type: "DATE" },
+          { name: `log_status_${index}`, value: status }
         );
+        logRows.push(`(:log_id_${index}, :student_id, :log_course_${index}, :log_date_${index}, :log_status_${index}, NULL, 'seed', NULL, current_timestamp())`);
         sessionIdx++;
       }
       cursor.setDate(cursor.getDate() + 1);
@@ -137,7 +157,10 @@ async function seedUserDataFor(safeUid: string): Promise<void> {
 
   if (logRows.length > 0) {
     await executeLakehouseSql(
-      `INSERT INTO workspace.campus_explorer.student_attendance_logs (log_id, student_id, course_id, session_date, status, check_in_time, verification_method, notes, created_at) VALUES ${logRows.join(",\n")}`
+      `INSERT INTO workspace.campus_explorer.student_attendance_logs (log_id, student_id, course_id, session_date, status, check_in_time, verification_method, notes, created_at) VALUES ${logRows.join(",\n")}`,
+      undefined,
+      30,
+      logParameters
     );
   }
 }
@@ -148,22 +171,29 @@ export async function GET(req: NextRequest) {
     if (!userId) {
       return NextResponse.json({ success: false, error: "Sign in required" }, { status: 401 });
     }
-    const safeUid = userId.replace(/'/g, "''");
-
     // 1. Fetch this user's courses (seeding on first visit) and logs
     let coursesRes = await executeLakehouseSql(
-      `SELECT * FROM workspace.campus_explorer.student_courses WHERE user_id = '${safeUid}'`
+      "SELECT * FROM workspace.campus_explorer.student_courses WHERE user_id = :user_id",
+      undefined,
+      30,
+      [{ name: "user_id", value: userId }]
     );
 
     if (coursesRes.state === "SUCCEEDED" && (!coursesRes.records || coursesRes.records.length === 0)) {
-      await seedUserDataFor(safeUid);
+      await seedUserDataFor(userId);
       coursesRes = await executeLakehouseSql(
-        `SELECT * FROM workspace.campus_explorer.student_courses WHERE user_id = '${safeUid}'`
+        "SELECT * FROM workspace.campus_explorer.student_courses WHERE user_id = :user_id",
+        undefined,
+        30,
+        [{ name: "user_id", value: userId }]
       );
     }
 
     const logsRes = await executeLakehouseSql(
-      `SELECT * FROM workspace.campus_explorer.student_attendance_logs WHERE student_id = '${safeUid}' ORDER BY session_date ASC`
+      "SELECT * FROM workspace.campus_explorer.student_attendance_logs WHERE student_id = :student_id ORDER BY session_date ASC",
+      undefined,
+      30,
+      [{ name: "student_id", value: userId }]
     );
 
     const rawCourses = coursesRes.state === "SUCCEEDED" && coursesRes.records && coursesRes.records.length > 0
@@ -409,15 +439,14 @@ export async function PUT(req: NextRequest) {
     const { logId, courseId, sessionDate, newStatus } = body;
 
     const validStatus = (newStatus || "PRESENT").toUpperCase() as AttendanceStatus;
-    const safeUid = userId.replace(/'/g, "''");
-    const safeLogId = (logId || `LOG-${Date.now()}`).replace(/'/g, "''");
-    const safeCourse = (courseId || "MATH-201").replace(/'/g, "''");
-    const safeDate = (sessionDate || "2026-03-19").replace(/'/g, "''");
+    const storedLogId = String(logId || `LOG-${Date.now()}`);
+    const storedCourse = String(courseId || "MATH-201");
+    const storedDate = String(sessionDate || "2026-03-19");
 
     const sql = `
       MERGE INTO workspace.campus_explorer.student_attendance_logs AS target
       USING (
-        SELECT '${safeLogId}' AS log_id, '${safeUid}' AS student_id, '${safeCourse}' AS course_id, '${safeDate}' AS session_date, '${validStatus}' AS status
+        SELECT :log_id AS log_id, :student_id AS student_id, :course_id AS course_id, :session_date AS session_date, :status AS status
       ) AS src
       ON target.student_id = src.student_id AND target.course_id = src.course_id AND target.session_date = src.session_date
       WHEN MATCHED THEN
@@ -427,15 +456,21 @@ export async function PUT(req: NextRequest) {
         VALUES (src.log_id, src.student_id, src.course_id, src.session_date, src.status, current_timestamp())
     `;
 
-    const result = await executeLakehouseSql(sql);
+    const result = await executeLakehouseSql(sql, undefined, 30, [
+      { name: "log_id", value: storedLogId },
+      { name: "student_id", value: userId },
+      { name: "course_id", value: storedCourse },
+      { name: "session_date", value: storedDate, type: "DATE" },
+      { name: "status", value: validStatus },
+    ]);
 
     return NextResponse.json({
       success: true,
       state: result.state,
       updated: {
-        logId: safeLogId,
-        courseId: safeCourse,
-        sessionDate: safeDate,
+        logId: storedLogId,
+        courseId: storedCourse,
+        sessionDate: storedDate,
         status: validStatus,
       },
       message: `Session record updated to ${validStatus} in Databricks Lakehouse.`,
