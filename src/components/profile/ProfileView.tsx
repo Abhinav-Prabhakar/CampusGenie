@@ -71,13 +71,10 @@ function UsageMeter({
 
 export default function ProfileView() {
   const { user, loading } = useCurrentUser();
-  // Optimistic local role override, valid only for the loaded account.
-  const [override, setOverride] = useState<{ userId: string; role: "student" | "admin" } | null>(null);
-  const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [collegeValue, setCollegeValue] = useState<string | null>(null);
   const [collegeSaveState, setCollegeSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
 
-  const role = override && user && override.userId === user.userId ? override.role : user?.role ?? "student";
+  const role = user?.role ?? "student";
   const isAdmin = role === "admin";
   const college = collegeValue ?? user?.college ?? "Databricks University";
 
@@ -126,29 +123,6 @@ export default function ProfileView() {
       return;
     }
     setTimeout(() => setCollegeSaveState("idle"), 2400);
-  };
-
-  const toggleAdmin = async (next: boolean) => {
-    if (!user || saveState === "saving") return;
-    const nextRole = next ? "admin" : "student";
-    const prevRole = role;
-    setOverride({ userId: user.userId, role: nextRole });
-    setSaveState("saving");
-    try {
-      const res = await fetch("/api/users", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ role: nextRole }),
-      });
-      if (!res.ok) throw new Error((await res.json().catch(() => ({})))?.error || "Failed");
-      setCurrentUserCached({ ...user, role: nextRole });
-      setSaveState("saved");
-    } catch {
-      setOverride({ userId: user.userId, role: prevRole });
-      setSaveState("error");
-      return;
-    }
-    setTimeout(() => setSaveState("idle"), 2400);
   };
 
   return (
@@ -686,31 +660,24 @@ export default function ProfileView() {
                   </span>
                 </div>
                 <div className="cb">
-                  <label className="sw" style={saveState === "saving" ? { opacity: 0.55, pointerEvents: "none" } : undefined}>
+                  <div className="qrow">
                     <svg className="i i13" aria-hidden="true"><use href="#i-shield"/></svg>
-                    <span className="sl">Student admin access</span>
-                    <input
-                      type="checkbox"
-                      className="vh"
-                      checked={isAdmin}
-                      disabled={!user || saveState === "saving"}
-                      onChange={(e) => toggleAdmin(e.target.checked)}
-                    />
-                    <span className="sw-t"></span>
-                  </label>
+                    <span>Campus-managed access</span>
+                    <span className="tm" style={{ marginLeft: "auto" }}>Contact an administrator</span>
+                  </div>
 
                   <div className="qrow">
                     <svg className="i i13" aria-hidden="true"><use href="#i-db"/></svg>
                     app_users.delta
-                    {(saveState === "saving" || collegeSaveState === "saving") && <span className="pill pill-quiet" style={{ marginLeft: "auto" }}><svg className="i i11" aria-hidden="true"><use href="#i-rotate"/></svg>Saving…</span>}
-                    {(saveState === "saved" || collegeSaveState === "saved") && <span className="pill pill-going" style={{ marginLeft: "auto" }}><svg className="i i10" aria-hidden="true"><use href="#i-check"/></svg>Saved to Lakehouse</span>}
-                    {(saveState === "error" || collegeSaveState === "error") && <span className="pill pill-pend" style={{ marginLeft: "auto" }}>Save failed — try again</span>}
-                    {saveState === "idle" && collegeSaveState === "idle" && <span className="tm" style={{ marginLeft: "auto" }}>{isAdmin ? "Events · surveys · sources" : "Browse · RSVP · chat"}</span>}
+                    {collegeSaveState === "saving" && <span className="pill pill-quiet" style={{ marginLeft: "auto" }}><svg className="i i11" aria-hidden="true"><use href="#i-rotate"/></svg>Saving…</span>}
+                    {collegeSaveState === "saved" && <span className="pill pill-going" style={{ marginLeft: "auto" }}><svg className="i i10" aria-hidden="true"><use href="#i-check"/></svg>Saved to Lakehouse</span>}
+                    {collegeSaveState === "error" && <span className="pill pill-pend" style={{ marginLeft: "auto" }}>Save failed — try again</span>}
+                    {collegeSaveState === "idle" && <span className="tm" style={{ marginLeft: "auto" }}>{isAdmin ? "Events · surveys · sources" : "Browse · RSVP · chat"}</span>}
                   </div>
 
                   <div className="gn">
                     <svg className="i i13" aria-hidden="true"><use href="#i-zap"/></svg>
-                    <span>Admins unlock <b>Student Admin</b> in the sidebar — create events, publish surveys, and manage campus content for everyone. The role is stored per user in the Lakehouse.</span>
+                    <span>Admins unlock <b>Student Admin</b> in the sidebar. Roles are assigned outside this profile and stored per user in the Lakehouse.</span>
                   </div>
                 </div>
               </section>
