@@ -141,12 +141,14 @@ html:not(.dark) .profile-scope {
 
 /* ── panel head ────────────────────────────────────────── */
 .profile-scope .panel-head {
-  display: flex; align-items: center; gap: 10px;
-  height: 54px; padding: 0 14px;
-  background: var(--surface);
-  border: 1px solid var(--line-soft);
-  border-radius: 12px;
-  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  height: 36px;
+  padding: 0 4px;
+  background: transparent;
+  border: none;
+  margin-bottom: 8px;
 }
 .profile-scope .logo {
   display: inline-flex; width: 26px; height: 26px;
@@ -355,8 +357,31 @@ html:not(.dark) .profile-scope .theme-btn .moon { display: block; }
   width: 5px; height: 5px; border-radius: 9999px; background: currentColor;
   animation: pulse 1.1s ease-in-out infinite;
 }
-.profile-scope .e-d { display: none; }
-.profile-scope .e-i, .profile-scope .e-d { align-items: center; gap: 7px; }
+.profile-scope .btn-sec,
+.profile-scope .btn-edit {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--ink-2);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 140ms ease-out;
+}
+.profile-scope .btn-sec:hover,
+.profile-scope .btn-edit:hover {
+  background: var(--hover);
+  color: var(--ink);
+  border-color: var(--line-strong);
+}
+.profile-scope .e-i { display: inline-flex; align-items: center; gap: 6px; }
+.profile-scope .e-d { display: none !important; align-items: center; gap: 6px; }
 
 /* ── fields + edit mode ────────────────────────────────── */
 .profile-scope .fld {
@@ -381,8 +406,8 @@ textarea.profile-scope .fld,
 .profile-scope .window:has(#edit:checked) textarea.v-edit,
 .profile-scope .window:has(#edit:checked) .v .v-edit { display: block !important; }
 .profile-scope .window:has(#edit:checked) .dirty { display: inline-flex; }
-.profile-scope .window:has(#edit:checked) .e-i { display: none; }
-.profile-scope .window:has(#edit:checked) .e-d { display: inline-flex; }
+.profile-scope .window:has(#edit:checked) .e-i { display: none !important; }
+.profile-scope .window:has(#edit:checked) .e-d { display: inline-flex !important; }
 .profile-scope .window:has(#edit:checked) .btn-edit {
   background: var(--accent); border-color: transparent; color: oklch(1 0 0);
 }

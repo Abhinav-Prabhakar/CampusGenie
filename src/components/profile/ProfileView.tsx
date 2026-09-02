@@ -176,19 +176,13 @@ export default function ProfileView() {
         <form className="window" autoComplete="off" onSubmit={(e) => e.preventDefault()}>
 
           {/* ── panel head ─────────────────────────────────── */}
-          <header className="panel-head">
-            <span className="logo"><svg className="i i14" aria-hidden="true"><use href="#i-spark"/></svg></span>
-            <nav className="crumb" aria-label="Breadcrumb">
-              <b>Campus Genie</b><span className="sep">/</span><span>Profile</span>
-            </nav>
-            <span className="wk">SPRING · WEEK 7</span>
+          <header className="panel-head" style={{ justifyContent: "flex-end" }}>
             <div className="head-right">
               <label className="theme-btn" htmlFor="theme" title="Toggle theme">
                 <svg className="i i14 sun" aria-hidden="true"><use href="#i-sun"/></svg>
                 <svg className="i i14 moon" aria-hidden="true"><use href="#i-moon"/></svg>
               </label>
-              <span className="avatar" title={user?.fullName ?? "Student"}>{initialsFor(user)}</span>
-              </div>
+            </div>
           </header>
 
           {/* ── identity hero ──────────────────────────────── */}
