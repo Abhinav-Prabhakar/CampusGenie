@@ -111,7 +111,13 @@ export default function ComplaintsAdminView() {
 
       {error && (
         <div className="flex items-center gap-2 rounded-[12px] border border-line bg-canvas p-4 shadow-card">
-          <StatusPill tone="red">{error.includes("admin") ? "Admin access required" : "Lakehouse unavailable"}</StatusPill>
+          <StatusPill tone="red">
+            {error.includes("admin")
+              ? "Admin access required"
+              : error.includes("Sign in")
+                ? "Sign in required"
+                : "Lakehouse unavailable"}
+          </StatusPill>
           <span className="text-[12.5px] text-ink-2">{error}</span>
         </div>
       )}

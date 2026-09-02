@@ -37,6 +37,11 @@ function sqlString(value: string | null | undefined): string {
   return `'${String(value ?? "").replace(/'/g, "''")}'`;
 }
 
+/** NULL for absent values so anonymous rows genuinely store NULL user_id. */
+function sqlStringOrNull(value: string | null | undefined): string {
+  return value ? sqlString(value) : "NULL";
+}
+
 function complaintId(): string {
   return `CMP-${Date.now().toString(36).toUpperCase()}${Math.floor(Math.random() * 1296).toString(36).toUpperCase().padStart(2, "0")}`;
 }
@@ -88,7 +93,7 @@ export async function POST(req: NextRequest) {
 
     const res = await executeLakehouseSql(
       `INSERT INTO workspace.campus_explorer.complaints (complaint_id, user_id, title, category, location, urgency, description, is_anonymous, status, created_at)
-       VALUES (${sqlString(id)}, ${sqlString(userId)}, ${sqlString(title)}, ${sqlString(category)}, ${sqlString(location)}, ${sqlString(urgencyLevel)}, ${sqlString(description)}, ${isAnonymous}, 'open', current_timestamp())`,
+       VALUES (${sqlString(id)}, ${sqlStringOrNull(userId)}, ${sqlString(title)}, ${sqlString(category)}, ${sqlString(location)}, ${sqlString(urgencyLevel)}, ${sqlString(description)}, ${isAnonymous}, 'open', current_timestamp())`,
       undefined,
       20
     );
