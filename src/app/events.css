@@ -912,7 +912,7 @@ html:not(.dark) .cat {
 .events-scope .flags {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 7px;
   color: var(--ink-3);
 }
 
@@ -1486,28 +1486,25 @@ html:not(.dark) .cat {
 }
 .events-scope .cal:hover { background: var(--hover); color: var(--ink); }
 
-/* official WhatsApp group join button — brand glyph, house neutrals */
+/* official WhatsApp group join button — house neutrals, muted brand glyph;
+   hover mirrors .cal next to it (no lift, no glow) */
 .events-scope .wa {
   display: inline-flex; align-items: center; gap: 6px;
   height: 30px; padding: 0 12px; cursor: pointer;
-  border: 1px solid color-mix(in oklch, var(--wa) 36%, var(--line-strong)); border-radius: 8px;
+  border: 1px solid color-mix(in oklch, var(--wa-deep) 26%, var(--line-strong)); border-radius: 8px;
   background: var(--surface); color: var(--ink-2);
   font-size: 12.5px; font-weight: 500; white-space: nowrap; text-decoration: none;
-  transition: background-color 140ms var(--ease-out-strong), color 140ms var(--ease-out-strong),
-              border-color 140ms var(--ease-out-strong), transform 140ms var(--ease-out-strong),
-              box-shadow 140ms var(--ease-out-strong);
+  transition: background-color 140ms ease-out, color 140ms ease-out, border-color 140ms ease-out;
 }
-.events-scope .wa .i { color: var(--wa); }
+.events-scope .wa .i { color: var(--wa-deep); }
 .events-scope .wa:hover {
-  background: var(--wa-tint); color: var(--wa-deep);
-  border-color: color-mix(in oklch, var(--wa) 55%, transparent);
-  transform: translateY(-1px);
-  box-shadow: 0 0 0 1px color-mix(in oklch, var(--wa) 30%, transparent), 0 2px 8px oklch(0 0 0 / 0.18);
+  background: var(--hover);
+  color: var(--ink);
+  border-color: color-mix(in oklch, var(--wa-deep) 40%, var(--line-strong));
 }
-.events-scope .wa:active { transform: translateY(0) scale(0.97); }
 
-/* card flag glyph keeps brand green so it reads as WhatsApp at a glance */
-.events-scope .wa-flag { color: var(--wa); }
+/* card flag glyph reads as WhatsApp but stays muted like its siblings */
+.events-scope .wa-flag { color: var(--ink-3); }
 
 .events-scope .book {
   background: var(--inset); color: var(--ink-3);
