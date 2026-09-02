@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { executeLakehouseSql } from "@/lib/lakehouse";
 import { streamGenieConversation } from "@/lib/genie";
+import { checkRateLimit, getClientIdFromHeaders } from "@/lib/rateLimiter";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -75,6 +76,17 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
+    const rateLimit = await checkRateLimit(getClientIdFromHeaders(request.headers), {
+      scope: "mobile-genie",
+      rpm: 10,
+      rpd: 100,
+    });
+    if (!rateLimit.allowed) {
+      return json(request, {
+        error: "Too many Genie requests. Please wait and try again.",
+        retryAfterSeconds: rateLimit.retryAfterSeconds,
+      }, 429);
+    }
     const body = await request.json();
     const prompt = text(body.prompt).trim();
     if (!prompt || prompt.length > 2000) return json(request, { error: "Enter a question up to 2,000 characters." }, 400);

@@ -8,6 +8,7 @@ import { buildWalkingRoute } from "@/lib/campusDirections";
 import { getCollegeForUser, fetchCampusLocations, resolveCampusPoint, listCampusLocationNames } from "@/lib/campusLocations";
 import { validateCampusReadOnlySql } from "@/lib/chatSqlSecurity";
 import { customEndpointsEnabled, validateCustomEndpointDestination } from "@/lib/llmEndpointSecurity";
+import { auth } from "@clerk/nextjs/server";
 
 export const runtime = "nodejs";
 
@@ -419,8 +420,9 @@ function generateFallbackSummary(toolCallsRan: Array<{ name: string; result: any
 export async function POST(req: NextRequest) {
   try {
     // Rate limiting (same client identity as /api/chat/usage)
-    const clientIp = getClientIdFromHeaders(req.headers);
-    const rateLimitCheck = checkRateLimit(clientIp);
+    const { userId } = await auth();
+    const clientId = userId || getClientIdFromHeaders(req.headers);
+    const rateLimitCheck = await checkRateLimit(clientId, { scope: "chat" });
     if (!rateLimitCheck.allowed) {
       return NextResponse.json(
         {
@@ -436,7 +438,14 @@ export async function POST(req: NextRequest) {
             resetAt: rateLimitCheck.resetAt || Date.now() + 60000,
           },
         },
-        { status: 429 }
+        {
+          status: 429,
+          headers: {
+            "Retry-After": String(rateLimitCheck.retryAfterSeconds || 60),
+            "X-RateLimit-Remaining-Minute": String(rateLimitCheck.remainingRPM),
+            "X-RateLimit-Remaining-Day": String(rateLimitCheck.remainingRPD),
+          },
+        }
       );
     }
 

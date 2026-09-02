@@ -1,147 +1,146 @@
+import { createHash } from "crypto";
+
 export type RateLimitResult = {
   allowed: boolean;
   limitType?: "RPM" | "RPD";
   retryAfterSeconds?: number;
   resetAt?: number;
-  remainingRPM?: number;
-  remainingRPD?: number;
+  remainingRPM: number;
+  remainingRPD: number;
 };
-
-// In-memory sliding window bucket tracker
-interface RateLimitBucket {
-  timestamps: number[];
-}
-
-const clientBuckets = new Map<string, RateLimitBucket>();
-
-// Clean up stale entries every 5 minutes
-if (typeof setInterval !== "undefined") {
-  setInterval(() => {
-    const now = Date.now();
-    const oneDayAgo = now - 24 * 60 * 60 * 1000;
-    for (const [key, bucket] of clientBuckets.entries()) {
-      bucket.timestamps = bucket.timestamps.filter((ts) => ts > oneDayAgo);
-      if (bucket.timestamps.length === 0) {
-        clientBuckets.delete(key);
-      }
-    }
-  }, 5 * 60 * 1000);
-}
-
-export function checkRateLimit(
-  clientId: string = "default_user",
-  options?: {
-    rpm?: number;
-    rpd?: number;
-  }
-): RateLimitResult {
-  const now = Date.now();
-  const rpmLimit = options?.rpm || parseInt(process.env.LLM_RPM_LIMIT || "20", 10);
-  const rpdLimit = options?.rpd || parseInt(process.env.LLM_RPD_LIMIT || "300", 10);
-
-  let bucket = clientBuckets.get(clientId);
-  if (!bucket) {
-    bucket = { timestamps: [] };
-    clientBuckets.set(clientId, bucket);
-  }
-
-  // Filter timestamps within the last 24 hours
-  const oneMinuteAgo = now - 60 * 1000;
-  const oneDayAgo = now - 24 * 60 * 60 * 1000;
-
-  bucket.timestamps = bucket.timestamps.filter((ts) => ts > oneDayAgo);
-
-  const timestampsLastMinute = bucket.timestamps.filter((ts) => ts > oneMinuteAgo);
-  const timestampsLastDay = bucket.timestamps;
-
-  // Check RPM (Requests Per Minute)
-  if (timestampsLastMinute.length >= rpmLimit) {
-    const oldestInMinute = timestampsLastMinute[0];
-    const retryAfterMs = Math.max(1000, 60 * 1000 - (now - oldestInMinute));
-    const retryAfterSeconds = Math.ceil(retryAfterMs / 1000);
-    const resetAt = now + retryAfterMs;
-
-    return {
-      allowed: false,
-      limitType: "RPM",
-      retryAfterSeconds,
-      resetAt,
-      remainingRPM: 0,
-      remainingRPD: Math.max(0, rpdLimit - timestampsLastDay.length),
-    };
-  }
-
-  // Check RPD (Requests Per Day)
-  if (timestampsLastDay.length >= rpdLimit) {
-    const oldestInDay = timestampsLastDay[0];
-    const retryAfterMs = Math.max(1000, 24 * 60 * 60 * 1000 - (now - oldestInDay));
-    const retryAfterSeconds = Math.ceil(retryAfterMs / 1000);
-    const resetAt = now + retryAfterMs;
-
-    return {
-      allowed: false,
-      limitType: "RPD",
-      retryAfterSeconds,
-      resetAt,
-      remainingRPM: Math.max(0, rpmLimit - timestampsLastMinute.length),
-      remainingRPD: 0,
-    };
-  }
-
-  // Register request timestamp
-  bucket.timestamps.push(now);
-
-  return {
-    allowed: true,
-    remainingRPM: Math.max(0, rpmLimit - timestampsLastMinute.length - 1),
-    remainingRPD: Math.max(0, rpdLimit - timestampsLastDay.length - 1),
-  };
-}
-
-export function getRateLimitLimits(): { rpmLimit: number; rpdLimit: number } {
-  return {
-    rpmLimit: parseInt(process.env.LLM_RPM_LIMIT || "20", 10),
-    rpdLimit: parseInt(process.env.LLM_RPD_LIMIT || "300", 10),
-  };
-}
 
 export type RateLimitUsage = {
   rpmUsed: number;
   rpmLimit: number;
   rpdUsed: number;
   rpdLimit: number;
-  /** Epoch ms when the per-minute window frees up (null if idle). */
   rpmResetsAt: number | null;
-  /** Epoch ms when the daily window frees up (null if idle). */
   rpdResetsAt: number | null;
 };
 
-/**
- * Read-only view of a client's current quota consumption. Unlike
- * checkRateLimit, this does NOT register a request.
- */
-export function getRateLimitUsage(clientId: string = "default_user"): RateLimitUsage {
-  const { rpmLimit, rpdLimit } = getRateLimitLimits();
-  const now = Date.now();
-  const bucket = clientBuckets.get(clientId);
-  const lastDay = bucket ? bucket.timestamps.filter((ts) => ts > now - 24 * 60 * 60 * 1000) : [];
-  const lastMinute = lastDay.filter((ts) => ts > now - 60 * 1000);
+type Bucket = { minuteStartedAt: number; minuteCount: number; dayStartedAt: number; dayCount: number };
+type LimitOptions = { rpm?: number; rpd?: number; scope?: string };
 
+const buckets = new Map<string, Bucket>();
+const MINUTE_MS = 60_000;
+const DAY_MS = 86_400_000;
+
+function positiveInteger(value: string | undefined, fallback: number): number {
+  const parsed = Number.parseInt(value || "", 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+export function getRateLimitLimits(options: LimitOptions = {}): { rpmLimit: number; rpdLimit: number } {
   return {
-    rpmUsed: lastMinute.length,
-    rpmLimit,
-    rpdUsed: lastDay.length,
-    rpdLimit,
-    rpmResetsAt: lastMinute.length > 0 ? lastMinute[0] + 60 * 1000 : null,
-    rpdResetsAt: lastDay.length > 0 ? lastDay[0] + 24 * 60 * 60 * 1000 : null,
+    rpmLimit: options.rpm ?? positiveInteger(process.env.LLM_RPM_LIMIT, 20),
+    rpdLimit: options.rpd ?? positiveInteger(process.env.LLM_RPD_LIMIT, 300),
   };
 }
 
-/** Same client identity rule the chat route uses (proxy IP, then fallback). */
+function opaqueKey(clientId: string, scope: string): string {
+  return createHash("sha256").update(`${scope}:${clientId}`).digest("hex");
+}
+
+function localUsage(key: string, now: number, rpmLimit: number, rpdLimit: number, consume: boolean): RateLimitResult & RateLimitUsage {
+  let bucket = buckets.get(key);
+  if (!bucket || now - bucket.dayStartedAt >= DAY_MS) {
+    bucket = { minuteStartedAt: now, minuteCount: 0, dayStartedAt: now, dayCount: 0 };
+  }
+  if (now - bucket.minuteStartedAt >= MINUTE_MS) {
+    bucket.minuteStartedAt = now;
+    bucket.minuteCount = 0;
+  }
+
+  const blockedByMinute = bucket.minuteCount >= rpmLimit;
+  const blockedByDay = bucket.dayCount >= rpdLimit;
+  if (consume && !blockedByMinute && !blockedByDay) {
+    bucket.minuteCount += 1;
+    bucket.dayCount += 1;
+  }
+  buckets.set(key, bucket);
+
+  const limitType = blockedByMinute ? "RPM" : blockedByDay ? "RPD" : undefined;
+  const resetAt = limitType === "RPM" ? bucket.minuteStartedAt + MINUTE_MS : limitType === "RPD" ? bucket.dayStartedAt + DAY_MS : undefined;
+  return {
+    allowed: !limitType,
+    limitType,
+    retryAfterSeconds: resetAt ? Math.max(1, Math.ceil((resetAt - now) / 1000)) : undefined,
+    resetAt,
+    remainingRPM: Math.max(0, rpmLimit - bucket.minuteCount),
+    remainingRPD: Math.max(0, rpdLimit - bucket.dayCount),
+    rpmUsed: bucket.minuteCount,
+    rpmLimit,
+    rpdUsed: bucket.dayCount,
+    rpdLimit,
+    rpmResetsAt: bucket.minuteCount ? bucket.minuteStartedAt + MINUTE_MS : null,
+    rpdResetsAt: bucket.dayCount ? bucket.dayStartedAt + DAY_MS : null,
+  };
+}
+
+const DISTRIBUTED_SCRIPT = `
+local minute = redis.call('INCR', KEYS[1])
+if minute == 1 then redis.call('EXPIRE', KEYS[1], 60) end
+local daily = redis.call('INCR', KEYS[2])
+if daily == 1 then redis.call('EXPIRE', KEYS[2], 86400) end
+return {minute, daily, redis.call('TTL', KEYS[1]), redis.call('TTL', KEYS[2])}
+`;
+
+async function distributedCounts(key: string): Promise<[number, number, number, number] | null> {
+  const url = process.env.KV_REST_API_URL || process.env.UPSTASH_REDIS_REST_URL;
+  const token = process.env.KV_REST_API_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN;
+  if (!url || !token) return null;
+
+  const response = await fetch(url, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify(["EVAL", DISTRIBUTED_SCRIPT, "2", `campus-genie:minute:${key}`, `campus-genie:day:${key}`]),
+    cache: "no-store",
+  });
+  if (!response.ok) throw new Error(`Distributed rate-limit store returned ${response.status}`);
+  const data = await response.json() as { result?: unknown[] };
+  if (!Array.isArray(data.result) || data.result.length !== 4) throw new Error("Invalid distributed rate-limit response");
+  return data.result.map(Number) as [number, number, number, number];
+}
+
+export async function checkRateLimit(clientId: string, options: LimitOptions = {}): Promise<RateLimitResult> {
+  const { rpmLimit, rpdLimit } = getRateLimitLimits(options);
+  const key = opaqueKey(clientId || "anonymous", options.scope || "default");
+  try {
+    const counts = await distributedCounts(key);
+    if (counts) {
+      const [minuteCount, dayCount, minuteTtl, dayTtl] = counts;
+      const limitType = minuteCount > rpmLimit ? "RPM" : dayCount > rpdLimit ? "RPD" : undefined;
+      const ttl = limitType === "RPM" ? minuteTtl : dayTtl;
+      return {
+        allowed: !limitType,
+        limitType,
+        retryAfterSeconds: limitType ? Math.max(1, ttl) : undefined,
+        resetAt: limitType ? Date.now() + Math.max(1, ttl) * 1000 : undefined,
+        remainingRPM: Math.max(0, rpmLimit - minuteCount),
+        remainingRPD: Math.max(0, rpdLimit - dayCount),
+      };
+    }
+  } catch (error) {
+    console.error("[Rate limiter] Distributed store unavailable; using instance-local protection", error);
+  }
+  return localUsage(key, Date.now(), rpmLimit, rpdLimit, true);
+}
+
+export async function getRateLimitUsage(clientId: string, options: LimitOptions = {}): Promise<RateLimitUsage> {
+  const { rpmLimit, rpdLimit } = getRateLimitLimits(options);
+  const key = opaqueKey(clientId || "anonymous", options.scope || "default");
+  const local = localUsage(key, Date.now(), rpmLimit, rpdLimit, false);
+  return {
+    rpmUsed: local.rpmUsed,
+    rpmLimit,
+    rpdUsed: local.rpdUsed,
+    rpdLimit,
+    rpmResetsAt: local.rpmResetsAt,
+    rpdResetsAt: local.rpdResetsAt,
+  };
+}
+
+/** Prefer an authenticated user id at call sites; this is the anonymous fallback. */
 export function getClientIdFromHeaders(headers: Headers): string {
-  return (
-    headers.get("x-forwarded-for")?.split(",")[0].trim() ||
-    headers.get("x-real-ip") ||
-    "client_user"
-  );
+  return headers.get("x-forwarded-for")?.split(",")[0]?.trim() || headers.get("x-real-ip") || "anonymous";
 }

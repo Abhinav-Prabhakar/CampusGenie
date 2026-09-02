@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getClientIdFromHeaders, getRateLimitUsage } from "@/lib/rateLimiter";
+import { auth } from "@clerk/nextjs/server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -9,8 +10,9 @@ export const dynamic = "force-dynamic";
  * in-memory rate limiter. Does not consume quota.
  */
 export async function GET(req: NextRequest) {
-  const clientId = getClientIdFromHeaders(req.headers);
-  const usage = getRateLimitUsage(clientId);
+  const { userId } = await auth();
+  const clientId = userId || getClientIdFromHeaders(req.headers);
+  const usage = await getRateLimitUsage(clientId, { scope: "chat" });
   return NextResponse.json(
     { usage },
     { headers: { "Cache-Control": "no-store, max-age=0" } }

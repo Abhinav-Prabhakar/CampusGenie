@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { fetchWithAutoRetry } from "@/lib/llm";
+import { auth } from "@clerk/nextjs/server";
+import { checkRateLimit, getClientIdFromHeaders } from "@/lib/rateLimiter";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -53,6 +55,18 @@ export type DynamicRecoveryPlan = {
 
 export async function POST(req: NextRequest) {
   try {
+    const { userId } = await auth();
+    const rateLimit = await checkRateLimit(userId || getClientIdFromHeaders(req.headers), {
+      scope: "attendance-recovery",
+      rpm: 5,
+      rpd: 50,
+    });
+    if (!rateLimit.allowed) {
+      return NextResponse.json(
+        { error: "Too many recovery-plan requests. Please wait and try again." },
+        { status: 429, headers: { "Retry-After": String(rateLimit.retryAfterSeconds || 60) } }
+      );
+    }
     const body = await req.json();
     const courseCode = body.courseCode || "MATH 201";
     const courseName = body.courseName || "Linear Algebra";
