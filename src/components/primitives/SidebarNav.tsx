@@ -162,6 +162,46 @@ function IconArrowBoxLeft({ size = 16 }: { size?: number }) {
   );
 }
 
+function IconMortarboard({ size = 18 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M22 9.5 12 4.5 2 9.5l10 5 10-5Z" />
+      <path d="M6 11.8V16c3.2 2.6 8.8 2.6 12 0v-4.2" />
+      <path d="M22 9.5V15" />
+    </svg>
+  );
+}
+
+function IconTeammates({ size = 18 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="8.5" cy="8" r="3.2" />
+      <path d="M2.5 20v-.8a4.2 4.2 0 0 1 4.2-4.2h3.6a4.2 4.2 0 0 1 4.2 4.2V20" />
+      <path d="M16.5 5.4a3.2 3.2 0 0 1 0 5.7" />
+      <path d="M18.4 15.6a4.2 4.2 0 0 1 3.1 4V20" />
+    </svg>
+  );
+}
+
+function IconWrapped({ size = 18 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="3.5" width="18" height="17" rx="4.5" />
+      <path d="M10.2 8.8v6.4l5-3.2-5-3.2Z" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}
+
+function IconTrophy({ size = 18 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M7 4h10v5a5 5 0 0 1-10 0V4Z" />
+      <path d="M7 5.5H4.5a3 3 0 0 0 3 4.8M17 5.5h2.5a3 3 0 0 1-3 4.8" />
+      <path d="M12 14v3M8.5 20.5h7M10 20.5c0-1.8.7-3.5 2-3.5s2 1.7 2 3.5" />
+    </svg>
+  );
+}
+
 /* ─────────────────────────────────────────────────────────
  * SIDEBAR NAV
  * Primary navigation: Chat, Events, Admin, Sources, and Gallery.
@@ -182,6 +222,10 @@ const NAV_ITEMS = [
   { key: "events", label: "Events", icon: <IconCalendar size={18} />, count: "14", href: "/events" },
   { key: "attendance", label: "Attendance", icon: <IconCalCheck size={18} />, count: "86%", href: "/attendance" },
   { key: "admin", label: "Student Admin", icon: <IconShield size={18} />, count: "Admin", href: "/admin", adminOnly: true },
+  { key: "alumni", label: "Alumni Connect", icon: <IconMortarboard size={18} />, count: "12", href: "/alumni" },
+  { key: "teammates", label: "Teammates", icon: <IconTeammates size={18} />, count: "12", href: "/teammates" },
+  { key: "wrapped", label: "Campus Wrapped", icon: <IconWrapped size={18} />, count: "’26", href: "/wrapped" },
+  { key: "awards", label: "Awards", icon: <IconTrophy size={18} />, count: "4", href: "/awards" },
   { key: "sources", label: "Sources", icon: <IconDatabase size={18} />, count: "5", href: "/sources" },
   { key: "gallery", label: "Gallery", icon: <IconSparkles size={18} />, href: "/gallery" },
 ];

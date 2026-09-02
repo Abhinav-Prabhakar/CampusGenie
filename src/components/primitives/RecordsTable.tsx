@@ -62,6 +62,20 @@ const TAG_COLORS: Record<string, TagColor> = {
   Sorbet: TAG_PALETTE.pink,
   Vegan: TAG_PALETTE.lime,
   Wholesale: TAG_PALETTE.amber,
+  // Alumni Connect domain + activity tags
+  "Lakehouse AI": TAG_PALETTE.purple,
+  "Distributed Cloud Infrastructure": TAG_PALETTE.cyan,
+  "Model Serving": TAG_PALETTE.magenta,
+  "CruX Coding Club": TAG_PALETTE.amber,
+  "ACM Chapter": TAG_PALETTE.cyan,
+  "Design Club": TAG_PALETTE.pink,
+  "Autonomous Intelligent Systems Lab": TAG_PALETTE.lime,
+  "High Performance Data Systems Group": TAG_PALETTE.green,
+  // Awards category tags
+  "AI for Social Impact": TAG_PALETTE.purple,
+  "Rapid Prototyping": TAG_PALETTE.orange,
+  "Genie Agents": TAG_PALETTE.cyan,
+  Systems: TAG_PALETTE.green,
 };
 
 export type RecordRow = {
