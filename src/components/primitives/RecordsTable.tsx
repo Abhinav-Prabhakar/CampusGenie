@@ -76,6 +76,9 @@ const TAG_COLORS: Record<string, TagColor> = {
   "Rapid Prototyping": TAG_PALETTE.orange,
   "Genie Agents": TAG_PALETTE.cyan,
   Systems: TAG_PALETTE.green,
+  Champion: TAG_PALETTE.amber,
+  "Runner-up": TAG_PALETTE.cyan,
+  Third: TAG_PALETTE.pink,
 };
 
 export type RecordRow = {
