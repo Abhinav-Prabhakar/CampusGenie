@@ -333,6 +333,7 @@ export default function Flowchart({ steps = NODES }: { steps?: StepNode[]; varia
   const [heights, setHeights] = useState<Record<string, number>>(EST_H);
   const [selected, setSelected] = useState<string | null>(null);
   const [offsets, setOffsets] = useState<Record<string, { dx: number; dy: number }>>({});
+  const [draggingId, setDraggingId] = useState<string | null>(null);
   const drag = useRef<{
     id: string;
     startX: number;
@@ -419,6 +420,7 @@ export default function Flowchart({ steps = NODES }: { steps?: StepNode[]; varia
       baseDy: off?.dy ?? 0,
       moved: false,
     };
+    setDraggingId(node.id);
     (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
   };
 
@@ -441,6 +443,7 @@ export default function Flowchart({ steps = NODES }: { steps?: StepNode[]; varia
   };
 
   const onPointerUp = (node: StepNode) => () => {
+    setDraggingId(null);
     const d = drag.current;
     if (d?.id === node.id) {
       /* a real drag shouldn't also toggle selection */
@@ -494,7 +497,7 @@ export default function Flowchart({ steps = NODES }: { steps?: StepNode[]; varia
             onPointerMove={onPointerMove(node)}
             onPointerUp={onPointerUp(node)}
             className="absolute flex -translate-x-1/2 touch-none flex-col items-start gap-1.5"
-            style={{ left: cx, top, width: w, zIndex: drag.current?.id === node.id ? 2 : 1 }}
+            style={{ left: cx, top, width: w, zIndex: draggingId === node.id ? 2 : 1 }}
           >
             {node.kind && (
               <span

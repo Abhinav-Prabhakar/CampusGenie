@@ -25,10 +25,10 @@ export async function extractTextFromFile(
         text: ocrText.length > 0 ? ocrText : `[OCR scan of image ${filename}: No readable text detected]`,
         pageCount: 1,
       };
-    } catch (err: any) {
+    } catch (err) {
       console.error("[Tesseract OCR Error]", err);
       return {
-        text: `Image document (${filename}) uploaded to Databricks Lakehouse (OCR processing encountered: ${err?.message || "unknown error"}).`,
+        text: `Image document (${filename}) uploaded to Databricks Lakehouse (OCR processing encountered: ${(err as Error)?.message || "unknown error"}).`,
         pageCount: 1,
       };
     }
@@ -44,8 +44,8 @@ export async function extractTextFromFile(
         text: text || "PDF contained no extractable textual content.",
         pageCount: data.numpages || 1,
       };
-    } catch (err: any) {
-      console.warn("[PDF Parse Fallback]", err?.message);
+    } catch (err) {
+      console.warn("[PDF Parse Fallback]", (err as Error)?.message);
       // Fallback: search for readable ascii text streams inside PDF buffer
       const raw = buffer.toString("latin1");
       const matches = raw.match(/\(([^()]+)\)[\s]*Tj/g) || [];

@@ -319,6 +319,7 @@ export default function CampusGenieChatPage() {
   }, []);
 
   const scrollAnchorRef = useRef<HTMLDivElement>(null);
+  const handleSendRef = useRef<(text: string) => Promise<void> | void>(() => {});
 
   // Load an active thread or prompt from another view.
   useEffect(() => {
@@ -340,7 +341,7 @@ export default function CampusGenieChatPage() {
 
     if (initPrompt) {
       sessionStorage.removeItem("cg_initial_prompt");
-      handleSend(initPrompt);
+      handleSendRef.current(initPrompt);
     }
   }, [threads]);
 
@@ -430,8 +431,8 @@ export default function CampusGenieChatPage() {
       let streamError: string | null = null;
       const explicitToolEventIds: string[] = [];
       let parsedQuestions: any = null;
-      let parsedApproval: any = null;
-      let parsedRecommendation: any = null;
+      const parsedApproval: any = null;
+      const parsedRecommendation: any = null;
       let parsedDirections: DirectionsPayload | null = null;
 
       if (reader) {
@@ -665,6 +666,10 @@ export default function CampusGenieChatPage() {
       setToolActivity(null);
     }
   };
+
+  useEffect(() => {
+    handleSendRef.current = handleSend;
+  });
 
   const handleStop = () => {
     requestAbortRef.current?.abort();

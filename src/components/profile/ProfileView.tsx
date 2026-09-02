@@ -361,7 +361,7 @@ export default function ProfileView() {
                 <div className="ch">
                   <span className="cic"><svg className="i i13" aria-hidden="true"><use href="#i-cap"/></svg></span>
                   <h3>Academic context</h3>
-                  <span className="act"><span className="micro">Weight Genie's study-time suggestions</span></span>
+                  <span className="act"><span className="micro">Weight Genie&apos;s study-time suggestions</span></span>
                 </div>
                 <div className="cb">
                   <div className="rows">
@@ -558,7 +558,7 @@ export default function ProfileView() {
                 <div className="ch">
                   <span className="cic" style={{ "--t": "var(--hue-hack)" } as React.CSSProperties}><svg className="i i13" aria-hidden="true"><use href="#i-zap"/></svg></span>
                   <h3>Event preferences</h3>
-                  <span className="act"><span className="micro">Feeds Genie's ranking</span></span>
+                  <span className="act"><span className="micro">Feeds Genie&apos;s ranking</span></span>
                 </div>
                 <div className="cb">
 
@@ -853,7 +853,7 @@ export default function ProfileView() {
                   <div className="bdgs">
                     <div className="bdg" style={{ "--t": "var(--hue-hack)" } as React.CSSProperties} title="Hack the Lake — finalist">
                       <span className="bic"><svg className="i i13" aria-hidden="true"><use href="#i-code"/></svg></span>
-                      <span className="bl">Hack Finalist '25</span>
+                      <span className="bl">Hack Finalist &apos;25</span>
                     </div>
                     <div className="bdg" style={{ "--t": "var(--accent)" } as React.CSSProperties} title="Attended 6 evening events">
                       <span className="bic"><svg className="i i13" aria-hidden="true"><use href="#i-moon"/></svg></span>

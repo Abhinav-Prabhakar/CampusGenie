@@ -3,14 +3,15 @@
 import { useState, useEffect, useCallback } from "react";
 
 export function useTheme() {
-  const [isDark, setIsDark] = useState<boolean>(true);
+  const [isDark, setIsDark] = useState<boolean>(() => {
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem("bui-theme");
+      return saved !== "light";
+    }
+    return true;
+  });
 
   useEffect(() => {
-    const saved = localStorage.getItem("bui-theme");
-    const darkActive = saved !== "light";
-    setIsDark(darkActive);
-    document.documentElement.classList.toggle("dark", darkActive);
-
     const handleStorage = (e: StorageEvent) => {
       if (e.key === "bui-theme") {
         const nextDark = e.newValue !== "light";

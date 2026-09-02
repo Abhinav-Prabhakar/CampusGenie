@@ -6,7 +6,6 @@ import { Button } from "@/components/atoms/Button";
 import { Chip } from "@/components/atoms/Chip";
 import { StatusPill } from "@/components/atoms/StatusPill";
 import { EntityChip } from "@/components/atoms/EntityChip";
-import { Switch } from "@/components/atoms/Switch";
 
 interface SourcesViewProps {
   onAskGenie?: (prompt: string) => void;
@@ -14,7 +13,7 @@ interface SourcesViewProps {
 
 export default function SourcesView({ onAskGenie }: SourcesViewProps) {
   const [sources, setSources] = useState<KnowledgeSource[]>([]);
-  const [tables, setTables] = useState<any[]>([]);
+  const [tables, setTables] = useState<Array<Record<string, any>>>([]);
   const [totalChunks, setTotalChunks] = useState<number>(252);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [activeTab, setActiveTab] = useState<"all" | "document" | "syllabus" | "policy" | "technical" | "dataset" | "tables">("all");
@@ -40,9 +39,34 @@ export default function SourcesView({ onAskGenie }: SourcesViewProps) {
   const [ragResults, setRagResults] = useState<KnowledgeSource[]>([]);
   const [isSearchingRag, setIsSearchingRag] = useState<boolean>(false);
 
+  useEffect(() => {
+    let ignore = false;
+    async function load() {
+      try {
+        const res = await fetch("/api/sources");
+        if (res.ok) {
+          const data = await res.json();
+          if (!ignore) {
+            setSources(data.sources || []);
+            setTables(data.tables || []);
+            if (data.totalChunks) setTotalChunks(data.totalChunks);
+          }
+        }
+      } catch (e) {
+        console.warn("Failed to load knowledge sources:", e);
+      } finally {
+        if (!ignore) setIsLoading(false);
+      }
+    }
+    load();
+    return () => {
+      ignore = true;
+    };
+  }, []);
+
   const fetchSources = async () => {
-    setIsLoading(true);
     try {
+      setIsLoading(true);
       const res = await fetch("/api/sources");
       if (res.ok) {
         const data = await res.json();
@@ -56,10 +80,6 @@ export default function SourcesView({ onAskGenie }: SourcesViewProps) {
       setIsLoading(false);
     }
   };
-
-  useEffect(() => {
-    fetchSources();
-  }, []);
 
   const handleFileChange = (file: File) => {
     setSelectedFile(file);
@@ -261,7 +281,7 @@ export default function SourcesView({ onAskGenie }: SourcesViewProps) {
             <button
               key={tab.id}
               type="button"
-              onClick={() => setActiveTab(tab.id as any)}
+              onClick={() => setActiveTab(tab.id as typeof activeTab)}
               className={`h-7 px-2.5 rounded-[7px] text-[12px] font-medium whitespace-nowrap transition-colors ${
                 activeTab === tab.id
                   ? "bg-hover-2 text-ink shadow-hairline"

@@ -359,22 +359,19 @@ export default function KeyboardShortcutsModal({
   onClose: () => void;
   onOpen?: () => void;
 }) {
-  const [platform, setPlatform] = useState<"mac" | "win" | "linux">("mac");
+  const [platform, setPlatform] = useState<"mac" | "win" | "linux">(() => {
+    if (typeof navigator !== "undefined") {
+      const p = navigator.platform.toLowerCase();
+      if (p.includes("win")) return "win";
+      if (p.includes("linux")) return "linux";
+    }
+    return "mac";
+  });
   const [showAdvanced, setShowAdvanced] = useState<boolean>(false);
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const paneRef = useRef<HTMLDivElement>(null);
-
-  // Detect platform on mount
-  useEffect(() => {
-    if (typeof navigator !== "undefined") {
-      const p = navigator.platform.toLowerCase();
-      if (p.includes("win")) setPlatform("win");
-      else if (p.includes("linux")) setPlatform("linux");
-      else setPlatform("mac");
-    }
-  }, []);
 
   // Keyboard shortcut listener. Bindings invoke real controls through stable
   // data attributes so the reference and the UI cannot drift apart.

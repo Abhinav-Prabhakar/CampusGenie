@@ -562,7 +562,7 @@ export async function POST(req: NextRequest) {
 
         try {
           // Multi-turn conversation with tool execution
-          let conversationMessages: any[] = [
+          const conversationMessages: any[] = [
             { role: "system", content: systemPrompt },
             ...messages,
           ];

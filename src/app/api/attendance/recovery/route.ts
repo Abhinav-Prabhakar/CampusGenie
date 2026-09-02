@@ -144,7 +144,7 @@ export async function POST(req: NextRequest) {
       },
     ];
 
-    let dynamicPlan: DynamicRecoveryPlan = {
+    const dynamicPlan: DynamicRecoveryPlan = {
       courseCode,
       courseName,
       instructor,

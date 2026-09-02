@@ -39,11 +39,13 @@ export function StreamText({
   const [count, setCount] = useState(0);
   const onProgressRef = useRef(onProgress);
   const onDoneRef = useRef(onDone);
-  onProgressRef.current = onProgress;
-  onDoneRef.current = onDone;
 
   useEffect(() => {
-    setCount(0);
+    onProgressRef.current = onProgress;
+    onDoneRef.current = onDone;
+  });
+
+  useEffect(() => {
     let i = 0;
     const id = setInterval(() => {
       i = Math.min(i + charsPerTick, text.length);
@@ -54,7 +56,10 @@ export function StreamText({
         onDoneRef.current?.();
       }
     }, tickMs);
-    return () => clearInterval(id);
+    return () => {
+      clearInterval(id);
+      setCount(0);
+    };
   }, [text, charsPerTick, tickMs]);
 
   const streaming = count < text.length;
