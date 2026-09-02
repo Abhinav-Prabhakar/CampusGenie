@@ -186,3 +186,39 @@ export function buildWalkingRoute(
     steps,
   };
 }
+
+/**
+ * Extract natural-language origin and destination endpoints from a directions query.
+ * Handles patterns such as:
+ * - "from X to Y"
+ * - "how do I get to Y from X"
+ * - "between X and Y"
+ */
+export function extractDirectionEndpoints(text: string): { from: string; to: string } | null {
+  // Case 1: "from <from> to <to>"
+  const m1 = text.match(/\bfrom\s+([^,.\n?]+?)\s+to\s+([^,.\n?]+?)(?:\.|\?|\n|$|\s+in\b|\s+at\b|\s+please\b)/i);
+  if (m1) {
+    const from = m1[1].replace(/^(the|a|an)\s+/i, "").trim();
+    const to = m1[2].replace(/^(the|a|an)\s+/i, "").trim();
+    if (from && to && from.toLowerCase() !== to.toLowerCase()) return { from, to };
+  }
+
+  // Case 2: "to <to> from <from>" or "how (do I|to) get to <to> from <from>"
+  const m2 = text.match(/\b(?:how\s+(?:do\s+I|to)\s+(?:get|walk|go|reach)\s+(?:to\s+)?|(?:route|directions?|walk|path)\s+to\s+)([^,.\n?]+?)\s+from\s+([^,.\n?]+?)(?:\.|\?|\n|$)/i);
+  if (m2) {
+    const to = m2[1].replace(/^(the|a|an)\s+/i, "").trim();
+    const from = m2[2].replace(/^(the|a|an)\s+/i, "").trim();
+    if (from && to && from.toLowerCase() !== to.toLowerCase()) return { from, to };
+  }
+
+  // Case 3: "between <from> and <to>"
+  const m3 = text.match(/\b(?:between)\s+([^,.\n?]+?)\s+and\s+([^,.\n?]+?)(?:\.|\?|\n|$)/i);
+  if (m3) {
+    const from = m3[1].replace(/^(the|a|an)\s+/i, "").trim();
+    const to = m3[2].replace(/^(the|a|an)\s+/i, "").trim();
+    if (from && to && from.toLowerCase() !== to.toLowerCase()) return { from, to };
+  }
+
+  return null;
+}
+

@@ -198,7 +198,7 @@ async function getSourcesSnippet(): Promise<string> {
 
 // ─── Genie Mode ──────────────────────────────────────────────────────────────
 
-function createGenieResponse(req: NextRequest, prompt: string) {
+function createGenieResponse(req: NextRequest, prompt: string, college: string = DEFAULT_COLLEGE) {
   const stream = new ReadableStream({
     async start(controller) {
       const encoder = new TextEncoder();
@@ -206,7 +206,7 @@ function createGenieResponse(req: NextRequest, prompt: string) {
         if (!req.signal.aborted) controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
       };
       try {
-        await streamGenieConversation(prompt, req.signal, send);
+        await streamGenieConversation(prompt, req.signal, send, college);
         send({ type: "tool_status", toolName: "genie_agent", label: "Campus Genie Agent complete", active: false });
         if (!req.signal.aborted) controller.enqueue(encoder.encode("data: [DONE]\n\n"));
       } catch (error: any) {
@@ -497,9 +497,13 @@ export async function POST(req: NextRequest) {
       .reverse()
       .find((m: { role?: string }) => m.role === "user")?.content;
 
+    // Resolve the signed-in student's saved college (drives the directions tool and Genie route resolution)
+    const profileUser = await getCurrentUser().catch(() => null);
+    const college = profileUser?.college || (await getCollegeForUser(profileUser?.userId)) || DEFAULT_COLLEGE;
+
     // Genie routing
     if (routingMode === "genie" && latestPrompt) {
-      return createGenieResponse(req, latestPrompt);
+      return createGenieResponse(req, latestPrompt, college);
     }
     const requestsGenie =
       routingMode === "auto" &&
@@ -510,7 +514,7 @@ export async function POST(req: NextRequest) {
       requestsGenie && latestPrompt
         ? await canAnswerWithGenie(latestPrompt, req.signal)
         : false;
-    if (routeToGenie && latestPrompt) return createGenieResponse(req, latestPrompt);
+    if (routeToGenie && latestPrompt) return createGenieResponse(req, latestPrompt, college);
 
     // Resolve model + provider
     const model =
@@ -573,10 +577,6 @@ export async function POST(req: NextRequest) {
         headers["Authorization"] = `Bearer ${apiKey}`;
       }
     }
-
-    // Resolve the signed-in student's saved college (drives the directions tool)
-    const profileUser = await getCurrentUser().catch(() => null);
-    const college = profileUser?.college || DEFAULT_COLLEGE;
 
     // Build system prompt with sources + campus places
     const [sourcesSnippet, campusLocationsSnippet] = await Promise.all([

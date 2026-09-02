@@ -6,6 +6,7 @@ import {
   bearingDegrees,
   compassName,
   buildWalkingRoute,
+  extractDirectionEndpoints,
   formatDistance,
   formatDuration,
 } from "../src/lib/campusDirections.ts";
@@ -77,3 +78,31 @@ test("formatters use design-system tabular conventions", () => {
   assert.equal(formatDuration(6.2), "6 min");
   assert.equal(formatDuration(75), "1 h 15 min");
 });
+
+test("extractDirectionEndpoints extracts 'from X to Y'", () => {
+  const r1 = extractDirectionEndpoints("Can you show directions from Central Library to Main Canteen?");
+  assert.deepEqual(r1, { from: "Central Library", to: "Main Canteen" });
+
+  const r2 = extractDirectionEndpoints("walking route from the library to the dining hall in campus");
+  assert.deepEqual(r2, { from: "library", to: "dining hall" });
+});
+
+test("extractDirectionEndpoints extracts 'how do I get to Y from X'", () => {
+  const r1 = extractDirectionEndpoints("How do I get to Kemper Hall from North Hostel?");
+  assert.deepEqual(r1, { from: "North Hostel", to: "Kemper Hall" });
+
+  const r2 = extractDirectionEndpoints("how to walk to the library from Student Center");
+  assert.deepEqual(r2, { from: "Student Center", to: "library" });
+});
+
+test("extractDirectionEndpoints extracts 'between X and Y'", () => {
+  const r1 = extractDirectionEndpoints("show me directions between Innovation Lab and Shields Library");
+  assert.deepEqual(r1, { from: "Innovation Lab", to: "Shields Library" });
+});
+
+test("extractDirectionEndpoints returns null for non-direction queries", () => {
+  assert.equal(extractDirectionEndpoints("What time is the hackathon tomorrow?"), null);
+  assert.equal(extractDirectionEndpoints("Who is the professor for EEC 172?"), null);
+  assert.equal(extractDirectionEndpoints("List all public events"), null);
+});
+

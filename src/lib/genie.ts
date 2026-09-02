@@ -1,6 +1,9 @@
 import { execFile } from "child_process";
 import { promisify } from "util";
 import { executeLakehouseSql } from "@/lib/lakehouse";
+import { fetchCampusLocations, resolveCampusPoint } from "@/lib/campusLocations";
+import { buildWalkingRoute, extractDirectionEndpoints, type DirectionsPayload } from "@/lib/campusDirections";
+import { DEFAULT_COLLEGE } from "@/lib/appUsers";
 
 const execFileAsync = promisify(execFile);
 
@@ -138,16 +141,87 @@ function resolveLiveEventIds(
   return Array.from(ids).filter((id) => liveIds.has(id));
 }
 
-// NOTE: interactive MCQ surveys are intentionally NOT auto-attached here.
-// The only source of the questions card is the model's own `ask_user_questions`
-// tool call in the chat route — Genie conversations answer as text. Attaching a
-// canned survey from campus_surveys (or shoehorning suggested follow-up prompts
-// into fake MCQs) made the assistant re-ask the same stale questionnaire.
+
+export async function resolveGenieWalkingRoute(
+  prompt: string,
+  answer: string,
+  records: Record<string, unknown>[],
+  college: string = DEFAULT_COLLEGE
+): Promise<DirectionsPayload | null> {
+  const locations = await fetchCampusLocations(college);
+  if (!locations || locations.length === 0) return null;
+
+  // 1. Check prompt or answer for explicit endpoints ("from X to Y")
+  const endpoints = extractDirectionEndpoints(prompt) || extractDirectionEndpoints(answer);
+  if (endpoints) {
+    const fromMatch = resolveCampusPoint(locations, endpoints.from);
+    const toMatch = resolveCampusPoint(locations, endpoints.to);
+    if (fromMatch && toMatch && fromMatch.point.name !== toMatch.point.name) {
+      return buildWalkingRoute(fromMatch.point, toMatch.point, college);
+    }
+  }
+
+  // 2. Check if Genie SQL query returned location records
+  const locRecords = records.filter(
+    (r) =>
+      (r.lat !== undefined && r.lng !== undefined) ||
+      (r.location_id !== undefined && r.name !== undefined) ||
+      r.building !== undefined
+  );
+  if (locRecords.length >= 2) {
+    const p1 = resolveCampusPoint(locations, String(locRecords[0].name || locRecords[0].building || ""));
+    const p2 = resolveCampusPoint(locations, String(locRecords[1].name || locRecords[1].building || ""));
+    if (p1 && p2 && p1.point.name !== p2.point.name) {
+      return buildWalkingRoute(p1.point, p2.point, college);
+    }
+  }
+
+  // 3. Navigation intent detection in prompt
+  const hasNavIntent = /\b(directions?|navigate|navigation|map|route|walk|walking|path|where is|how (do i|to) (get|reach|walk|go)|way to|locate)\b/i.test(prompt);
+  if (hasNavIntent) {
+    const matches: Array<{ loc: (typeof locations)[0]; score: number }> = [];
+    for (const loc of locations) {
+      const match = resolveCampusPoint([loc], prompt);
+      if (match && match.score >= 45) {
+        matches.push({ loc, score: match.score });
+      }
+    }
+    matches.sort((a, b) => b.score - a.score);
+
+    if (matches.length >= 2 && matches[0].loc.name !== matches[1].loc.name) {
+      const p1 = resolveCampusPoint(locations, matches[0].loc.name);
+      const p2 = resolveCampusPoint(locations, matches[1].loc.name);
+      if (p1 && p2 && p1.point.name !== p2.point.name) {
+        return buildWalkingRoute(p1.point, p2.point, college);
+      }
+    } else if (matches.length === 1) {
+      const dest = resolveCampusPoint(locations, matches[0].loc.name);
+      if (dest) {
+        const defaultHub =
+          locations.find((l) => /main gate|student center|dorm|hostel|entrance/i.test(l.name) && l.name !== dest.point.name) ||
+          locations.find((l) => l.name !== dest.point.name);
+
+        if (defaultHub) {
+          const originPoint = {
+            name: defaultHub.name,
+            lat: defaultHub.lat,
+            lng: defaultHub.lng,
+            category: defaultHub.category,
+          };
+          return buildWalkingRoute(originPoint, dest.point, college);
+        }
+      }
+    }
+  }
+
+  return null;
+}
 
 export async function streamGenieConversation(
   prompt: string,
   signal: AbortSignal,
-  send: (event: unknown) => void
+  send: (event: unknown) => void,
+  college: string = DEFAULT_COLLEGE
 ) {
   const config: GenieConfig = {
     host: (process.env.DATABRICKS_HOST || "https://dbc-c69189ed-ede0.cloud.databricks.com").replace(/\/+$/, ""),
@@ -204,17 +278,19 @@ export async function streamGenieConversation(
     send({ choices: [{ delta: { reasoning_content: `\n\`\`\`sql\n${query}\n\`\`\`\n` } }] });
   }
 
+  let toolIndex = 0;
+
+  // 1. Live Lakehouse events grid
   const liveEvents = await getLiveLakehouseEvents();
   const eventIds = resolveLiveEventIds(genieRecords, answer || "", prompt, liveEvents);
 
-  // Only emit show_events_grid if specific verified events were matched
   if (eventIds.length > 0) {
     send({ type: "events_grid", eventIds });
     send({
       choices: [{
         delta: {
           tool_calls: [{
-            index: 0,
+            index: toolIndex++,
             id: "genie_events",
             function: {
               name: "show_events_grid",
@@ -226,5 +302,41 @@ export async function streamGenieConversation(
     });
   }
 
-  send({ choices: [{ delta: { content: answer || "Genie completed the query but did not return an answer." } }] });
+  // 2. Interactive campus directions map
+  const walkingRoute = await resolveGenieWalkingRoute(prompt, answer || "", genieRecords, college);
+  if (walkingRoute) {
+    send({ type: "directions", directions: walkingRoute });
+    send({
+      choices: [{
+        delta: {
+          tool_calls: [{
+            index: toolIndex++,
+            id: "genie_directions",
+            function: {
+              name: "show_campus_directions",
+              arguments: JSON.stringify({
+                from_location: walkingRoute.from.name,
+                to_location: walkingRoute.to.name,
+                college: walkingRoute.college,
+              }),
+            },
+          }],
+        },
+      }],
+    });
+  }
+
+  let finalContent = answer || "";
+  if (walkingRoute && (!finalContent || finalContent.length < 30 || !finalContent.toLowerCase().includes("walking"))) {
+    const stepsText = walkingRoute.steps.map((s, i) => `${i + 1}. ${s.instruction}`).join("\n");
+    const directionsSummary =
+      `\n\n**Walking directions from ${walkingRoute.from.name} to ${walkingRoute.to.name}:**\n` +
+      `Distance: ${walkingRoute.distanceMeters} m (about ${walkingRoute.durationMinutes} min on foot)\n\n` +
+      `${stepsText}\n\n` +
+      `Explore the interactive 3D campus map above for turn-by-turn navigation.`;
+
+    finalContent = finalContent ? `${finalContent.trim()}\n${directionsSummary}` : directionsSummary.trim();
+  }
+
+  send({ choices: [{ delta: { content: finalContent || "Genie completed the query but did not return an answer." } }] });
 }
