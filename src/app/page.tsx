@@ -745,9 +745,9 @@ export default function CampusGenieChatPage() {
                 </div>
 
                 <div className="space-y-2 max-w-lg mx-auto">
-                  <h2 className="text-xl font-semibold text-ink">What matters is already within reach.</h2>
+                  <h2 className="text-xl font-semibold text-ink">Ask it now. Genie handles the rest</h2>
                   <p className="text-[13px] text-ink-2 leading-relaxed">
-                    Powered by Databricks Unity Catalog Delta tables &amp; AI reasoning. Explore research labs, AI club recruitment, campus fests, and alumni career paths.
+                    We got cover your events, attendence, clubs, dining and much more Ask anything.
                   </p>
                 </div>
 
