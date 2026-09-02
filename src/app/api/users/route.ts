@@ -3,6 +3,8 @@ import {
   getCurrentUser,
   setUserCollege,
   setUserPhoneNumber,
+  setUserNames,
+  patchUserProfile,
   DEFAULT_COLLEGE,
 } from "@/lib/appUsers";
 import { parseSelfProfileUpdate } from "@/lib/userProfileUpdate";
@@ -30,9 +32,11 @@ export async function PATCH(req: NextRequest) {
       return NextResponse.json({ error: parsed.error }, { status: parsed.status });
     }
 
-    const { college: rawCollege, phoneNumber: rawPhone } = parsed.update;
+    const { college: rawCollege, phoneNumber: rawPhone, firstName, lastName, profile } = parsed.update;
     const wantsCollege = rawCollege !== undefined;
     const wantsPhone = rawPhone !== undefined;
+    const wantsNames = firstName !== undefined || lastName !== undefined;
+    const wantsProfile = profile !== undefined;
 
     let updated = { ...user, college: user.college || DEFAULT_COLLEGE };
 
@@ -52,9 +56,34 @@ export async function PATCH(req: NextRequest) {
       updated = { ...updated, phoneNumber: rawPhone && rawPhone.length > 0 ? rawPhone : null };
     }
 
-    const message = wantsPhone
-      ? "Contact details updated in Databricks Lakehouse."
-      : `College updated to ${rawCollege} in Databricks Lakehouse.`;
+    if (wantsNames) {
+      const nextFirst = firstName !== undefined ? firstName : user.firstName ?? "";
+      const nextLast = lastName !== undefined ? lastName : user.lastName ?? "";
+      const ok = await setUserNames(user.userId, nextFirst || null, nextLast || null);
+      if (!ok) {
+        return NextResponse.json({ error: "Failed to persist name to Lakehouse" }, { status: 500 });
+      }
+      updated = {
+        ...updated,
+        firstName: nextFirst || null,
+        lastName: nextLast || null,
+        fullName: [nextFirst, nextLast].filter(Boolean).join(" ") || user.email?.split("@")[0] || "Student",
+      };
+    }
+
+    if (wantsProfile) {
+      const merged = await patchUserProfile(user.userId, profile!);
+      if (!merged) {
+        return NextResponse.json({ error: "Failed to persist profile to Lakehouse" }, { status: 500 });
+      }
+      updated = { ...updated, profile: merged };
+    }
+
+    const message = wantsProfile || wantsNames
+      ? "Profile updated in Databricks Lakehouse."
+      : wantsPhone
+        ? "Contact details updated in Databricks Lakehouse."
+        : `College updated to ${rawCollege} in Databricks Lakehouse.`;
 
     return NextResponse.json({
       success: true,

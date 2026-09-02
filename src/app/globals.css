@@ -228,6 +228,11 @@ body {
   color: #121417 !important;
 }
 
+.campus-genie-welcome-mark svg {
+  color: #121417 !important;
+  stroke: #121417 !important;
+}
+
 .campus-genie-suggestion {
   background-color: color-mix(in srgb, var(--surface) 82%, transparent) !important;
   backdrop-filter: blur(10px);

@@ -2,6 +2,16 @@
 
 import { useEffect, useState } from "react";
 
+export type CurrentUserProfile = {
+  pronouns?: string;
+  bio?: string;
+  school?: string;
+  degree?: string;
+  minor?: string;
+  expectedGrad?: string;
+  advisor?: string;
+};
+
 export type CurrentUser = {
   userId: string;
   email: string | null;
@@ -11,6 +21,7 @@ export type CurrentUser = {
   role: "student" | "admin";
   college?: string | null;
   phoneNumber?: string | null;
+  profile?: CurrentUserProfile;
 };
 
 export function initialsFor(user: CurrentUser | null): string {

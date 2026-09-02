@@ -9,6 +9,17 @@ export type AppUserRole = "student" | "admin";
 
 export const DEFAULT_COLLEGE = "Databricks University";
 
+/** Editable profile fields persisted in app_users.profile_json. */
+export type AppUserProfile = {
+  pronouns?: string;
+  bio?: string;
+  school?: string; // e.g. College of Engineering (campus selector lives in `college`)
+  degree?: string;
+  minor?: string;
+  expectedGrad?: string;
+  advisor?: string;
+};
+
 export type AppUser = {
   userId: string;
   email: string | null;
@@ -18,9 +29,27 @@ export type AppUser = {
   role: AppUserRole;
   college: string | null;
   phoneNumber: string | null;
+  profile: AppUserProfile;
   createdAt?: string;
   updatedAt?: string;
 };
+
+function sqlString(value: string | null | undefined): string {
+  return `'${String(value ?? "").replace(/'/g, "''")}'`;
+}
+
+function parseProfileJson(raw: unknown): AppUserProfile {
+  if (typeof raw !== "string" || raw.trim().length === 0) return {};
+  try {
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      return parsed as AppUserProfile;
+    }
+  } catch {
+    // malformed JSON — treat as empty so edits can repair it
+  }
+  return {};
+}
 
 function mapRowToAppUser(r: Record<string, any>): AppUser {
   const firstName = r.first_name || null;
@@ -35,6 +64,7 @@ function mapRowToAppUser(r: Record<string, any>): AppUser {
     role: r.role === "admin" ? "admin" : "student",
     college: r.college || null,
     phoneNumber: r.phone_number || null,
+    profile: parseProfileJson(r.profile_json),
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   };
@@ -89,10 +119,17 @@ export async function ensureAppUser(userId: string): Promise<AppUser | null> {
   } catch {
     // phone_number column already exists (or migration otherwise skipped) — proceed.
   }
+  try {
+    await executeLakehouseSql(
+      "ALTER TABLE workspace.campus_explorer.app_users ADD COLUMN profile_json STRING"
+    );
+  } catch {
+    // profile_json column already exists (or migration otherwise skipped) — proceed.
+  }
 
   const insertRes = await executeLakehouseSql(`
-    INSERT INTO workspace.campus_explorer.app_users (user_id, email, first_name, last_name, role, college, phone_number, created_at, updated_at)
-    VALUES (:user_id, :email, :first_name, :last_name, 'student', :college, :phone_number, current_timestamp(), current_timestamp())
+    INSERT INTO workspace.campus_explorer.app_users (user_id, email, first_name, last_name, role, college, phone_number, profile_json, created_at, updated_at)
+    VALUES (:user_id, :email, :first_name, :last_name, 'student', :college, :phone_number, NULL, current_timestamp(), current_timestamp())
   `, undefined, 30, [
     { name: "user_id", value: userId },
     { name: "email", value: email },
@@ -126,6 +163,7 @@ export async function ensureAppUser(userId: string): Promise<AppUser | null> {
     role: "student",
     college: DEFAULT_COLLEGE,
     phoneNumber,
+    profile: {},
   };
 }
 
@@ -177,6 +215,56 @@ export async function setUserPhoneNumber(userId: string, phone: string | null): 
     return false;
   }
   return true;
+}
+
+/** Update the display name columns (our Lakehouse mirror owns it after first login). */
+export async function setUserNames(userId: string, firstName: string | null, lastName: string | null): Promise<boolean> {
+  const res = await executeLakehouseSql(
+    `UPDATE workspace.campus_explorer.app_users SET first_name = ${firstName ? sqlString(firstName) : "NULL"}, last_name = ${lastName ? sqlString(lastName) : "NULL"}, updated_at = current_timestamp() WHERE user_id = ${sqlString(userId)}`
+  );
+  if (res.state !== "SUCCEEDED") {
+    console.error("[setUserNames] failed:", res.error);
+    return false;
+  }
+  return true;
+}
+
+/** Merge a partial profile patch into app_users.profile_json and return the merged value. */
+export async function patchUserProfile(userId: string, patch: AppUserProfile): Promise<AppUserProfile | null> {
+  const select = await executeLakehouseSql(
+    `SELECT profile_json FROM workspace.campus_explorer.app_users WHERE user_id = ${sqlString(userId)}`,
+    undefined,
+    20
+  );
+  if (select.state !== "SUCCEEDED") {
+    console.error("[patchUserProfile] select failed:", select.error);
+    return null;
+  }
+  const current: AppUserProfile =
+    select.records && select.records.length > 0 ? parseProfileJson(select.records[0].profile_json) : {};
+
+  const merged: AppUserProfile = { ...current };
+  for (const key of Object.keys(patch) as Array<keyof AppUserProfile>) {
+    const value = patch[key];
+    if (typeof value === "string") {
+      if (value.trim().length > 0) {
+        (merged as Record<string, string>)[key] = value.trim();
+      } else {
+        // explicit empty string clears the field
+        delete (merged as Record<string, string>)[key];
+      }
+    }
+  }
+
+  const json = JSON.stringify(merged).replace(/'/g, "''");
+  const update = await executeLakehouseSql(
+    `UPDATE workspace.campus_explorer.app_users SET profile_json = '${json}', updated_at = current_timestamp() WHERE user_id = ${sqlString(userId)}`
+  );
+  if (update.state !== "SUCCEEDED") {
+    console.error("[patchUserProfile] update failed:", update.error);
+    return null;
+  }
+  return merged;
 }
 
 /**

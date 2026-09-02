@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { useCurrentUser, initialsFor, setCurrentUserCached } from "@/lib/useCurrentUser";
+import { useCurrentUser, initialsFor, setCurrentUserCached, type CurrentUser } from "@/lib/useCurrentUser";
 import ContactQrCard from "@/components/profile/ContactQrCard";
 import "@/app/profile.css";
 
@@ -69,6 +69,44 @@ function UsageMeter({
   );
 }
 
+/* ── editable profile draft ─────────────────────────────────
+ * A user-scoped buffer: when absent (or stale for another account) the
+ * defaults derived from the saved user are used, so the UI always shows
+ * persisted values until the student starts editing. */
+type ProfileDraft = {
+  name: string;
+  pronouns: string;
+  bio: string;
+  degree: string;
+  minor: string;
+  expectedGrad: string;
+  advisor: string;
+};
+
+const DEFAULT_BIO = "CS + Stats senior building data tools for campus life. Looking for a hackathon team and people to climb with on Fridays.";
+const DEFAULT_DEGREE = "B.S. Computer Science";
+const DEFAULT_MINOR = "Statistics";
+const DEFAULT_GRAD = "Spring 2026";
+const DEFAULT_ADVISOR = "Prof. D. Rivera";
+const DEFAULT_PRONOUNS = "she/her";
+
+function draftFromUser(user: CurrentUser | null): ProfileDraft {
+  const p = user?.profile;
+  return {
+    name: user?.fullName ?? "Student",
+    pronouns: p?.pronouns ?? DEFAULT_PRONOUNS,
+    bio: p?.bio ?? DEFAULT_BIO,
+    degree: p?.degree ?? DEFAULT_DEGREE,
+    minor: p?.minor ?? DEFAULT_MINOR,
+    expectedGrad: p?.expectedGrad ?? DEFAULT_GRAD,
+    advisor: p?.advisor ?? DEFAULT_ADVISOR,
+  };
+}
+
+function sameDraft(a: ProfileDraft, b: ProfileDraft): boolean {
+  return (Object.keys(a) as Array<keyof ProfileDraft>).every((k) => a[k] === b[k]);
+}
+
 export default function ProfileView() {
   const { user, loading } = useCurrentUser();
   const [collegeValue, setCollegeValue] = useState<string | null>(null);
@@ -77,6 +115,53 @@ export default function ProfileView() {
   const role = user?.role ?? "student";
   const isAdmin = role === "admin";
   const college = collegeValue ?? user?.college ?? "Databricks University";
+
+  // Edit-mode profile draft + save state (persisted to app_users via /api/users)
+  const [editOpen, setEditOpen] = useState(false);
+  const [draftState, setDraftState] = useState<{ userId: string; draft: ProfileDraft } | null>(null);
+  const [profileSaveState, setProfileSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const savedDraft = draftFromUser(user);
+  const draft = draftState && draftState.userId === user?.userId ? draftState.draft : savedDraft;
+  const isDirty = !sameDraft(draft, savedDraft);
+
+  const setDraft = (patch: Partial<ProfileDraft>) => {
+    if (!user) return;
+    setDraftState({ userId: user.userId, draft: { ...draft, ...patch } });
+  };
+
+  const saveProfile = async (next: ProfileDraft): Promise<boolean> => {
+    if (!user || profileSaveState === "saving") return editOpen;
+    setProfileSaveState("saving");
+    const nameParts = next.name.trim().split(/\s+/).filter(Boolean);
+    try {
+      const res = await fetch("/api/users", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          firstName: nameParts[0] ?? "",
+          lastName: nameParts.slice(1).join(" "),
+          profile: {
+            pronouns: next.pronouns,
+            bio: next.bio,
+            degree: next.degree,
+            minor: next.minor,
+            expectedGrad: next.expectedGrad,
+            advisor: next.advisor,
+          },
+        }),
+      });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({})))?.error || "Failed");
+      const data = await res.json();
+      if (data.user) setCurrentUserCached(data.user);
+      setDraftState(null);
+      setProfileSaveState("saved");
+      setTimeout(() => setProfileSaveState("idle"), 2400);
+      return true;
+    } catch {
+      setProfileSaveState("error");
+      return false;
+    }
+  };
 
   // Live chat quota (RPM/RPD) from the same in-memory limiter the chat API uses.
   const [usage, setUsage] = useState<ChatUsage | null>(null);
