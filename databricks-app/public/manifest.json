@@ -1,0 +1,43 @@
+{
+  "id": "/",
+  "name": "Campus Genie",
+  "short_name": "Campus Genie",
+  "description": "Your Databricks-powered campus companion for Genie answers, events, attendance, clubs, labs, policies and student life.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "display_override": ["window-controls-overlay", "standalone", "minimal-ui"],
+  "orientation": "portrait-primary",
+  "background_color": "#f8f5f3",
+  "theme_color": "#f8f5f3",
+  "categories": ["education", "productivity", "utilities"],
+  "lang": "en",
+  "icons": [
+    {
+      "src": "/pwa-icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/pwa-icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Ask Campus Genie",
+      "short_name": "Ask Genie",
+      "url": "/?tab=genie",
+      "icons": [{ "src": "/pwa-icon-192.png", "sizes": "192x192", "type": "image/png" }]
+    },
+    {
+      "name": "Campus Events",
+      "short_name": "Events",
+      "url": "/?tab=events",
+      "icons": [{ "src": "/pwa-icon-192.png", "sizes": "192x192", "type": "image/png" }]
+    }
+  ]
+}

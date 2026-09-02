@@ -27,7 +27,7 @@ binding, or network access may be blocked. The Clerk CLI depends on all of
 those host capabilities:
 
 - **OS credential store**: `clerk auth login` stores the OAuth token in the
-  system keychain. A sandbox without keychain access reports "not logged in"
+  system keychain.` A sandbox without keychain access reports "not logged in"
   even when the host is authenticated.
 - **Home-directory Clerk state**: saved config, cached metadata, and fallback
   credentials live under the user's Clerk config/data directories.

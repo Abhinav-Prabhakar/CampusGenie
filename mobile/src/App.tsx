@@ -1,13 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Bell, Bot, CalendarDays, ChevronRight, GraduationCap, Home, Library, MapPin, MessageCircle, RefreshCw, Search, Send, Sparkles, Users } from "lucide-react";
+import { Bell, Bot, CalendarCheck, CalendarDays, Check, ChevronRight, GraduationCap, Home, Library, MapPin, QrCode, RefreshCw, Search, Send, Sparkles, Ticket, Users, X } from "lucide-react";
 import { Haptics, ImpactStyle } from "@capacitor/haptics";
 
 type Tab = "home" | "genie" | "events" | "attendance" | "sources";
 type Envelope<T> = { data: T; meta?: { count?: number; refreshedAt?: string; source?: string } };
-type EventItem = { id: string; title: string; category: string; host: string; location: string; date: string; time: string; description: string };
+type EventItem = { id: string; title: string; category: string; host: string; location: string; date: string; time: string; description: string; capacity: number; registered: number; foodProvided: boolean; isVirtual: boolean };
 type AttendanceItem = { courseCode: string; title: string; present: number; total: number; percentage: number; minimum: number };
 type SourceItem = { id: string; name: string; category: string; description: string; status: string; chunks: number };
-type ChatMessage = { role: "user" | "assistant"; content: string };
+type ChatMessage = { role: "user" | "assistant"; content: string; events?: EventItem[] };
 
 const API_BASE = (import.meta.env.VITE_API_BASE_URL || "").replace(/\/$/, "");
 const nav: Array<[Tab, string, typeof Home]> = [["home", "Today", Home], ["genie", "Genie", Sparkles], ["events", "Events", CalendarDays], ["attendance", "Classes", GraduationCap], ["sources", "Sources", Library]];
@@ -46,6 +46,42 @@ function Status({ loading, error, retry }: { loading: boolean; error: string; re
   if (loading) return <div className="loading"><i/><i/><i/><span>Reading Databricks…</span></div>;
   if (error) return <div className="error-card"><Bot/><div><strong>Genie is unavailable</strong><p>{error}</p></div><button onClick={retry} aria-label="Retry"><RefreshCw/></button></div>;
   return null;
+}
+
+function eventPassCode(event: EventItem) {
+  const checksum = [...event.id].reduce((sum, character) => sum + character.charCodeAt(0), 0) % 900 + 100;
+  return `${event.id.replace(/[^A-Z0-9]/gi, "").slice(-4).toUpperCase()}-${checksum}`;
+}
+
+function EventPass({ event, checkedIn, onClose, onCheckIn }: { event: EventItem; checkedIn: boolean; onClose: () => void; onCheckIn: () => void }) {
+  const passCode = eventPassCode(event);
+  return <div className="pass-overlay" role="dialog" aria-modal="true" aria-label={`${event.title} event pass`}>
+    <button className="pass-scrim" onClick={onClose} aria-label="Close event pass"/>
+    <section className="mobile-pass">
+      <button className="pass-close" onClick={onClose} aria-label="Close"><X/></button>
+      <span className="pass-label"><Ticket/> CAMPUS GENIE EVENT PASS</span>
+      <h2>{event.title}</h2>
+      <p>{event.date} · {event.time}<br/>{event.location}</p>
+      <div className="qr-box"><QrCode/><strong>{passCode}</strong><small>Show this QR at entry</small></div>
+      <div className="pass-meta"><span>HOST<b>{event.host}</b></span><span>STATUS<b>{checkedIn ? "Checked in" : "RSVP confirmed"}</b></span></div>
+      <button className={`check-in ${checkedIn ? "done" : ""}`} onClick={onCheckIn}>{checkedIn ? <><Check/> Checked in</> : <><CalendarCheck/> Check in at event</>}</button>
+    </section>
+  </div>;
+}
+
+function MatchedEvents({ events }: { events: EventItem[] }) {
+  const [rsvps, setRsvps] = useState<Record<string, boolean>>({});
+  const [checkedIn, setCheckedIn] = useState<Record<string, boolean>>({});
+  const [passEvent, setPassEvent] = useState<EventItem | null>(null);
+  if (!events.length) return null;
+  const rsvp = (event: EventItem) => {
+    setRsvps(current => ({ ...current, [event.id]: true }));
+    setPassEvent(event);
+  };
+  return <section className="matched-events"><strong><CalendarDays/> Lakehouse events ({events.length})</strong>{events.map(event => {
+    const isGoing = rsvps[event.id];
+    return <article className="chat-event-card" key={event.id}><span>{event.category}</span><h3>{event.title}</h3><p>{event.date} · {event.time}</p><p><MapPin/> {event.location}</p><button onClick={() => isGoing ? setPassEvent(event) : rsvp(event)}>{isGoing ? <><Ticket/> View pass</> : "RSVP"}</button></article>;
+  })}{passEvent && <EventPass event={passEvent} checkedIn={Boolean(checkedIn[passEvent.id])} onClose={() => setPassEvent(null)} onCheckIn={() => setCheckedIn(current => ({ ...current, [passEvent.id]: true }))}/>}</section>;
 }
 
 function Welcome({ enter }: { enter: () => void }) {
@@ -87,13 +123,16 @@ function GenieScreen({ initialPrompt }: { initialPrompt: string }) {
   const send = async (value = text) => {
     const prompt = value.trim(); if (!prompt || busy) return;
     setText(""); setError(""); setMessages(current => [...current, { role: "user", content: prompt }]); setBusy(true);
-    try { const response = await request<{ content: string }>("/chat", { method: "POST", body: JSON.stringify({ prompt }) }); setMessages(current => [...current, { role: "assistant", content: response.data.content }]); }
+    try {
+      const response = await request<{ content: string; events?: EventItem[] }>("/chat", { method: "POST", body: JSON.stringify({ prompt }) });
+      setMessages(current => [...current, { role: "assistant", content: response.data.content, events: response.data.events || [] }]);
+    }
     catch (e) { setError(e instanceof Error ? e.message : "Genie could not answer."); }
     finally { setBusy(false); }
   };
   const prompts = ["What should I do on campus today?", "Which clubs and labs are recruiting?", "Show events that fit my interests"];
   return <section className="screen genie-screen"><Header title="Campus Genie"/><div className="genie-hero"><img src="/campus-aura.png" alt=""/><div className="wave"><i/><i/><i/><i/><i/></div><h1>Ask it now.<br/><strong>Genie handles the rest.</strong></h1><p>Events, attendance, clubs, labs, policies, careers, dining and more—grounded in Databricks.</p></div>
-    <div className="conversation">{messages.length === 0 && <div className="prompt-list">{prompts.map(p => <button key={p} onClick={() => void send(p)}>{p}<ChevronRight/></button>)}</div>}{messages.map((m, i) => <div className={`message ${m.role}`} key={i}>{m.content}</div>)}{busy && <div className="message assistant typing">Genie is reading your campus data<span>•••</span></div>}{error && <div className="inline-error">{error}</div>}<div ref={end}/></div>
+    <div className="conversation">{messages.length === 0 && <div className="prompt-list">{prompts.map(p => <button key={p} onClick={() => void send(p)}>{p}<ChevronRight/></button>)}</div>}{messages.map((m, i) => <div key={i}><div className={`message ${m.role}`}>{m.content}</div>{m.role === "assistant" && <MatchedEvents events={m.events || []}/>}</div>)}{busy && <div className="message assistant typing">Genie is reading your campus data<span>•••</span></div>}{error && <div className="inline-error">{error}</div>}<div ref={end}/></div>
     <form className="composer" onSubmit={e => { e.preventDefault(); void send(); }}><Sparkles/><input value={text} onChange={e => setText(e.target.value)} placeholder="Just tell Campus Genie…"/><button disabled={!text.trim() || busy} aria-label="Send"><Send/></button></form>
   </section>;
 }
@@ -115,8 +154,10 @@ function SourcesScreen() {
 }
 
 export default function App() {
-  const [welcomed, setWelcomed] = useState(() => localStorage.getItem("campus-genie-welcomed") === "yes");
-  const [tab, setTab] = useState<Tab>("home"); const [prompt, setPrompt] = useState("");
+  const shortcutTab = new URLSearchParams(window.location.search).get("tab");
+  const initialTab: Tab = nav.some(([id]) => id === shortcutTab) ? shortcutTab as Tab : "home";
+  const [welcomed, setWelcomed] = useState(() => initialTab !== "home" || localStorage.getItem("campus-genie-welcomed") === "yes");
+  const [tab, setTab] = useState<Tab>(initialTab); const [prompt, setPrompt] = useState("");
   const open = (next: Tab, nextPrompt = "") => { setPrompt(nextPrompt); setTab(next); void Haptics.impact({ style: ImpactStyle.Light }).catch(() => undefined); };
   if (!welcomed) return <Welcome enter={() => { localStorage.setItem("campus-genie-welcomed", "yes"); setWelcomed(true); }}/ >;
   return <div className="app-shell"><main className="viewport">{tab === "home" && <HomeScreen open={open}/>} {tab === "genie" && <GenieScreen initialPrompt={prompt}/>} {tab === "events" && <EventsScreen/>} {tab === "attendance" && <AttendanceScreen/>} {tab === "sources" && <SourcesScreen/>}</main><nav className="bottom-nav">{nav.map(([id, label, Icon]) => <button className={tab === id ? "active" : ""} key={id} onClick={() => open(id)}><Icon/><span>{label}</span></button>)}</nav></div>;
