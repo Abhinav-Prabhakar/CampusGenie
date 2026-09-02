@@ -84,10 +84,11 @@ export async function POST(req: NextRequest) {
     const user = await getCurrentUser().catch(() => null);
     const userId = !isAnonymous && user ? user.userId : null;
     const id = complaintId();
+    const urgencyLevel = urgency as Urgency;
 
     const res = await executeLakehouseSql(
       `INSERT INTO workspace.campus_explorer.complaints (complaint_id, user_id, title, category, location, urgency, description, is_anonymous, status, created_at)
-       VALUES (${sqlString(id)}, ${sqlString(userId)}, ${sqlString(title)}, ${sqlString(category)}, ${sqlString(location)}, ${sqlString(urgency)}, ${sqlString(description)}, ${isAnonymous}, 'open', current_timestamp())`,
+       VALUES (${sqlString(id)}, ${sqlString(userId)}, ${sqlString(title)}, ${sqlString(category)}, ${sqlString(location)}, ${sqlString(urgencyLevel)}, ${sqlString(description)}, ${isAnonymous}, 'open', current_timestamp())`,
       undefined,
       20
     );
@@ -103,7 +104,7 @@ export async function POST(req: NextRequest) {
         title,
         category,
         location,
-        urgency,
+        urgency: urgencyLevel,
         description,
         isAnonymous,
         status: "open",
