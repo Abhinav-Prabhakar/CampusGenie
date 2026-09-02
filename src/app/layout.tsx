@@ -1,3 +1,4 @@
+import { ClerkProvider } from "@clerk/nextjs";
 import type { Metadata } from "next";
 import { Inter, JetBrains_Mono, Space_Grotesk, Space_Mono } from "next/font/google";
 import "./globals.css";
@@ -40,7 +41,9 @@ export default function RootLayout({
         <script dangerouslySetInnerHTML={{ __html: themeScript }} />
       </head>
       <body className={`${inter.variable} ${mono.variable} ${spaceGrotesk.variable} ${spaceMono.variable} font-sans antialiased text-ink bg-stripe-bg`}>
-        {children}
+        <ClerkProvider>
+          {children}
+        </ClerkProvider>
       </body>
     </html>
   );
