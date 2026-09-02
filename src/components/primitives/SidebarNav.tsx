@@ -3,8 +3,10 @@
 import { useEffect, useRef, useState, useMemo, type CSSProperties, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
+import { SignOutButton } from "@clerk/nextjs";
 import GlideMenu from "@/components/primitives/GlideMenu";
 import { useChatStore, INITIAL_SUGGESTIONS } from "@/lib/chatStore";
+import { useCurrentUser, initialsFor } from "@/lib/useCurrentUser";
 
 // Clean SVG icons matching the 2px rounded stroke design
 function IconHome({ size = 18 }: { size?: number }) {
@@ -176,10 +178,10 @@ function IconCalCheck({ size = 18 }: { size?: number }) {
 
 const WORKSPACE = { key: "campus_genie", name: "Campus Genie", monogram: "CG" };
 
-export const NAV_ITEMS = [
+const NAV_ITEMS = [
   { key: "events", label: "Events", icon: <IconCalendar size={18} />, count: "14", href: "/events" },
   { key: "attendance", label: "Attendance", icon: <IconCalCheck size={18} />, count: "86%", href: "/attendance" },
-  { key: "admin", label: "Student Admin", icon: <IconShield size={18} />, count: "Admin", href: "/admin" },
+  { key: "admin", label: "Student Admin", icon: <IconShield size={18} />, count: "Admin", href: "/admin", adminOnly: true },
   { key: "sources", label: "Sources", icon: <IconDatabase size={18} />, count: "5", href: "/sources" },
   { key: "gallery", label: "Gallery", icon: <IconSparkles size={18} />, href: "/gallery" },
 ];
@@ -294,9 +296,11 @@ function RailButton({
 function WorkspaceMenu({
   position,
   onClose,
+  user,
 }: {
   position: { top: number; left: number };
   onClose: () => void;
+  user: { fullName: string; email: string | null; initials: string; role: string } | null;
 }) {
   return createPortal(
     <div
@@ -322,6 +326,20 @@ function WorkspaceMenu({
           <span className="min-w-0 flex-1 truncate text-[13.5px] font-medium text-ink">{WORKSPACE.name}</span>
           <span className="shrink-0 text-ink"><IconCheckmark1Small size={18} /></span>
         </button>
+        {user && (
+          <div className="flex h-10 items-center gap-2 px-2">
+            <span className="flex size-6 shrink-0 items-center justify-center rounded-full border border-line bg-inset text-[10px] font-semibold text-ink">
+              {user.initials}
+            </span>
+            <span className="min-w-0 flex-1 leading-tight">
+              <span className="block truncate text-[12.5px] font-medium text-ink">{user.fullName}</span>
+              <span className="block truncate text-[11px] text-ink-3">{user.email || user.role}</span>
+            </span>
+            {user.role === "admin" && (
+              <span className="shrink-0 text-accent" title="Admin access"><IconShield size={14} /></span>
+            )}
+          </div>
+        )}
         <div className="my-1 h-px bg-line" />
         {[
           { label: "New workspace", icon: <IconPlusMedium size={16} /> },
@@ -340,15 +358,17 @@ function WorkspaceMenu({
           </button>
         ))}
         <div className="my-1 h-px bg-line" />
-        <button
-          data-menu-row
-          type="button"
-          onClick={onClose}
-          className="relative z-10 flex h-9 w-full items-center gap-1.5 rounded-[8px] px-2 text-left"
-        >
-          <span className="flex size-5 shrink-0 items-center justify-center text-ink-2"><IconArrowBoxLeft size={16} /></span>
-          <span className="min-w-0 flex-1 truncate text-[13.5px] text-ink">Sign out</span>
-        </button>
+        <SignOutButton>
+          <button
+            data-menu-row
+            type="button"
+            onClick={onClose}
+            className="relative z-10 flex h-9 w-full items-center gap-1.5 rounded-[8px] px-2 text-left"
+          >
+            <span className="flex size-5 shrink-0 items-center justify-center text-ink-2"><IconArrowBoxLeft size={16} /></span>
+            <span className="min-w-0 flex-1 truncate text-[13.5px] text-ink">Sign out</span>
+          </button>
+        </SignOutButton>
       </GlideMenu>
     </div>,
     document.body,
@@ -373,6 +393,9 @@ export default function SidebarNav({
   const [collapsed, setCollapsed] = useState(false);
   const [internalNav, setInternalNav] = useState("chat");
   const currentNav = activeNav ?? internalNav;
+  const { user: appUser } = useCurrentUser();
+  const isAdmin = appUser?.role === "admin";
+  const visibleNavItems = useMemo(() => NAV_ITEMS.filter((item) => !item.adminOnly || isAdmin), [isAdmin]);
   const selectNav = (key: string) => {
     setInternalNav(key);
     onNavigate?.(key);
@@ -475,7 +498,13 @@ export default function SidebarNav({
             </span>
           </button>
 
-          {workspaceOpen && <WorkspaceMenu position={workspacePosition} onClose={() => setWorkspaceOpen(false)} />}
+          {workspaceOpen && (
+            <WorkspaceMenu
+              position={workspacePosition}
+              onClose={() => setWorkspaceOpen(false)}
+              user={appUser ? { fullName: appUser.fullName, email: appUser.email, initials: initialsFor(appUser), role: appUser.role } : null}
+            />
+          )}
 
           <button
             type="button"
@@ -512,7 +541,7 @@ export default function SidebarNav({
               router.push("/");
             }}
           />
-          {NAV_ITEMS.map((item) => (
+          {visibleNavItems.map((item) => (
             <RailButton
               key={item.key}
               icon={item.icon}
@@ -658,8 +687,13 @@ export default function SidebarNav({
             }`}
           >
             {footerIcon ?? (
-              <span className="flex size-4.5 items-center justify-center rounded-full border border-line bg-surface text-[9px] font-semibold text-ink">
-                AK
+              <span className="relative flex size-4.5 items-center justify-center rounded-full border border-line bg-surface text-[9px] font-semibold text-ink">
+                {initialsFor(appUser)}
+                {isAdmin && (
+                  <span className="absolute -right-1 -top-1.5 flex size-3 items-center justify-center rounded-full border border-line bg-surface text-accent" title="Admin access">
+                    <IconShield size={7} />
+                  </span>
+                )}
               </span>
             )}
             {footerLabel}

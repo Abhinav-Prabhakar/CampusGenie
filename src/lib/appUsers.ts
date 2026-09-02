@@ -62,7 +62,8 @@ export async function ensureAppUser(userId: string): Promise<AppUser | null> {
   let firstName: string | null = null;
   let lastName: string | null = null;
   try {
-    const clerkUser = await clerkClient.users.getUser(userId);
+    const client = await clerkClient();
+    const clerkUser = await client.users.getUser(userId);
     email = clerkUser.primaryEmailAddress?.emailAddress ?? null;
     firstName = clerkUser.firstName ?? null;
     lastName = clerkUser.lastName ?? null;
