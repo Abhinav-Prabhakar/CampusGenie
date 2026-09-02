@@ -6,6 +6,7 @@ import { checkRateLimit, getClientIdFromHeaders } from "@/lib/rateLimiter";
 import { getCurrentUser, DEFAULT_COLLEGE } from "@/lib/appUsers";
 import { buildWalkingRoute } from "@/lib/campusDirections";
 import { getCollegeForUser, fetchCampusLocations, resolveCampusPoint, listCampusLocationNames } from "@/lib/campusLocations";
+import { validateCampusReadOnlySql } from "@/lib/chatSqlSecurity";
 
 export const runtime = "nodejs";
 
@@ -263,23 +264,11 @@ async function executeToolCall(
   const sseEvents: any[] = [];
 
   if (toolName === "query_campus_data") {
-    let sql = String(toolArgs.sql || "").trim();
-    if (!sql) {
-      return { content: "Error: No SQL statement provided.", sseEvents };
+    const validation = validateCampusReadOnlySql(toolArgs.sql);
+    if (!validation.ok) {
+      return { content: `Error: ${validation.error}. Only one read-only SELECT/WITH query over approved campus analytics tables is permitted.`, sseEvents };
     }
-
-    // Disallow destructive statements
-    const destructive = /\b(DROP|DELETE|UPDATE|INSERT|ALTER|TRUNCATE|GRANT|REVOKE)\b/i;
-    if (destructive.test(sql)) {
-      return { content: "Error: Only read-only queries (SELECT, SHOW, DESCRIBE, EXPLAIN, WITH) are permitted.", sseEvents };
-    }
-
-    // Auto-namespace unqualified table names to workspace.campus_explorer.<table_name>
-    const tables = ["campus_events", "knowledge_sources", "campus_surveys", "campus_locations", "clubs_and_labs"];
-    for (const tbl of tables) {
-      const regex = new RegExp(`(?<!workspace\\.campus_explorer\\.)\\b${tbl}\\b`, "gi");
-      sql = sql.replace(regex, `workspace.campus_explorer.${tbl}`);
-    }
+    const sql = validation.sql;
 
     try {
       const result = await executeLakehouseSql(sql, undefined, 20);

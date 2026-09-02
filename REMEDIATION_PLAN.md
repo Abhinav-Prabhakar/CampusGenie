@@ -17,13 +17,13 @@ This plan is intentionally sequential. Complete and verify one item before start
    - The profile no longer offers a role toggle.
    - Regression tests cover attempted promotion and valid self-profile updates.
 
-2. **Chat SQL security boundary — next**
+2. **Chat SQL security boundary — fixed locally**
    - Replace the destructive-keyword blocklist with a single-statement read-only allowlist.
    - Allow only approved analytical tables and columns.
    - Keep private tables such as `app_users`, `chat_threads`, attendance, complaints, and intro requests unavailable to model-authored SQL.
    - Add deterministic tests for DDL/DML, multi-statement, cross-schema, comment, and obfuscation cases.
 
-3. **Custom LLM endpoint SSRF and server-key exfiltration**
+3. **Custom LLM endpoint SSRF and server-key exfiltration — next**
    - Never combine a caller-supplied base URL with a server-owned API key.
    - Restrict or remove arbitrary custom endpoints in production.
    - Reject loopback, link-local, private-network, and non-HTTPS destinations.
