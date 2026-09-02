@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { ChatMessage } from "@/app/page";
 
 export type ChatThread = {
@@ -11,8 +11,9 @@ export type ChatThread = {
   updatedAt: number;
 };
 
-const STORAGE_KEY = "cg_chat_threads";
 const ACTIVE_THREAD_KEY = "cg_active_thread_id";
+/** Legacy pre-account storage; migrated to the Lakehouse on first load. */
+const LEGACY_STORAGE_KEY = "cg_chat_threads";
 
 export const INITIAL_SUGGESTIONS = [
   {
@@ -37,26 +38,85 @@ export const INITIAL_SUGGESTIONS = [
   },
 ];
 
-export function getStoredThreads(): ChatThread[] {
-  if (typeof window === "undefined") return [];
+/* ─────────────────────────────────────────────────────────
+ * Server-backed thread store (Databricks Lakehouse, per user).
+ * A module-level cache keeps every hook instance in sync and
+ * prevents duplicate fetches across mounts.
+ * ───────────────────────────────────────────────────────── */
+let threadCache: ChatThread[] | null = null;
+let inFlightRefresh: Promise<ChatThread[]> | null = null;
+
+function readLegacyThreads(): ChatThread[] {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = localStorage.getItem(LEGACY_STORAGE_KEY);
     if (!raw) return [];
     return JSON.parse(raw);
-  } catch (e) {
-    console.error("Failed to parse chat threads", e);
+  } catch {
     return [];
   }
 }
 
-export function saveStoredThreads(threads: ChatThread[]): void {
-  if (typeof window === "undefined") return;
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(threads));
-    window.dispatchEvent(new Event("cg-threads-updated"));
-  } catch (e) {
-    console.error("Failed to save chat threads", e);
+async function migrateLegacyThreads(): Promise<boolean> {
+  const legacy = readLegacyThreads();
+  if (legacy.length === 0) return false;
+  const results = await Promise.all(
+    legacy.map((t) =>
+      fetch("/api/threads", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(t),
+      }).catch(() => null)
+    )
+  );
+  if (results.some((r) => r?.ok)) {
+    localStorage.removeItem(LEGACY_STORAGE_KEY);
+    return true;
   }
+  return false;
+}
+
+export async function refreshThreads(): Promise<ChatThread[]> {
+  if (threadCache) return threadCache;
+  if (inFlightRefresh) return inFlightRefresh;
+
+  inFlightRefresh = (async () => {
+    let threads: ChatThread[] = [];
+    try {
+      const res = await fetch("/api/threads", { cache: "no-store" });
+      if (res.ok) {
+        const data = await res.json();
+        threads = Array.isArray(data.threads) ? data.threads : [];
+      }
+    } catch {
+      // offline / signed out — keep empty list
+    }
+
+    if (threads.length === 0) {
+      try {
+        if (await migrateLegacyThreads()) {
+          const retry = await fetch("/api/threads", { cache: "no-store" });
+          if (retry.ok) {
+            const data = await retry.json();
+            threads = Array.isArray(data.threads) ? data.threads : [];
+          }
+        }
+      } catch {
+        // migration is best-effort
+      }
+    }
+
+    threadCache = threads;
+    inFlightRefresh = null;
+    window.dispatchEvent(new Event("cg-threads-updated"));
+    return threads;
+  })();
+
+  return inFlightRefresh;
+}
+
+function setCachedThreads(threads: ChatThread[]) {
+  threadCache = threads;
+  window.dispatchEvent(new Event("cg-threads-updated"));
 }
 
 export function getActiveThreadId(): string | null {
@@ -82,50 +142,51 @@ export function createThreadTitle(query: string): string {
 }
 
 export function useChatStore() {
-  const [threads, setThreads] = useState<ChatThread[]>([]);
+  const [threads, setThreads] = useState<ChatThread[]>(threadCache ?? []);
   const [activeThreadId, setActiveId] = useState<string | null>(null);
 
   useEffect(() => {
     const sync = () => {
-      setThreads(getStoredThreads());
+      if (threadCache) setThreads(threadCache);
       setActiveId(getActiveThreadId());
     };
     sync();
+    refreshThreads().then(setThreads);
 
     window.addEventListener("cg-threads-updated", sync);
     window.addEventListener("cg-active-thread-changed", sync);
-    window.addEventListener("storage", sync);
     return () => {
       window.removeEventListener("cg-threads-updated", sync);
       window.removeEventListener("cg-active-thread-changed", sync);
-      window.removeEventListener("storage", sync);
     };
   }, []);
 
-  const saveThread = (thread: ChatThread) => {
-    const existing = getStoredThreads();
-    const idx = existing.findIndex((t) => t.id === thread.id);
-    let updated: ChatThread[];
-    if (idx >= 0) {
-      updated = [...existing];
-      updated[idx] = { ...thread, updatedAt: Date.now() };
-    } else {
-      updated = [{ ...thread, updatedAt: Date.now() }, ...existing];
-    }
-    saveStoredThreads(updated);
-    setThreads(updated);
+  const saveThread = useCallback((thread: ChatThread) => {
+    const next = threadCache ?? [];
+    const idx = next.findIndex((t) => t.id === thread.id);
+    const updated = { ...thread, updatedAt: Date.now() };
+    const list = idx >= 0 ? next.map((t, i) => (i === idx ? updated : t)) : [updated, ...next];
+    setCachedThreads(list);
     setActiveThreadId(thread.id);
-  };
 
-  const deleteThread = (id: string) => {
-    const existing = getStoredThreads();
-    const updated = existing.filter((t) => t.id !== id);
-    saveStoredThreads(updated);
-    setThreads(updated);
-    if (activeThreadId === id) {
+    fetch("/api/threads", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(updated),
+    }).catch((e) => console.error("Failed to persist chat thread", e));
+  }, []);
+
+  const deleteThread = useCallback((id: string) => {
+    const next = (threadCache ?? []).filter((t) => t.id !== id);
+    setCachedThreads(next);
+    if (getActiveThreadId() === id) {
       setActiveThreadId(null);
     }
-  };
+
+    fetch(`/api/threads?id=${encodeURIComponent(id)}`, { method: "DELETE" }).catch((e) =>
+      console.error("Failed to delete chat thread", e)
+    );
+  }, []);
 
   return {
     threads,
