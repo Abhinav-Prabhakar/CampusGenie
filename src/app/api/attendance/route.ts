@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { auth } from "@clerk/nextjs/server";
 import { executeLakehouseSql } from "@/lib/lakehouse";
 
 export const runtime = "nodejs";
@@ -97,13 +98,73 @@ const DEFAULT_COURSES = [
   },
 ];
 
+/**
+ * Seed a fresh user's enrollments + term attendance history so every account
+ * starts with the same demo dataset, scoped to their Clerk user id.
+ */
+async function seedUserDataFor(safeUid: string): Promise<void> {
+  const termStart = new Date(2026, 1, 2); // Feb 2, 2026 (Mon)
+  const termEnd = new Date(2026, 2, 19); // Mar 19, 2026
+  const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+  const courseValues = DEFAULT_COURSES.map((c) => {
+    const days = c.scheduleDays.map((d) => `'${d}'`).join(",");
+    return `('${c.courseId}', '${c.courseCode}', '${c.title.replace(/'/g, "''")}', '${c.instructor.replace(/'/g, "''")}', '${c.location.replace(/'/g, "''")}', ARRAY(${days}), '${c.startTime}', ${c.durationMins}, ${c.minAttendancePct}, '${safeUid}')`;
+  }).join(",\n");
+
+  await executeLakehouseSql(
+    `INSERT INTO workspace.campus_explorer.student_courses (course_id, course_code, title, instructor, location, schedule_days, start_time, duration_mins, min_attendance_pct, user_id) VALUES ${courseValues}`
+  );
+
+  const logRows: string[] = [];
+  DEFAULT_COURSES.forEach((course, courseIdx) => {
+    const cursor = new Date(termStart);
+    let sessionIdx = 0;
+    while (cursor <= termEnd) {
+      if (course.scheduleDays.includes(dayNames[cursor.getDay()])) {
+        const dateStr = cursor.toISOString().slice(0, 10);
+        // Deterministic mix so seeded histories are stable and realistic.
+        const bucket = (sessionIdx * 5 + courseIdx * 3) % 16;
+        const status = bucket === 0 ? "ABSENT" : bucket === 5 || bucket === 11 ? "LATE" : "PRESENT";
+        logRows.push(
+          `('LOG-${safeUid.slice(-6)}-${course.courseId}-${dateStr.replace(/-/g, '')}', '${safeUid}', '${course.courseId}', DATE '${dateStr}', '${status}', NULL, 'seed', NULL, current_timestamp())`
+        );
+        sessionIdx++;
+      }
+      cursor.setDate(cursor.getDate() + 1);
+    }
+  });
+
+  if (logRows.length > 0) {
+    await executeLakehouseSql(
+      `INSERT INTO workspace.campus_explorer.student_attendance_logs (log_id, student_id, course_id, session_date, status, check_in_time, verification_method, notes, created_at) VALUES ${logRows.join(",\n")}`
+    );
+  }
+}
+
 export async function GET(req: NextRequest) {
   try {
-    // 1. Fetch courses and logs from Databricks Lakehouse
-    const [coursesRes, logsRes] = await Promise.all([
-      executeLakehouseSql("SELECT * FROM workspace.campus_explorer.student_courses"),
-      executeLakehouseSql("SELECT * FROM workspace.campus_explorer.student_attendance_logs ORDER BY session_date ASC"),
-    ]);
+    const { userId } = await auth();
+    if (!userId) {
+      return NextResponse.json({ success: false, error: "Sign in required" }, { status: 401 });
+    }
+    const safeUid = userId.replace(/'/g, "''");
+
+    // 1. Fetch this user's courses (seeding on first visit) and logs
+    let coursesRes = await executeLakehouseSql(
+      `SELECT * FROM workspace.campus_explorer.student_courses WHERE user_id = '${safeUid}'`
+    );
+
+    if (coursesRes.state === "SUCCEEDED" && (!coursesRes.records || coursesRes.records.length === 0)) {
+      await seedUserDataFor(safeUid);
+      coursesRes = await executeLakehouseSql(
+        `SELECT * FROM workspace.campus_explorer.student_courses WHERE user_id = '${safeUid}'`
+      );
+    }
+
+    const logsRes = await executeLakehouseSql(
+      `SELECT * FROM workspace.campus_explorer.student_attendance_logs WHERE student_id = '${safeUid}' ORDER BY session_date ASC`
+    );
 
     const rawCourses = coursesRes.state === "SUCCEEDED" && coursesRes.records && coursesRes.records.length > 0
       ? coursesRes.records.map((r: any) => ({
@@ -339,10 +400,16 @@ export async function GET(req: NextRequest) {
 
 export async function PUT(req: NextRequest) {
   try {
+    const { userId } = await auth();
+    if (!userId) {
+      return NextResponse.json({ success: false, error: "Sign in required" }, { status: 401 });
+    }
+
     const body = await req.json();
     const { logId, courseId, sessionDate, newStatus } = body;
 
     const validStatus = (newStatus || "PRESENT").toUpperCase() as AttendanceStatus;
+    const safeUid = userId.replace(/'/g, "''");
     const safeLogId = (logId || `LOG-${Date.now()}`).replace(/'/g, "''");
     const safeCourse = (courseId || "MATH-201").replace(/'/g, "''");
     const safeDate = (sessionDate || "2026-03-19").replace(/'/g, "''");
@@ -350,14 +417,14 @@ export async function PUT(req: NextRequest) {
     const sql = `
       MERGE INTO workspace.campus_explorer.student_attendance_logs AS target
       USING (
-        SELECT '${safeLogId}' AS log_id, '${safeCourse}' AS course_id, '${safeDate}' AS session_date, '${validStatus}' AS status
+        SELECT '${safeLogId}' AS log_id, '${safeUid}' AS student_id, '${safeCourse}' AS course_id, '${safeDate}' AS session_date, '${validStatus}' AS status
       ) AS src
-      ON target.course_id = src.course_id AND target.session_date = src.session_date
+      ON target.student_id = src.student_id AND target.course_id = src.course_id AND target.session_date = src.session_date
       WHEN MATCHED THEN
         UPDATE SET target.status = src.status, target.created_at = current_timestamp()
       WHEN NOT MATCHED THEN
         INSERT (log_id, student_id, course_id, session_date, status, created_at)
-        VALUES (src.log_id, 'STU-84213', src.course_id, src.session_date, src.status, current_timestamp())
+        VALUES (src.log_id, src.student_id, src.course_id, src.session_date, src.status, current_timestamp())
     `;
 
     const result = await executeLakehouseSql(sql);

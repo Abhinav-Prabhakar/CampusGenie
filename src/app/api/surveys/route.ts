@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { executeLakehouseSql } from "@/lib/lakehouse";
+import { requireAdminUser } from "@/lib/appUsers";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -101,7 +102,12 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: updateRes.error || "Failed to update response count" }, { status: 500 });
     }
 
-    // Create / Publish new survey
+    // Create / Publish new survey — admin only
+    const guard = await requireAdminUser();
+    if (guard.error) {
+      return NextResponse.json({ error: guard.error.message }, { status: guard.error.status });
+    }
+
     const surveyId = body.id || `SRV-${Date.now().toString().slice(-4)}`;
     const title = (body.title || "Untitled Survey").replace(/'/g, "''");
     const desc = (body.description || body.desc || "").replace(/'/g, "''");
@@ -110,12 +116,15 @@ export async function POST(req: NextRequest) {
     const isFeatured = Boolean(body.isFeatured);
     const audience = body.audience || "public";
     const questionsJson = JSON.stringify(body.questions || []).replace(/'/g, "''");
+    const createdBy = guard.user.userId.replace(/'/g, "''");
 
     const insertSql = `
-      INSERT INTO workspace.campus_explorer.campus_surveys VALUES (
+      INSERT INTO workspace.campus_explorer.campus_surveys (survey_id, title, description, target_event_id,
+        is_published, is_featured, audience, response_count, questions_json, created_at, created_by)
+      VALUES (
         '${surveyId}', '${title}', '${desc}', ${targetEventId},
         ${isPublished}, ${isFeatured}, '${audience}', 0,
-        '${questionsJson}', current_timestamp()
+        '${questionsJson}', current_timestamp(), '${createdBy}'
       )
     `;
 

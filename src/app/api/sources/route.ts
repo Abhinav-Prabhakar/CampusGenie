@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { executeLakehouseSql } from "@/lib/lakehouse";
+import { getCurrentUser, requireAdminUser } from "@/lib/appUsers";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -227,6 +228,11 @@ import { extractTextFromFile } from "@/lib/docParser";
 
 export async function POST(req: NextRequest) {
   try {
+    const user = await getCurrentUser();
+    if (!user) {
+      return NextResponse.json({ success: false, error: "Sign in required" }, { status: 401 });
+    }
+
     let name = "Uploaded Document.pdf";
     let type = "document";
     let category = "Guidelines & Rules";
@@ -234,7 +240,7 @@ export async function POST(req: NextRequest) {
     let content = "";
     let fileSize = "1.2 MB";
     let chunkCount = 16;
-    let uploadedBy = "Campus User";
+    let uploadedBy = user.fullName;
     let docId = `DOC-${Date.now().toString().slice(-4)}`;
 
     const contentType = req.headers.get("content-type") || "";
@@ -321,6 +327,11 @@ export async function POST(req: NextRequest) {
 
 export async function DELETE(req: NextRequest) {
   try {
+    const guard = await requireAdminUser();
+    if (guard.error) {
+      return NextResponse.json({ success: false, error: guard.error.message }, { status: guard.error.status });
+    }
+
     const { searchParams } = new URL(req.url);
     const id = searchParams.get("id");
 

@@ -1,9 +1,41 @@
 "use client";
 
-import React from "react";
+import React, { useState } from "react";
+import { useCurrentUser, initialsFor, setCurrentUserCached } from "@/lib/useCurrentUser";
 import "@/app/profile.css";
 
 export default function ProfileView() {
+  const { user, loading } = useCurrentUser();
+  // Optimistic local role override, valid only for the loaded account.
+  const [override, setOverride] = useState<{ userId: string; role: "student" | "admin" } | null>(null);
+  const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
+
+  const role = override && user && override.userId === user.userId ? override.role : user?.role ?? "student";
+  const isAdmin = role === "admin";
+
+  const toggleAdmin = async (next: boolean) => {
+    if (!user || saveState === "saving") return;
+    const nextRole = next ? "admin" : "student";
+    const prevRole = role;
+    setOverride({ userId: user.userId, role: nextRole });
+    setSaveState("saving");
+    try {
+      const res = await fetch("/api/users", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ role: nextRole }),
+      });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({})))?.error || "Failed");
+      setCurrentUserCached({ ...user, role: nextRole });
+      setSaveState("saved");
+    } catch {
+      setOverride({ userId: user.userId, role: prevRole });
+      setSaveState("error");
+      return;
+    }
+    setTimeout(() => setSaveState("idle"), 2400);
+  };
+
   return (
     <div className="profile-scope w-full">
       {/* icon sprite (feather-style, 24px grid, stroke = currentColor) */}
@@ -65,21 +97,25 @@ export default function ProfileView() {
                 <svg className="i i14 sun" aria-hidden="true"><use href="#i-sun"/></svg>
                 <svg className="i i14 moon" aria-hidden="true"><use href="#i-moon"/></svg>
               </label>
-              <span className="avatar" title="Ava K.">AK</span>
-            </div>
+              <span className="avatar" title={user?.fullName ?? "Student"}>{initialsFor(user)}</span>
+              </div>
           </header>
 
           {/* ── identity hero ──────────────────────────────── */}
           <section className="hero">
-            <span className="ava-xl">AK<span className="ava-dot" title="On campus"></span></span>
+            <span className="ava-xl">{initialsFor(user)}<span className="ava-dot" title="On campus"></span></span>
 
             <div className="who">
               <div className="who-top">
-                <h1 className="v-static">Ava Kimura</h1>
-                <input className="fld v-edit nw" defaultValue="Ava Kimura" aria-label="Name" />
+                <h1 className="v-static">{loading && !user ? "Loading…" : user?.fullName ?? "Student"}</h1>
+                <input className="fld v-edit nw" defaultValue={user?.fullName ?? "Student"} aria-label="Name" key={user?.userId ?? "name"} />
                 <span className="pill pill-quiet v-static">she/her</span>
                 <input className="fld v-edit pw" defaultValue="she/her" aria-label="Pronouns" />
-                <span className="pill pill-going"><svg className="i i11" aria-hidden="true"><use href="#i-shield"/></svg>Verified student</span>
+                {isAdmin ? (
+                  <span className="pill pill-accent"><svg className="i i11" aria-hidden="true"><use href="#i-shield"/></svg>Student admin</span>
+                ) : (
+                  <span className="pill pill-going"><svg className="i i11" aria-hidden="true"><use href="#i-check"/></svg>Verified student</span>
+                )}
               </div>
               <div className="who-sub">
                 <span><svg className="i i13" aria-hidden="true"><use href="#i-cap"/></svg>B.S. Computer Science — Statistics</span>
@@ -119,8 +155,8 @@ export default function ProfileView() {
 
             <div className="hero-foot">
               <div className="facts">
-                <span className="fact mono"><svg className="i i12" aria-hidden="true"><use href="#i-id"/></svg>SID 304418227</span>
-                <span className="fact"><svg className="i i12" aria-hidden="true"><use href="#i-mail"/></svg>ava.kimura@university.edu</span>
+                <span className="fact mono"><svg className="i i12" aria-hidden="true"><use href="#i-id"/></svg>{user?.userId ?? "user_…"}</span>
+                <span className="fact"><svg className="i i12" aria-hidden="true"><use href="#i-mail"/></svg>{user?.email ?? "—"}</span>
                 <span className="fact"><svg className="i i12" aria-hidden="true"><use href="#i-building"/></svg>College of Engineering</span>
               </div>
               <div className="hero-act">
@@ -440,6 +476,49 @@ export default function ProfileView() {
             {/* ══ sidebar column ═════════════════════════════ */}
             <div className="stack">
 
+              {/* access & role */}
+              <section className="card" style={{ "--i": 0 } as React.CSSProperties}>
+                <div className="ch">
+                  <span className="cic" style={{ "--t": "var(--accent)" } as React.CSSProperties}><svg className="i i13" aria-hidden="true"><use href="#i-shield"/></svg></span>
+                  <h3>Access &amp; role</h3>
+                  <span className="act">
+                    {isAdmin ? (
+                      <span className="pill pill-accent"><svg className="i i11" aria-hidden="true"><use href="#i-shield"/></svg>Admin</span>
+                    ) : (
+                      <span className="pill pill-quiet"><svg className="i i11" aria-hidden="true"><use href="#i-cap"/></svg>Student</span>
+                    )}
+                  </span>
+                </div>
+                <div className="cb">
+                  <label className="sw" style={saveState === "saving" ? { opacity: 0.55, pointerEvents: "none" } : undefined}>
+                    <svg className="i i13" aria-hidden="true"><use href="#i-shield"/></svg>
+                    <span className="sl">Student admin access</span>
+                    <input
+                      type="checkbox"
+                      className="vh"
+                      checked={isAdmin}
+                      disabled={!user || saveState === "saving"}
+                      onChange={(e) => toggleAdmin(e.target.checked)}
+                    />
+                    <span className="sw-t"></span>
+                  </label>
+
+                  <div className="qrow">
+                    <svg className="i i13" aria-hidden="true"><use href="#i-db"/></svg>
+                    app_users.delta
+                    {saveState === "saving" && <span className="pill pill-quiet" style={{ marginLeft: "auto" }}><svg className="i i11" aria-hidden="true"><use href="#i-rotate"/></svg>Saving…</span>}
+                    {saveState === "saved" && <span className="pill pill-going" style={{ marginLeft: "auto" }}><svg className="i i10" aria-hidden="true"><use href="#i-check"/></svg>Saved to Lakehouse</span>}
+                    {saveState === "error" && <span className="pill pill-pend" style={{ marginLeft: "auto" }}>Save failed — try again</span>}
+                    {saveState === "idle" && <span className="tm" style={{ marginLeft: "auto" }}>{isAdmin ? "Events · surveys · sources" : "Browse · RSVP · chat"}</span>}
+                  </div>
+
+                  <div className="gn">
+                    <svg className="i i13" aria-hidden="true"><use href="#i-zap"/></svg>
+                    <span>Admins unlock <b>Student Admin</b> in the sidebar — create events, publish surveys, and manage campus content for everyone. The role is stored per user in the Lakehouse.</span>
+                  </div>
+                </div>
+              </section>
+
               {/* profile strength */}
               <section className="card" style={{ "--i": 1 } as React.CSSProperties}>
                 <div className="ch">
@@ -607,10 +686,10 @@ export default function ProfileView() {
           {/* ── panel footer ───────────────────────────────── */}
           <footer className="panel-foot">
             <svg className="i i13" aria-hidden="true"><use href="#i-db"/></svg>
-            <code>student_profiles.delta</code>
-            <span>· synced 4 min ago</span>
+            <code>app_users.delta</code>
+            <span>· synced {isAdmin ? "as admin" : "as student"}</span>
             <span className="foot-right">
-              <span><b>38</b> fields · <b>12</b> signals</span>
+              <span><b>{user ? 1 : 0}</b> signed-in account · <b>Clerk</b> identity</span>
               <a className="cal-link" href="#">Export profile <svg className="i i11" aria-hidden="true"><use href="#i-down"/></svg></a>
               <a className="cal-link" href="#">Privacy <svg className="i i11" aria-hidden="true"><use href="#i-shield"/></svg></a>
             </span>

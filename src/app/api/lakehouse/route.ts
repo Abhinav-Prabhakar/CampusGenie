@@ -1,10 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
 import { executeLakehouseSql } from "@/lib/lakehouse";
+import { requireAdminUser } from "@/lib/appUsers";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 export async function POST(req: NextRequest) {
   try {
+    // Raw arbitrary SQL execution — admin only.
+    const guard = await requireAdminUser();
+    if (guard.error) {
+      return NextResponse.json({ error: guard.error.message }, { status: guard.error.status });
+    }
+
     const { query, warehouseId } = await req.json();
 
     if (!query) {

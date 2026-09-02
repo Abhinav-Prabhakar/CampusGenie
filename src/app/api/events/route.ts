@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { executeLakehouseSql } from "@/lib/lakehouse";
+import { requireAdminUser } from "@/lib/appUsers";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -158,6 +159,11 @@ export async function GET() {
 
 export async function POST(req: NextRequest) {
   try {
+    const guard = await requireAdminUser();
+    if (guard.error) {
+      return NextResponse.json({ success: false, error: guard.error.message }, { status: guard.error.status });
+    }
+
     const body = await req.json();
     const eventId = body.id || `EV-${Date.now().toString().slice(-4)}`;
     const title = (body.title || "New Campus Event").replace(/'/g, "''");
@@ -177,13 +183,17 @@ export async function POST(req: NextRequest) {
     const description = (body.description || body.desc || "").replace(/'/g, "''");
     const tags = Array.isArray(body.tags) ? body.tags : [category, "Campus"];
     const tagsArraySql = `ARRAY(${tags.map((t: string) => `'${t.replace(/'/g, "''")}'`).join(",")})`;
+    const createdBy = guard.user.userId.replace(/'/g, "''");
 
     const insertSql = `
-      INSERT INTO workspace.campus_explorer.campus_events VALUES (
+      INSERT INTO workspace.campus_explorer.campus_events (event_id, title, category, host_organization, host_code,
+        location, is_virtual, event_date, start_time, duration, capacity, registered_count, food_provided,
+        is_featured, status, visibility, tags, description, created_at, created_by)
+      VALUES (
         '${eventId}', '${title}', '${category}', '${host}', '${hostCode}',
         '${location}', ${isVirtual}, '${date}', '${time}', '${duration}',
         ${capacity}, 0, ${food}, ${featured}, '${status}', '${visibility}',
-        ${tagsArraySql}, '${description}', current_timestamp()
+        ${tagsArraySql}, '${description}', current_timestamp(), '${createdBy}'
       )
     `;
 
@@ -210,6 +220,11 @@ export async function POST(req: NextRequest) {
 
 export async function PUT(req: NextRequest) {
   try {
+    const guard = await requireAdminUser();
+    if (guard.error) {
+      return NextResponse.json({ success: false, error: guard.error.message }, { status: guard.error.status });
+    }
+
     const body = await req.json();
     const eventId = (body.id || body.eventId || "").replace(/'/g, "''");
     if (!eventId) {
@@ -278,12 +293,12 @@ export async function PUT(req: NextRequest) {
         event_id, title, category, host_organization, host_code,
         location, is_virtual, event_date, start_time, duration,
         capacity, registered_count, food_provided, is_featured, status, visibility,
-        tags, description, created_at
+        tags, description, created_at, created_by
       ) VALUES (
         src.event_id, src.title, src.category, src.host_organization, src.host_code,
         src.location, src.is_virtual, src.event_date, src.start_time, src.duration,
         src.capacity, 0, src.food_provided, src.is_featured, src.status, src.visibility,
-        src.tags, src.description, current_timestamp()
+        src.tags, src.description, current_timestamp(), '${guard.user.userId.replace(/'/g, "''")}'
       )
     `;
 
@@ -310,6 +325,11 @@ export async function PUT(req: NextRequest) {
 
 export async function DELETE(req: NextRequest) {
   try {
+    const guard = await requireAdminUser();
+    if (guard.error) {
+      return NextResponse.json({ success: false, error: guard.error.message }, { status: guard.error.status });
+    }
+
     const { searchParams } = new URL(req.url);
     const id = searchParams.get("id") || "";
     if (!id) {
