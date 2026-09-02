@@ -1319,7 +1319,7 @@ export default function EventAdminView() {
                                 <svg className="i i12" aria-hidden="true"><use href="#i-copy"/></svg>Duplicate
                               </button>
                               <button type="button" onClick={() => handleDeleteRow(ev.id)} className="btn red" title="Delete">
-                                <svg className="i i12" aria-hidden="true"><use href="#i-trash"/></svg>
+                                <svg className="i i12" aria-hidden="true"><use href="#i-trash"/></svg>Delete
                               </button>
                             </div>
                           </div>
