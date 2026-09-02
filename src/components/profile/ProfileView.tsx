@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState } from "react";
 import { useCurrentUser, initialsFor, setCurrentUserCached, type CurrentUser } from "@/lib/useCurrentUser";
+import { useTheme } from "@/lib/theme";
 import ContactQrCard from "@/components/profile/ContactQrCard";
 import "@/app/profile.css";
 
@@ -77,12 +78,14 @@ type ProfileDraft = {
   name: string;
   pronouns: string;
   bio: string;
+  college: string;
   degree: string;
   minor: string;
   expectedGrad: string;
   advisor: string;
 };
 
+const DEFAULT_COLLEGE = "Databricks University";
 const DEFAULT_BIO = "CS + Stats senior building data tools for campus life. Looking for a hackathon team and people to climb with on Fridays.";
 const DEFAULT_DEGREE = "B.S. Computer Science";
 const DEFAULT_MINOR = "Statistics";
@@ -96,6 +99,7 @@ function draftFromUser(user: CurrentUser | null): ProfileDraft {
     name: user?.fullName ?? "Student",
     pronouns: p?.pronouns ?? DEFAULT_PRONOUNS,
     bio: p?.bio ?? DEFAULT_BIO,
+    college: user?.college ?? DEFAULT_COLLEGE,
     degree: p?.degree ?? DEFAULT_DEGREE,
     minor: p?.minor ?? DEFAULT_MINOR,
     expectedGrad: p?.expectedGrad ?? DEFAULT_GRAD,
@@ -109,12 +113,10 @@ function sameDraft(a: ProfileDraft, b: ProfileDraft): boolean {
 
 export default function ProfileView() {
   const { user, loading } = useCurrentUser();
-  const [collegeValue, setCollegeValue] = useState<string | null>(null);
-  const [collegeSaveState, setCollegeSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const { isDark, toggleTheme } = useTheme();
 
   const role = user?.role ?? "student";
   const isAdmin = role === "admin";
-  const college = collegeValue ?? user?.college ?? "Databricks University";
 
   // Edit-mode profile draft + save state (persisted to app_users via /api/users)
   const [editOpen, setEditOpen] = useState(false);
@@ -130,7 +132,7 @@ export default function ProfileView() {
   };
 
   const saveProfile = async (next: ProfileDraft): Promise<boolean> => {
-    if (!user || profileSaveState === "saving") return editOpen;
+    if (!user || profileSaveState === "saving") return false;
     setProfileSaveState("saving");
     const nameParts = next.name.trim().split(/\s+/).filter(Boolean);
     try {
@@ -140,6 +142,7 @@ export default function ProfileView() {
         body: JSON.stringify({
           firstName: nameParts[0] ?? "",
           lastName: nameParts.slice(1).join(" "),
+          college: next.college.trim() || DEFAULT_COLLEGE,
           profile: {
             pronouns: next.pronouns,
             bio: next.bio,
@@ -155,7 +158,8 @@ export default function ProfileView() {
       if (data.user) setCurrentUserCached(data.user);
       setDraftState(null);
       setProfileSaveState("saved");
-      setTimeout(() => setProfileSaveState("idle"), 2400);
+      setEditOpen(false);
+      setTimeout(() => setProfileSaveState("idle"), 2800);
       return true;
     } catch {
       setProfileSaveState("error");
@@ -187,28 +191,6 @@ export default function ProfileView() {
     };
   }, []);
 
-  const saveCollege = async (next: string) => {
-    const trimmed = next.trim();
-    if (!user || !trimmed || trimmed === (user.college ?? "Databricks University") || collegeSaveState === "saving") return;
-    const prev = college;
-    setCollegeValue(trimmed);
-    setCollegeSaveState("saving");
-    try {
-      const res = await fetch("/api/users", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ college: trimmed }),
-      });
-      if (!res.ok) throw new Error((await res.json().catch(() => ({})))?.error || "Failed");
-      setCurrentUserCached({ ...user, college: trimmed });
-      setCollegeSaveState("saved");
-    } catch {
-      setCollegeValue(prev);
-      setCollegeSaveState("error");
-      return;
-    }
-    setTimeout(() => setCollegeSaveState("idle"), 2400);
-  };
 
   return (
     <div className="profile-scope w-full">
@@ -255,27 +237,29 @@ export default function ProfileView() {
         <symbol id="i-spark" viewBox="0 0 24 24"><path d="M12 2.5 14 9l6.5 2L14 13l-2 6.5L10 13l-6.5-2L10 9l2-6.5Z"/><path d="M19 15.5v3M17.5 17h3"/></symbol>
       </svg>
 
-      {/* theme toggle lives outside the form */}
-      <input type="checkbox" id="theme" className="vh" aria-label="Toggle light theme" />
-
       <div className="frame">
         <form className="window" autoComplete="off" onSubmit={(e) => e.preventDefault()}>
 
-          {/* ── panel head ─────────────────────────────────── */}
-          <header className="panel-head">
-            <span className="logo"><svg className="i i14" aria-hidden="true"><use href="#i-spark"/></svg></span>
-            <nav className="crumb" aria-label="Breadcrumb">
-              <b>Campus Genie</b><span className="sep">/</span><span>Profile</span>
-            </nav>
-            <span className="wk">SPRING · WEEK 7</span>
-            <div className="head-right">
-              <label className="theme-btn" htmlFor="theme" title="Toggle theme">
-                <svg className="i i14 sun" aria-hidden="true"><use href="#i-sun"/></svg>
-                <svg className="i i14 moon" aria-hidden="true"><use href="#i-moon"/></svg>
-              </label>
-              <span className="avatar" title={user?.fullName ?? "Student"}>{initialsFor(user)}</span>
-              </div>
-          </header>
+          {/* ── top action bar: minimal light/dark mode switcher ── */}
+          <div className="flex items-center justify-end px-1 pb-2.5">
+            <button
+              type="button"
+              onClick={toggleTheme}
+              title={isDark ? "Switch to light theme" : "Switch to dark theme"}
+              aria-label="Toggle color theme"
+              className="flex size-8 items-center justify-center rounded-[8px] border border-line bg-surface text-ink-2 hover:bg-hover hover:text-ink shadow-hairline transition-colors duration-140"
+            >
+              {isDark ? (
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="12" cy="12" r="5" /><line x1="12" y1="1" x2="12" y2="3" /><line x1="12" y1="21" x2="12" y2="23" /><line x1="4.22" y1="4.22" x2="5.64" y2="5.64" /><line x1="18.36" y1="18.36" x2="19.78" y2="19.78" /><line x1="1" y1="12" x2="3" y2="12" /><line x1="21" y1="12" x2="23" y2="12" /><line x1="4.22" y1="19.78" x2="5.64" y2="18.36" /><line x1="18.36" y1="5.64" x2="19.78" y2="4.22" />
+                </svg>
+              ) : (
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+                </svg>
+              )}
+            </button>
+          </div>
 
           {/* ── identity hero ──────────────────────────────── */}
           <section className="hero">
@@ -283,10 +267,29 @@ export default function ProfileView() {
 
             <div className="who">
               <div className="who-top">
-                <h1 className="v-static">{loading && !user ? "Loading…" : user?.fullName ?? "Student"}</h1>
-                <input className="fld v-edit nw" defaultValue={user?.fullName ?? "Student"} aria-label="Name" key={user?.userId ?? "name"} />
-                <span className="pill pill-quiet v-static">she/her</span>
-                <input className="fld v-edit pw" defaultValue="she/her" aria-label="Pronouns" />
+                {editOpen ? (
+                  <>
+                    <input
+                      className="fld nw text-[18px] font-semibold text-ink"
+                      value={draft.name}
+                      onChange={(e) => setDraft({ name: e.target.value })}
+                      placeholder="Student name"
+                      aria-label="Student name"
+                    />
+                    <input
+                      className="fld pw text-[12px] text-ink-2"
+                      value={draft.pronouns}
+                      onChange={(e) => setDraft({ pronouns: e.target.value })}
+                      placeholder="Pronouns"
+                      aria-label="Pronouns"
+                    />
+                  </>
+                ) : (
+                  <>
+                    <h1>{loading && !user ? "Loading…" : draft.name || "Student"}</h1>
+                    <span className="pill pill-quiet">{draft.pronouns || "she/her"}</span>
+                  </>
+                )}
                 {isAdmin ? (
                   <span className="pill pill-accent"><svg className="i i11" aria-hidden="true"><use href="#i-shield"/></svg>Student admin</span>
                 ) : (
@@ -294,12 +297,22 @@ export default function ProfileView() {
                 )}
               </div>
               <div className="who-sub">
-                <span><svg className="i i13" aria-hidden="true"><use href="#i-cap"/></svg>B.S. Computer Science — Statistics</span>
-                <span><svg className="i i13" aria-hidden="true"><use href="#i-home"/></svg>Clark Kerr · On-campus</span>
-                <span><svg className="i i13" aria-hidden="true"><use href="#i-cal"/></svg>Class of 2026</span>
+                <span><svg className="i i13" aria-hidden="true"><use href="#i-cap"/></svg>{draft.degree}{draft.minor ? ` — ${draft.minor}` : ""}</span>
+                <span><svg className="i i13" aria-hidden="true"><use href="#i-home"/></svg>{draft.college}</span>
+                <span><svg className="i i13" aria-hidden="true"><use href="#i-cal"/></svg>Class of {draft.expectedGrad.replace(/[^0-9]/g, "") || "2026"}</span>
               </div>
-              <p className="bio v-static">CS + Stats senior building data tools for campus life. Looking for a hackathon team and people to climb with on Fridays.</p>
-              <textarea className="fld v-edit" aria-label="Bio" defaultValue="CS + Stats senior building data tools for campus life. Looking for a hackathon team and people to climb with on Fridays." />
+              {editOpen ? (
+                <textarea
+                  className="fld mt-2.5 max-w-[64ch] text-[13px] leading-relaxed"
+                  rows={3}
+                  value={draft.bio}
+                  onChange={(e) => setDraft({ bio: e.target.value })}
+                  placeholder="Tell campus about your academic interests and goals..."
+                  aria-label="Bio"
+                />
+              ) : (
+                <p className="bio">{draft.bio}</p>
+              )}
 
               <div className="hero-stats">
                 <div className="stat">
@@ -401,15 +414,77 @@ export default function ProfileView() {
               <div className="facts">
                 <span className="fact mono"><svg className="i i12" aria-hidden="true"><use href="#i-id"/></svg>{user?.userId ?? "user_…"}</span>
                 <span className="fact"><svg className="i i12" aria-hidden="true"><use href="#i-mail"/></svg>{user?.email ?? "—"}</span>
-                <span className="fact"><svg className="i i12" aria-hidden="true"><use href="#i-building"/></svg>{loading && !user ? "…" : college}</span>
+                <span className="fact"><svg className="i i12" aria-hidden="true"><use href="#i-building"/></svg>{loading && !user ? "…" : draft.college}</span>
               </div>
               <div className="hero-act">
-                <span className="dirty"><i aria-hidden="true"></i>Unsaved edits</span>
-                <input type="checkbox" id="edit" className="vh" aria-label="Toggle profile editing" />
-                <label className="btn-sec btn-edit" htmlFor="edit">
-                  <span className="e-i"><svg className="i i13" aria-hidden="true"><use href="#i-edit"/></svg>Edit profile</span>
-                  <span className="e-d"><svg className="i i13" aria-hidden="true"><use href="#i-check"/></svg>Done</span>
-                </label>
+                {isDirty && (
+                  <span className="dirty" style={{ display: "inline-flex" }}>
+                    <i aria-hidden="true" />
+                    Unsaved edits
+                  </span>
+                )}
+                {profileSaveState === "saved" && (
+                  <span className="pill pill-going" style={{ display: "inline-flex", alignItems: "center", gap: "4px" }}>
+                    <svg className="i i11" aria-hidden="true"><use href="#i-check"/></svg>
+                    Saved to Lakehouse
+                  </span>
+                )}
+                {profileSaveState === "error" && (
+                  <span className="pill pill-pend" style={{ display: "inline-flex", alignItems: "center", gap: "4px", color: "var(--red)", background: "var(--red-tint)" }}>
+                    Failed to save
+                  </span>
+                )}
+
+                {editOpen ? (
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setDraftState(null);
+                        setEditOpen(false);
+                      }}
+                      disabled={profileSaveState === "saving"}
+                      className="btn-sec"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => saveProfile(draft)}
+                      disabled={profileSaveState === "saving"}
+                      className="btn-sec btn-edit"
+                      style={{
+                        background: "var(--accent)",
+                        color: "oklch(1 0 0)",
+                        borderColor: "transparent",
+                      }}
+                    >
+                      {profileSaveState === "saving" ? (
+                        <>
+                          <svg className="animate-spin" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                          </svg>
+                          <span>Saving…</span>
+                        </>
+                      ) : (
+                        <>
+                          <svg className="i i13" aria-hidden="true"><use href="#i-check"/></svg>
+                          <span>Save changes</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setEditOpen(true)}
+                    className="btn-sec btn-edit"
+                  >
+                    <svg className="i i13" aria-hidden="true"><use href="#i-edit"/></svg>
+                    <span>Edit profile</span>
+                  </button>
+                )}
               </div>
             </div>
           </section>
@@ -423,53 +498,117 @@ export default function ProfileView() {
                 <div className="ch">
                   <span className="cic"><svg className="i i13" aria-hidden="true"><use href="#i-cap"/></svg></span>
                   <h3>Academic context</h3>
-                  <span className="act"><span className="micro">Weight Genie&apos;s study-time suggestions</span></span>
+                  <span className="act">
+                    {editOpen ? (
+                      <span className="pill pill-accent text-[11px] py-0.5 px-2">Editing academic details</span>
+                    ) : (
+                      <span className="micro">Weight Genie&apos;s study-time suggestions</span>
+                    )}
+                  </span>
                 </div>
                 <div className="cb">
                   <div className="rows">
                     <div className="row">
                       <span className="ic"><svg className="i i12" aria-hidden="true"><use href="#i-building"/></svg></span>
-                      <div><div className="k">College</div>
+                      <div className="flex-1 min-w-0">
+                        <div className="k">College</div>
                         <div className="v">
-                          <span className="v-static">{college}</span>
-                          <input
-                            className="fld v-edit"
-                            defaultValue={college}
-                            aria-label="College"
-                            key={user?.userId ?? "college"}
-                            onChange={(e) => setCollegeValue(e.target.value)}
-                            onBlur={(e) => saveCollege(e.target.value)}
-                          />
+                          {editOpen ? (
+                            <input
+                              className="fld"
+                              value={draft.college}
+                              onChange={(e) => setDraft({ college: e.target.value })}
+                              placeholder="College / Campus"
+                              aria-label="College"
+                            />
+                          ) : (
+                            <span className="v-static">{draft.college}</span>
+                          )}
                         </div>
                       </div>
                     </div>
                     <div className="row">
                       <span className="ic"><svg className="i i12" aria-hidden="true"><use href="#i-cap"/></svg></span>
-                      <div><div className="k">Degree</div>
-                        <div className="v"><span className="v-static">B.S. Computer Science</span><input className="fld v-edit" defaultValue="B.S. Computer Science" aria-label="Degree" /></div>
+                      <div className="flex-1 min-w-0">
+                        <div className="k">Degree</div>
+                        <div className="v">
+                          {editOpen ? (
+                            <input
+                              className="fld"
+                              value={draft.degree}
+                              onChange={(e) => setDraft({ degree: e.target.value })}
+                              placeholder="Degree program"
+                              aria-label="Degree"
+                            />
+                          ) : (
+                            <span className="v-static">{draft.degree}</span>
+                          )}
+                        </div>
                       </div>
                     </div>
                     <div className="row">
                       <span className="ic"><svg className="i i12" aria-hidden="true"><use href="#i-book"/></svg></span>
-                      <div><div className="k">Minor</div>
-                        <div className="v"><span className="v-static">Statistics</span><input className="fld v-edit" defaultValue="Statistics" aria-label="Minor" /></div>
+                      <div className="flex-1 min-w-0">
+                        <div className="k">Minor</div>
+                        <div className="v">
+                          {editOpen ? (
+                            <input
+                              className="fld"
+                              value={draft.minor}
+                              onChange={(e) => setDraft({ minor: e.target.value })}
+                              placeholder="Minor field"
+                              aria-label="Minor"
+                            />
+                          ) : (
+                            <span className="v-static">{draft.minor}</span>
+                          )}
+                        </div>
                       </div>
                     </div>
                     <div className="row">
                       <span className="ic"><svg className="i i12" aria-hidden="true"><use href="#i-cal"/></svg></span>
-                      <div><div className="k">Expected grad</div>
-                        <div className="v"><span className="v-static">Spring 2026</span><input className="fld v-edit" defaultValue="Spring 2026" aria-label="Expected graduation" /></div>
+                      <div className="flex-1 min-w-0">
+                        <div className="k">Expected grad</div>
+                        <div className="v">
+                          {editOpen ? (
+                            <input
+                              className="fld"
+                              value={draft.expectedGrad}
+                              onChange={(e) => setDraft({ expectedGrad: e.target.value })}
+                              placeholder="e.g. Spring 2026"
+                              aria-label="Expected graduation"
+                            />
+                          ) : (
+                            <span className="v-static">{draft.expectedGrad}</span>
+                          )}
+                        </div>
                       </div>
                     </div>
                     <div className="row">
                       <span className="ic"><svg className="i i12" aria-hidden="true"><use href="#i-users"/></svg></span>
-                      <div><div className="k">Advisor</div>
-                        <div className="v"><span className="v-static">Prof. D. Rivera</span><input className="fld v-edit" defaultValue="Prof. D. Rivera" aria-label="Advisor" /></div>
+                      <div className="flex-1 min-w-0">
+                        <div className="k">Advisor</div>
+                        <div className="v">
+                          {editOpen ? (
+                            <input
+                              className="fld"
+                              value={draft.advisor}
+                              onChange={(e) => setDraft({ advisor: e.target.value })}
+                              placeholder="Faculty advisor"
+                              aria-label="Advisor"
+                            />
+                          ) : (
+                            <span className="v-static">{draft.advisor}</span>
+                          )}
+                        </div>
                       </div>
                     </div>
                     <div className="row">
                       <span className="ic"><svg className="i i12" aria-hidden="true"><use href="#i-target"/></svg></span>
-                      <div><div className="k">Standing</div><div className="v">Senior · 112 / 180 credits</div></div>
+                      <div className="flex-1 min-w-0">
+                        <div className="k">Standing</div>
+                        <div className="v">Senior · 112 / 180 credits</div>
+                      </div>
                     </div>
                   </div>
 
@@ -755,10 +894,10 @@ export default function ProfileView() {
                   <div className="qrow">
                     <svg className="i i13" aria-hidden="true"><use href="#i-db"/></svg>
                     app_users.delta
-                    {collegeSaveState === "saving" && <span className="pill pill-quiet" style={{ marginLeft: "auto" }}><svg className="i i11" aria-hidden="true"><use href="#i-rotate"/></svg>Saving…</span>}
-                    {collegeSaveState === "saved" && <span className="pill pill-going" style={{ marginLeft: "auto" }}><svg className="i i10" aria-hidden="true"><use href="#i-check"/></svg>Saved to Lakehouse</span>}
-                    {collegeSaveState === "error" && <span className="pill pill-pend" style={{ marginLeft: "auto" }}>Save failed — try again</span>}
-                    {collegeSaveState === "idle" && <span className="tm" style={{ marginLeft: "auto" }}>{isAdmin ? "Events · surveys · sources" : "Browse · RSVP · chat"}</span>}
+                    {profileSaveState === "saving" && <span className="pill pill-quiet" style={{ marginLeft: "auto" }}><svg className="i i11" aria-hidden="true"><use href="#i-rotate"/></svg>Saving…</span>}
+                    {profileSaveState === "saved" && <span className="pill pill-going" style={{ marginLeft: "auto" }}><svg className="i i10" aria-hidden="true"><use href="#i-check"/></svg>Saved to Lakehouse</span>}
+                    {profileSaveState === "error" && <span className="pill pill-pend" style={{ marginLeft: "auto" }}>Save failed — try again</span>}
+                    {profileSaveState === "idle" && <span className="tm" style={{ marginLeft: "auto" }}>{isAdmin ? "Events · surveys · sources" : "Browse · RSVP · chat"}</span>}
                   </div>
 
                   <div className="gn">

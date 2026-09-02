@@ -187,16 +187,39 @@ html:not(.dark) .profile-scope .theme-btn .moon { display: block; }
 
 /* ── buttons ───────────────────────────────────────────── */
 .profile-scope .btn-sec {
-  display: inline-flex; align-items: center; gap: 7px;
-  height: 30px; padding: 0 12px;
-  border: 1px solid var(--line); border-radius: 8px;
-  background: var(--surface); color: var(--ink);
-  font-family: var(--font-sans); font-size: 12.5px; font-weight: 500; cursor: pointer;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 6px !important;
+  height: 30px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  line-height: 1;
   transition: background-color 140ms var(--ease-out-strong), color 140ms var(--ease-out-strong),
               border-color 140ms var(--ease-out-strong), transform 140ms var(--ease-out-strong);
 }
 .profile-scope .btn-sec:hover { background: var(--hover); }
 .profile-scope .btn-sec:active { transform: scale(0.96); }
+.profile-scope .btn-sec svg,
+.profile-scope .btn-sec .i {
+  display: inline-block !important;
+  vertical-align: middle !important;
+  flex-shrink: 0;
+  margin: 0 !important;
+}
+.profile-scope .btn-sec span {
+  display: inline-block !important;
+  line-height: 1 !important;
+  vertical-align: middle !important;
+}
 .profile-scope .btn-ghost {
   display: inline-flex; align-items: center; gap: 5px;
   color: var(--ink-2); font-size: 12px; font-weight: 500;
@@ -375,18 +398,14 @@ textarea.profile-scope .fld,
 .profile-scope textarea.fld { height: auto; min-height: 64px; padding: 8px 10px; resize: vertical; line-height: 1.5; }
 .profile-scope .nw { width: 220px; } .profile-scope .pw { width: 110px; }
 
-.profile-scope .v-edit { display: none !important; }
-.profile-scope .window:has(#edit:checked) .v-static { display: none !important; }
-.profile-scope .window:has(#edit:checked) .v-edit { display: inline-block !important; }
-.profile-scope .window:has(#edit:checked) textarea.v-edit,
-.profile-scope .window:has(#edit:checked) .v .v-edit { display: block !important; }
-.profile-scope .window:has(#edit:checked) .dirty { display: inline-flex; }
-.profile-scope .window:has(#edit:checked) .e-i { display: none; }
-.profile-scope .window:has(#edit:checked) .e-d { display: inline-flex; }
-.profile-scope .window:has(#edit:checked) .btn-edit {
-  background: var(--accent); border-color: transparent; color: oklch(1 0 0);
+.profile-scope .dirty { display: inline-flex; }
+.profile-scope .btn-edit {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 6px !important;
+  line-height: 1 !important;
 }
-.profile-scope .window:has(#edit:checked) .btn-edit:hover { background: var(--accent); filter: saturate(0.9) brightness(1.05); }
 
 /* ── academic rows ─────────────────────────────────────── */
 .profile-scope .rows { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 24px; }
