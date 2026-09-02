@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { fetchWithAutoRetry } from "@/lib/llm";
 import { executeLakehouseSql } from "@/lib/lakehouse";
 import { streamGenieConversation } from "@/lib/genie";
-import { checkRateLimit } from "@/lib/rateLimiter";
+import { checkRateLimit, getClientIdFromHeaders } from "@/lib/rateLimiter";
 import { getCurrentUser, DEFAULT_COLLEGE } from "@/lib/appUsers";
 import { buildWalkingRoute } from "@/lib/campusDirections";
 import { getCollegeForUser, fetchCampusLocations, resolveCampusPoint, listCampusLocationNames } from "@/lib/campusLocations";
@@ -417,11 +417,8 @@ function generateFallbackSummary(toolCallsRan: Array<{ name: string; result: any
 
 export async function POST(req: NextRequest) {
   try {
-    // Rate limiting
-    const clientIp =
-      req.headers.get("x-forwarded-for")?.split(",")[0].trim() ||
-      req.headers.get("x-real-ip") ||
-      "client_user";
+    // Rate limiting (same client identity as /api/chat/usage)
+    const clientIp = getClientIdFromHeaders(req.headers);
     const rateLimitCheck = checkRateLimit(clientIp);
     if (!rateLimitCheck.allowed) {
       return NextResponse.json(

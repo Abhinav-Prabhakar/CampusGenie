@@ -1,8 +1,72 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useCurrentUser, initialsFor, setCurrentUserCached } from "@/lib/useCurrentUser";
 import "@/app/profile.css";
+
+type ChatUsage = {
+  rpmUsed: number;
+  rpmLimit: number;
+  rpdUsed: number;
+  rpdLimit: number;
+  rpmResetsAt: number | null;
+  rpdResetsAt: number | null;
+};
+
+function formatResetIn(resetsAt: number | null, now: number): string | null {
+  if (!resetsAt || resetsAt <= now) return null;
+  const s = Math.round((resetsAt - now) / 1000);
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  return m < 60 ? `${m}m ${s % 60}s` : `${Math.floor(m / 60)}h ${m % 60}m`;
+}
+
+const usageTone = (used: number, limit: number): string =>
+  limit > 0 && used >= limit ? "var(--red)" : limit > 0 && used / limit >= 0.8 ? "var(--orange)" : "var(--accent)";
+
+function UsageMeter({
+  icon,
+  label,
+  used,
+  limit,
+  resetsIn,
+}: {
+  icon: string;
+  label: string;
+  used: number;
+  limit: number;
+  resetsIn: string | null;
+}) {
+  const tone = usageTone(used, limit);
+  const pct = limit > 0 ? Math.min(100, Math.round((used / limit) * 100)) : 0;
+  const blocked = limit > 0 && used >= limit;
+  const mono: React.CSSProperties = { fontFamily: "var(--font-mono)", fontVariantNumeric: "tabular-nums" };
+  return (
+    <div className="row" style={{ flexDirection: "column", alignItems: "stretch", gap: 7 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        <span
+          className="ic"
+          style={{ "--t": tone, color: tone, background: `color-mix(in srgb, ${tone} 14%, var(--surface))`, borderColor: `color-mix(in srgb, ${tone} 26%, var(--surface))` } as React.CSSProperties}
+        >
+          <svg className="i i12" aria-hidden="true"><use href={icon} /></svg>
+        </span>
+        <span className="k" style={{ fontSize: 12, color: "var(--ink-2)" }}>{label}</span>
+        <b style={{ marginLeft: "auto", fontSize: 11.5, fontWeight: 600, color: "var(--ink)", whiteSpace: "nowrap", ...mono }}>
+          {used} / {limit}
+        </b>
+      </div>
+      <span className="meter" style={{ flex: "none" }}>
+        <i style={{ width: `${pct}%`, background: tone }} />
+      </span>
+      <div style={{ display: "flex", alignItems: "center" }}>
+        <span style={{ fontSize: 10.5, color: "var(--ink-3)" }}>{blocked ? "Cooldown active" : "Rolling window"}</span>
+        <span style={{ marginLeft: "auto", fontSize: 10.5, color: "var(--ink-3)", ...mono }}>
+          {resetsIn ? `frees up in ${resetsIn}` : "idle"}
+        </span>
+      </div>
+    </div>
+  );
+}
 
 export default function ProfileView() {
   const { user, loading } = useCurrentUser();
@@ -15,6 +79,30 @@ export default function ProfileView() {
   const role = override && user && override.userId === user.userId ? override.role : user?.role ?? "student";
   const isAdmin = role === "admin";
   const college = collegeValue ?? user?.college ?? "Databricks University";
+
+  // Live chat quota (RPM/RPD) from the same in-memory limiter the chat API uses.
+  const [usage, setUsage] = useState<ChatUsage | null>(null);
+  const [nowTs, setNowTs] = useState(() => Date.now());
+
+  useEffect(() => {
+    let alive = true;
+    const load = () => {
+      fetch("/api/chat/usage", { cache: "no-store" })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((data) => {
+          if (alive && data?.usage) setUsage(data.usage);
+        })
+        .catch(() => {});
+    };
+    load();
+    const poll = setInterval(load, 30_000);
+    const tick = setInterval(() => setNowTs(Date.now()), 1000);
+    return () => {
+      alive = false;
+      clearInterval(poll);
+      clearInterval(tick);
+    };
+  }, []);
 
   const saveCollege = async (next: string) => {
     const trimmed = next.trim();
@@ -625,8 +713,45 @@ export default function ProfileView() {
                 </div>
               </section>
 
-              {/* profile strength */}
+              {/* chat usage & limits */}
               <section className="card" style={{ "--i": 1 } as React.CSSProperties}>
+                <div className="ch">
+                  <span className="cic" style={{ "--t": "var(--accent)" } as React.CSSProperties}><svg className="i i13" aria-hidden="true"><use href="#i-zap"/></svg></span>
+                  <h3>Chat usage &amp; limits</h3>
+                  <span className="act"><span className="micro">Live</span></span>
+                </div>
+                <div className="cb">
+                  <div className="rows" style={{ gap: "14px 24px" }}>
+                    <UsageMeter
+                      icon="#i-zap"
+                      label="Requests · minute"
+                      used={usage?.rpmUsed ?? 0}
+                      limit={usage?.rpmLimit ?? 0}
+                      resetsIn={usage ? formatResetIn(usage.rpmResetsAt, nowTs) : null}
+                    />
+                    <UsageMeter
+                      icon="#i-db"
+                      label="Prompts · day"
+                      used={usage?.rpdUsed ?? 0}
+                      limit={usage?.rpdLimit ?? 0}
+                      resetsIn={usage ? formatResetIn(usage.rpdResetsAt, nowTs) : null}
+                    />
+                  </div>
+
+                  <div className="gn" style={{ marginTop: "12px" }}>
+                    <svg className="i i13" aria-hidden="true"><use href="#i-zap"/></svg>
+                    <span>
+                      Genie pauses briefly when a window fills, then picks up where you left off. Limits are per client —{" "}
+                      <code style={{ fontFamily: "var(--font-mono)", fontSize: "10.5px" }}>
+                        LLM_RPM_LIMIT={usage?.rpmLimit ?? "—"} · LLM_RPD_LIMIT={usage?.rpdLimit ?? "—"}
+                      </code>
+                    </span>
+                  </div>
+                </div>
+              </section>
+
+              {/* profile strength */}
+              <section className="card" style={{ "--i": 2 } as React.CSSProperties}>
                 <div className="ch">
                   <span className="cic"><svg className="i i13" aria-hidden="true"><use href="#i-zap"/></svg></span>
                   <h3>Profile strength</h3>
@@ -660,7 +785,7 @@ export default function ProfileView() {
               </section>
 
               {/* this term insights */}
-              <section className="card" style={{ "--i": 2 } as React.CSSProperties}>
+              <section className="card" style={{ "--i": 3 } as React.CSSProperties}>
                 <div className="ch">
                   <span className="cic" style={{ "--t": "var(--green)" } as React.CSSProperties}><svg className="i i13" aria-hidden="true"><use href="#i-up"/></svg></span>
                   <h3>This term</h3>
@@ -701,7 +826,7 @@ export default function ProfileView() {
               </section>
 
               {/* memberships */}
-              <section className="card" style={{ "--i": 3 } as React.CSSProperties}>
+              <section className="card" style={{ "--i": 4 } as React.CSSProperties}>
                 <div className="ch">
                   <span className="cic"><svg className="i i13" aria-hidden="true"><use href="#i-users"/></svg></span>
                   <h3>Memberships</h3>
@@ -718,7 +843,7 @@ export default function ProfileView() {
               </section>
 
               {/* badges */}
-              <section className="card" style={{ "--i": 4 } as React.CSSProperties}>
+              <section className="card" style={{ "--i": 5 } as React.CSSProperties}>
                 <div className="ch">
                   <span className="cic" style={{ "--t": "var(--orange)" } as React.CSSProperties}><svg className="i i13" aria-hidden="true"><use href="#i-award"/></svg></span>
                   <h3>Badges</h3>
@@ -756,7 +881,7 @@ export default function ProfileView() {
               </section>
 
               {/* connected services */}
-              <section className="card" style={{ "--i": 5 } as React.CSSProperties}>
+              <section className="card" style={{ "--i": 6 } as React.CSSProperties}>
                 <div className="ch">
                   <span className="cic" style={{ "--t": "var(--hue-hack)" } as React.CSSProperties}><svg className="i i13" aria-hidden="true"><use href="#i-db"/></svg></span>
                   <h3>Connections</h3>

@@ -97,3 +97,51 @@ export function checkRateLimit(
     remainingRPD: Math.max(0, rpdLimit - timestampsLastDay.length - 1),
   };
 }
+
+export function getRateLimitLimits(): { rpmLimit: number; rpdLimit: number } {
+  return {
+    rpmLimit: parseInt(process.env.LLM_RPM_LIMIT || "20", 10),
+    rpdLimit: parseInt(process.env.LLM_RPD_LIMIT || "300", 10),
+  };
+}
+
+export type RateLimitUsage = {
+  rpmUsed: number;
+  rpmLimit: number;
+  rpdUsed: number;
+  rpdLimit: number;
+  /** Epoch ms when the per-minute window frees up (null if idle). */
+  rpmResetsAt: number | null;
+  /** Epoch ms when the daily window frees up (null if idle). */
+  rpdResetsAt: number | null;
+};
+
+/**
+ * Read-only view of a client's current quota consumption. Unlike
+ * checkRateLimit, this does NOT register a request.
+ */
+export function getRateLimitUsage(clientId: string = "default_user"): RateLimitUsage {
+  const { rpmLimit, rpdLimit } = getRateLimitLimits();
+  const now = Date.now();
+  const bucket = clientBuckets.get(clientId);
+  const lastDay = bucket ? bucket.timestamps.filter((ts) => ts > now - 24 * 60 * 60 * 1000) : [];
+  const lastMinute = lastDay.filter((ts) => ts > now - 60 * 1000);
+
+  return {
+    rpmUsed: lastMinute.length,
+    rpmLimit,
+    rpdUsed: lastDay.length,
+    rpdLimit,
+    rpmResetsAt: lastMinute.length > 0 ? lastMinute[0] + 60 * 1000 : null,
+    rpdResetsAt: lastDay.length > 0 ? lastDay[0] + 24 * 60 * 60 * 1000 : null,
+  };
+}
+
+/** Same client identity rule the chat route uses (proxy IP, then fallback). */
+export function getClientIdFromHeaders(headers: Headers): string {
+  return (
+    headers.get("x-forwarded-for")?.split(",")[0].trim() ||
+    headers.get("x-real-ip") ||
+    "client_user"
+  );
+}
