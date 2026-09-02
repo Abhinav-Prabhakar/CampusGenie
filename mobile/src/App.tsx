@@ -24,11 +24,20 @@ const features = [
 
 async function request<T>(path: string, init?: RequestInit): Promise<Envelope<T>> {
   const [resource, query = ""] = path.replace(/^\//, "").split("?");
-  const url = init?.method === "POST" ? `${API_BASE}/api/mobile` : `${API_BASE}/api/mobile?resource=${encodeURIComponent(resource)}${query ? `&${query}` : ""}`;
-  const response = await fetch(url, { ...init, headers: { "Content-Type": "application/json", ...(init?.headers || {}) } });
-  const payload = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(payload.error || "Campus Genie could not reach Databricks.");
-  return payload;
+  const suffix = init?.method === "POST" ? "/api/mobile" : `/api/mobile?resource=${encodeURIComponent(resource)}${query ? `&${query}` : ""}`;
+  const bases = API_BASE ? [API_BASE, ""] : [""];
+  let lastError = "Campus Genie could not reach Databricks.";
+  for (const base of bases) {
+    try {
+      const response = await fetch(`${base}${suffix}`, { ...init, headers: { "Content-Type": "application/json", ...(init?.headers || {}) } });
+      const payload = await response.json().catch(() => ({}));
+      if (response.ok) return payload;
+      lastError = payload.error || lastError;
+    } catch (error) {
+      lastError = error instanceof Error ? error.message : lastError;
+    }
+  }
+  throw new Error(lastError);
 }
 
 function useData<T>(path: string, active = true) {
