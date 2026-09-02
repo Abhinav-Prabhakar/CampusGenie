@@ -564,7 +564,7 @@ export default function CampusGenieChatPage() {
         try {
           const parsedArgs = JSON.parse(ti.args);
           if (
-            (ti.name === "ask_questions" || ti.name === "trigger_survey" || ti.name === "ask_survey") &&
+            (ti.name === "ask_questions" || ti.name === "trigger_survey" || ti.name === "ask_survey" || ti.name === "ask_user_questions") &&
             (parsedArgs.questions || Array.isArray(parsedArgs) || parsedArgs.survey)
           ) {
             finalQuestions = normalizeQuestions(parsedArgs) || finalQuestions;

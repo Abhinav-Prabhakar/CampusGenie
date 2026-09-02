@@ -138,6 +138,83 @@ function resolveLiveEventIds(
   return Array.from(ids).filter((id) => liveIds.has(id));
 }
 
+export type GenieSurveyQuestion = {
+  id?: string;
+  q: string;
+  type: "radio" | "check";
+  options: string[];
+  allowCustom?: boolean;
+};
+
+async function resolveGenieSurveyQuestions(
+  genieRecords: Record<string, unknown>[],
+  prompt: string,
+  attachments: GenieMessage["attachments"]
+): Promise<GenieSurveyQuestion[] | null> {
+  // 1. Check if any returned Lakehouse records contain questions_json (e.g. from campus_surveys)
+  for (const record of genieRecords) {
+    if (record.questions_json && typeof record.questions_json === "string") {
+      try {
+        const parsed = JSON.parse(record.questions_json);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed.map((item: Record<string, unknown>, idx: number) => ({
+            id: String(item.id || `q_${idx}`),
+            q: String(item.q || item.title || item.question || item.prompt || `Question ${idx + 1}`),
+            type: (item.type === "checkbox" || item.type === "check" ? "check" : "radio") as "radio" | "check",
+            options: Array.isArray(item.options) && item.options.length > 0
+              ? item.options.map(String)
+              : ["Yes", "No"],
+            allowCustom: item.allowCustom !== false,
+          }));
+        }
+      } catch {}
+    }
+  }
+
+  // 2. Check if Genie returned suggested follow-up questions in the message attachments
+  const suggested = (attachments || [])
+    .flatMap((a) => a.suggested_questions?.questions || [])
+    .filter((q): q is string => typeof q === "string" && q.trim().length > 0);
+
+  if (suggested.length > 0) {
+    return suggested.slice(0, 3).map((sq, idx) => ({
+      id: `genie_sq_${idx}`,
+      q: sq,
+      type: "radio" as const,
+      options: ["Yes", "No", "Tell me more"],
+      allowCustom: true,
+    }));
+  }
+
+  // 3. If user prompt explicitly requests a survey, quiz, preference questionnaire, or event recommendation:
+  const isSurveyIntent = /\b(survey|questionnaire|quiz|poll|feedback|preference|recommend\s+events|help\s+me\s+(choose|pick|decide))\b/i.test(prompt);
+  if (isSurveyIntent) {
+    try {
+      const res = await executeLakehouseSql(
+        "SELECT questions_json FROM workspace.campus_explorer.campus_surveys WHERE is_published = true ORDER BY is_featured DESC, response_count DESC LIMIT 1",
+        undefined,
+        5
+      );
+      if (res.state === "SUCCEEDED" && res.records && res.records[0]?.questions_json) {
+        const parsed = JSON.parse(String(res.records[0].questions_json));
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed.map((item: Record<string, unknown>, idx: number) => ({
+            id: String(item.id || `q_${idx}`),
+            q: String(item.q || item.title || item.question || item.prompt || `Question ${idx + 1}`),
+            type: (item.type === "checkbox" || item.type === "check" ? "check" : "radio") as "radio" | "check",
+            options: Array.isArray(item.options) && item.options.length > 0
+              ? item.options.map(String)
+              : ["Yes", "No"],
+            allowCustom: item.allowCustom !== false,
+          }));
+        }
+      }
+    } catch {}
+  }
+
+  return null;
+}
+
 export async function streamGenieConversation(
   prompt: string,
   signal: AbortSignal,
@@ -203,6 +280,7 @@ export async function streamGenieConversation(
 
   // Only emit show_events_grid if specific verified events were matched
   if (eventIds.length > 0) {
+    send({ type: "events_grid", eventIds });
     send({
       choices: [{
         delta: {
@@ -212,6 +290,26 @@ export async function streamGenieConversation(
             function: {
               name: "show_events_grid",
               arguments: JSON.stringify({ eventIds, summary: `Matched ${eventIds.length} live Lakehouse events` }),
+            },
+          }],
+        },
+      }],
+    });
+  }
+
+  // Resolve interactive survey questions for Genie Agent
+  const surveyQuestions = await resolveGenieSurveyQuestions(genieRecords, prompt, attachments);
+  if (surveyQuestions && surveyQuestions.length > 0) {
+    send({ type: "survey", questions: surveyQuestions });
+    send({
+      choices: [{
+        delta: {
+          tool_calls: [{
+            index: 1,
+            id: "genie_survey",
+            function: {
+              name: "ask_user_questions",
+              arguments: JSON.stringify({ questions: surveyQuestions }),
             },
           }],
         },
