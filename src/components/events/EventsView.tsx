@@ -30,9 +30,10 @@ export type CampusEvent = {
   capacity?: number;
   host: string;
   hostCode: string;
-  flags: { food?: boolean; virtual?: boolean; going?: boolean };
+  flags: { food?: boolean; virtual?: boolean; going?: boolean; whatsapp?: boolean };
   when: "today" | "week" | "weekend" | "future";
   agenda?: Array<{ time: string; title: string; desc?: string }>;
+  whatsappUrl?: string;
 };
 
 const EVENTS_DATA: CampusEvent[] = [
@@ -357,7 +358,12 @@ export default function EventsView({ onAskGenie }: { onAskGenie?: (prompt: strin
       .then((r) => r.json())
       .then((data) => {
         if (data.events && data.events.length > 0) {
-          setEventsList(data.events);
+          setEventsList(
+            data.events.map((ev: CampusEvent) => ({
+              ...ev,
+              flags: { ...ev.flags, whatsapp: Boolean(ev.whatsappUrl) },
+            }))
+          );
         }
       })
       .catch((err) => console.warn("Failed to fetch live events, using cached seed data:", err));
@@ -877,6 +883,9 @@ export default function EventsView({ onAskGenie }: { onAskGenie?: (prompt: strin
                   <span className="flags">
                     {ev.flags.food && <svg className="i i13" width={13} height={13} aria-label="Free food" role="img"><use href="#i-food"/></svg>}
                     {ev.flags.virtual && <svg className="i i13" width={13} height={13} aria-label="Virtual" role="img"><use href="#i-video"/></svg>}
+                    {ev.whatsappUrl && (
+                      <svg className="i i13 wa-flag" width={13} height={13} aria-label="Official WhatsApp group" role="img"><use href="#i-whatsapp"/></svg>
+                    )}
                   </span>
                   <button
                     type="button"

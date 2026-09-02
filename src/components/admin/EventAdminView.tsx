@@ -27,6 +27,7 @@ type AdminEvent = {
   host?: string;
   hostCode?: string;
   description?: string;
+  whatsappUrl?: string;
   inviteLink?: string;
   feedbackSurvey?: { title: string; count: number; status: string };
 };
@@ -215,6 +216,7 @@ export default function EventAdminView() {
   const [compTime, setCompTime] = useState("18:30");
   const [compDuration, setCompDuration] = useState("1h");
   const [compLocation, setCompLocation] = useState("Ocean Engineering 214");
+  const [compWhatsapp, setCompWhatsapp] = useState("");
   const [compCapacity, setCompCapacity] = useState("60");
   const [compDesc, setCompDesc] = useState("Weekly systems talk — this week: kernel bypass networking. Pizza from 6:15, hybrid stream on Teams.");
   const [compIsPublic, setCompIsPublic] = useState(true);
@@ -385,6 +387,7 @@ export default function EventAdminView() {
           isFeatured: compIsFeatured,
           visibility: compIsPublic ? "public" : "private",
           status: "live",
+          whatsappUrl: compWhatsapp.trim() || undefined,
         }),
       });
     } catch (err) {
@@ -449,6 +452,7 @@ export default function EventAdminView() {
               host: e.host,
               hostCode: e.hostCode,
               description: e.description,
+              whatsappUrl: e.whatsappUrl,
             }))
           );
         }
@@ -488,6 +492,7 @@ export default function EventAdminView() {
             status: target.status,
             visibility: target.visibility,
             description: target.description,
+            whatsappUrl: target.whatsappUrl,
           }),
         });
         if (!response.ok) {
@@ -533,6 +538,7 @@ export default function EventAdminView() {
           featured: dup.isFeatured,
           status: "draft",
           visibility: dup.visibility,
+          whatsappUrl: dup.whatsappUrl,
         }),
       });
     } catch (err) {
@@ -848,6 +854,16 @@ export default function EventAdminView() {
                       <div className="fld span2">
                         <span className="lb"><svg className="i i12" aria-hidden="true"><use href="#i-pin"/></svg>Location</span>
                         <input type="text" value={compLocation} onChange={(e) => setCompLocation(e.target.value)} aria-label="Location" />
+                      </div>
+                      <div className="fld span2">
+                        <span className="lb"><svg className="i i12" style={{ color: "oklch(0.766 0.171 152.5)" }} aria-hidden="true"><use href="#i-whatsapp"/></svg>WhatsApp group link</span>
+                        <input
+                          type="url"
+                          placeholder="https://chat.whatsapp.com/…"
+                          value={compWhatsapp}
+                          onChange={(e) => setCompWhatsapp(e.target.value)}
+                          aria-label="WhatsApp group invite link"
+                        />
                       </div>
                       <div className="fld span2">
                         <span className="lb"><svg className="i i12" aria-hidden="true"><use href="#i-users"/></svg>Capacity</span>

@@ -572,6 +572,18 @@ export default function EventDetailModal({ event, onClose, onAskGenie }: EventDe
           </div>
 
           <div className="dfoot-r">
+            {event.whatsappUrl && (
+              <a
+                href={event.whatsappUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="wa"
+                title="Open the official WhatsApp group"
+              >
+                <svg className="i i13" width={13} height={13} aria-hidden="true"><use href="#i-whatsapp"/></svg>
+                Join Group
+              </a>
+            )}
             <button
               type="button"
               onClick={() => setIsCalAdded((prev) => !prev)}

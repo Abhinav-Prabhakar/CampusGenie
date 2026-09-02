@@ -31,6 +31,7 @@ export type EventRecord = {
   status?: string;
   visibility?: string;
   isFeatured?: boolean;
+  whatsappUrl?: string;
 };
 
 function mapRowToEvent(r: Record<string, any>): EventRecord {
@@ -129,6 +130,7 @@ function mapRowToEvent(r: Record<string, any>): EventRecord {
     status,
     visibility,
     isFeatured,
+    whatsappUrl: r.whatsapp_url || undefined,
   };
 }
 
@@ -184,16 +186,17 @@ export async function POST(req: NextRequest) {
     const tags = Array.isArray(body.tags) ? body.tags : [category, "Campus"];
     const tagsArraySql = `ARRAY(${tags.map((t: string) => `'${t.replace(/'/g, "''")}'`).join(",")})`;
     const createdBy = guard.user.userId.replace(/'/g, "''");
+    const whatsappUrl = typeof body.whatsappUrl === "string" && body.whatsappUrl.trim() ? body.whatsappUrl.trim().replace(/'/g, "''") : null;
 
     const insertSql = `
       INSERT INTO workspace.campus_explorer.campus_events (event_id, title, category, host_organization, host_code,
         location, is_virtual, event_date, start_time, duration, capacity, registered_count, food_provided,
-        is_featured, status, visibility, tags, description, created_at, created_by)
+        is_featured, status, visibility, tags, description, created_at, created_by, whatsapp_url)
       VALUES (
         '${eventId}', '${title}', '${category}', '${host}', '${hostCode}',
         '${location}', ${isVirtual}, '${date}', '${time}', '${duration}',
         ${capacity}, 0, ${food}, ${featured}, '${status}', '${visibility}',
-        ${tagsArraySql}, '${description}', current_timestamp(), '${createdBy}'
+        ${tagsArraySql}, '${description}', current_timestamp(), '${createdBy}', ${whatsappUrl ? `'${whatsappUrl}'` : "NULL"}
       )
     `;
 
@@ -248,11 +251,14 @@ export async function PUT(req: NextRequest) {
     const description = (body.description || body.desc || "").replace(/'/g, "''");
     const tags = Array.isArray(body.tags) ? body.tags : [category, "Campus"];
     const tagsArraySql = `ARRAY(${tags.map((t: string) => `'${t.replace(/'/g, "''")}'`).join(",")})`;
+    // undefined = leave the stored link untouched; null/"" clears it.
+    const waProvided = body.whatsappUrl !== undefined;
+    const whatsappUrl = typeof body.whatsappUrl === "string" && body.whatsappUrl.trim() ? body.whatsappUrl.trim().replace(/'/g, "''") : null;
 
     const mergeSql = `
       MERGE INTO workspace.campus_explorer.campus_events AS target
       USING (
-        SELECT 
+        SELECT
           '${eventId}' AS event_id,
           '${title}' AS title,
           '${category}' AS category,
@@ -269,7 +275,8 @@ export async function PUT(req: NextRequest) {
           '${status}' AS status,
           '${visibility}' AS visibility,
           ${tagsArraySql} AS tags,
-          '${description}' AS description
+          '${description}' AS description,
+          ${whatsappUrl ? `'${whatsappUrl}'` : "CAST(NULL AS STRING)"} AS whatsapp_url
       ) AS src
       ON target.event_id = src.event_id
       WHEN MATCHED THEN UPDATE SET
@@ -283,6 +290,7 @@ export async function PUT(req: NextRequest) {
         target.start_time = src.start_time,
         target.duration = src.duration,
         target.capacity = src.capacity,
+        ${waProvided ? "target.whatsapp_url = src.whatsapp_url," : ""}
         target.food_provided = src.food_provided,
         target.is_featured = src.is_featured,
         target.status = src.status,
@@ -293,12 +301,12 @@ export async function PUT(req: NextRequest) {
         event_id, title, category, host_organization, host_code,
         location, is_virtual, event_date, start_time, duration,
         capacity, registered_count, food_provided, is_featured, status, visibility,
-        tags, description, created_at, created_by
+        tags, description, created_at, created_by, whatsapp_url
       ) VALUES (
         src.event_id, src.title, src.category, src.host_organization, src.host_code,
         src.location, src.is_virtual, src.event_date, src.start_time, src.duration,
         src.capacity, 0, src.food_provided, src.is_featured, src.status, src.visibility,
-        src.tags, src.description, current_timestamp(), '${guard.user.userId.replace(/'/g, "''")}'
+        src.tags, src.description, current_timestamp(), '${guard.user.userId.replace(/'/g, "''")}', src.whatsapp_url
       )
     `;
 

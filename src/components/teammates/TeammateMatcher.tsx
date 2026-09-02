@@ -316,7 +316,6 @@ export default function TeammateMatcher() {
   }, [match]);
 
   const progress = deck && deck.total > 0 ? Math.round((deck.reviewed / deck.total) * 100) : 0;
-  const current = exiting ? queue[0] : visible[0];
 
   return (
     <div className="p-4 md:p-6">
