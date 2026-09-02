@@ -14,11 +14,15 @@ CREATE TABLE IF NOT EXISTS app_users (
   first_name STRING,
   last_name STRING,
   role STRING,                      -- 'student' | 'admin'
+  college STRING,                   -- campus the student belongs to (drives navigation tools)
   created_at TIMESTAMP,
   updated_at TIMESTAMP
 )
 USING DELTA
 TBLPROPERTIES ('delta.enableChangeDataFeed' = 'true');
+
+-- Lazy migration for tables provisioned before the college column existed.
+ALTER TABLE app_users ADD COLUMN IF NOT EXISTS college STRING;
 
 -- 0b. Per-user chat threads (server-side chat history)
 CREATE TABLE IF NOT EXISTS chat_threads (
@@ -181,5 +185,17 @@ CREATE TABLE IF NOT EXISTS procurement_inventory (
   unit_price_inr DECIMAL(10, 2),
   lead_time_days INT,
   last_restock_date DATE
+)
+USING DELTA;
+
+-- 10. Campus Building Locations (shared; powers the campus directions tool)
+CREATE TABLE IF NOT EXISTS campus_locations (
+  location_id STRING,
+  college STRING,                   -- owning campus name; matches app_users.college
+  name STRING,                      -- human name students say, e.g. 'Library'
+  category STRING,                  -- 'library' | 'dining' | 'academics' | 'landmark' | ...
+  lat DOUBLE,
+  lng DOUBLE,
+  description STRING
 )
 USING DELTA;

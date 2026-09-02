@@ -3,6 +3,9 @@ import { fetchWithAutoRetry } from "@/lib/llm";
 import { executeLakehouseSql } from "@/lib/lakehouse";
 import { streamGenieConversation } from "@/lib/genie";
 import { checkRateLimit } from "@/lib/rateLimiter";
+import { getCurrentUser, DEFAULT_COLLEGE } from "@/lib/appUsers";
+import { buildWalkingRoute } from "@/lib/campusDirections";
+import { getCollegeForUser, fetchCampusLocations, resolveCampusPoint, listCampusLocationNames } from "@/lib/campusLocations";
 
 export const runtime = "nodejs";
 
@@ -55,6 +58,31 @@ const CAMPUS_TOOLS = [
   {
     type: "function",
     function: {
+      name: "show_campus_directions",
+      description:
+        "Render an interactive dark-mode 3D campus map with walking directions between two campus places (e.g. Library → Canteen). " +
+        "The student's college is fetched automatically from their profile, and both places are resolved against that college's campus_locations table. " +
+        "ALWAYS call this tool when the user asks for directions, navigation, or how to get somewhere on campus. " +
+        "After calling it, ALSO summarize the returned turn-by-turn steps as text in your reply.",
+      parameters: {
+        type: "object",
+        properties: {
+          from_location: {
+            type: "string",
+            description: "Starting place name as the user said it, e.g. 'library' or 'Main Gate'",
+          },
+          to_location: {
+            type: "string",
+            description: "Destination place name as the user said it, e.g. 'canteen' or 'Kemper Hall'",
+          },
+        },
+        required: ["from_location", "to_location"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "ask_user_questions",
       description:
         "Present the user with MCQ questions to gather preferences before making a tailored recommendation. Use when you need to clarify the student's interests, availability, or tech stack.",
@@ -92,7 +120,7 @@ const CAMPUS_TOOLS = [
 
 // ─── Table Schema Summary for System Prompt ──────────────────────────────────
 
-function buildSystemPrompt(sourcesSnippet: string): string {
+function buildSystemPrompt(sourcesSnippet: string, campusLocationsSnippet: string): string {
   return `You are "Campus Genie", the official AI lakehouse intelligence assistant for Databricks University powered by Databricks Lakehouse with Unity Catalog (workspace.campus_explorer schema).
 You help university students explore campus events, courses, attendance tracking, academic recovery plans, research labs, student clubs, hackathons, surveys, alumni career pathways, and student administrative workflows.
 
@@ -100,14 +128,27 @@ CRITICAL SCOPE ENFORCEMENT:
 - ONLY answer questions relevant to campus life, academics, courses, attendance, clubs, hackathons, campus navigation, Lakehouse data queries, and student administrative tasks.
 - Politely decline off-topic requests (pop-culture trivia, non-campus politics, celebrity gossip, unrelated coding).
 
-CAMPUS DATA ACCESS:
-You have access to the campus_explorer Lakehouse schema via the query_campus_data tool. ALWAYS call this tool to look up data before answering data-specific questions — never guess or invent event/source IDs.
+CAMPUS DATA ACCESS (DATABRICKS UNITY CATALOG):
+You have access to the Databricks Lakehouse via the query_campus_data tool. ALWAYS query data before answering event, course, or policy questions.
+Available tables in workspace.campus_explorer:
+- workspace.campus_explorer.campus_events:
+  Columns: event_id ('EV-01', 'EV-10'), title, category ('hackathon'|'workshop'|'social'|'career'|'meeting'|'sports'), event_date (DATE 'YYYY-MM-DD'), start_time ('10:00 AM'), end_time, location, host_organization, description, food_provided (BOOLEAN), registered_count (INT), capacity (INT)
+  Query example: SELECT event_id, title, category, event_date, start_time, location, food_provided FROM workspace.campus_explorer.campus_events WHERE event_date = '2026-09-10' ORDER BY start_time ASC
+- workspace.campus_explorer.knowledge_sources:
+  Columns: source_id ('DOC-01'), name, type, category, description, content_sample
+- workspace.campus_explorer.campus_surveys:
+  Columns: survey_id, title, description, questions_json
+- workspace.campus_explorer.campus_locations:
+  Columns: name, building, college, category, lat, lng
 
-For ANY question about specific events (dates, categories, keywords), you MUST:
-1. Call query_campus_data with a precise SQL WHERE clause
-2. Inspect the results (event_ids returned)
-3. Call show_event_cards with the exact event_ids from step 2
-4. Then provide your natural language response referencing those events
+For ANY question about events (dates, categories, food, free time, recommendations):
+1. Call query_campus_data with a SELECT query on workspace.campus_explorer.campus_events
+2. Call show_event_cards with the exact event_id values from the query results
+3. Summarize the event titles, dates, locations, and details clearly in your response
+
+CAMPUS NAVIGATION:
+For ANY directions, navigation, or way-finding request (e.g. "show me directions from the library to the canteen"), you MUST call show_campus_directions with from_location and to_location exactly as the user named them. The tool fetches the student's college from their saved profile automatically and renders an interactive 3D map card in the chat. After the tool call, ALSO write the turn-by-turn directions as text in your reply.
+Known campus locations: ${campusLocationsSnippet}
 
 KNOWLEDGE SOURCES IN LAKEHOUSE:
 ${sourcesSnippet}
@@ -208,26 +249,55 @@ async function canAnswerWithGenie(prompt: string, signal: AbortSignal): Promise<
 
 async function executeToolCall(
   toolName: string,
-  toolArgs: any
+  toolArgs: any,
+  ctx: { college: string }
 ): Promise<{ content: string; sseEvents: any[] }> {
   const sseEvents: any[] = [];
 
   if (toolName === "query_campus_data") {
-    const sql = toolArgs.sql as string;
-    if (!sql || !sql.trim().toUpperCase().startsWith("SELECT")) {
-      return { content: "Error: Only SELECT queries are allowed.", sseEvents };
+    let sql = String(toolArgs.sql || "").trim();
+    if (!sql) {
+      return { content: "Error: No SQL statement provided.", sseEvents };
     }
+
+    // Disallow destructive statements
+    const destructive = /\b(DROP|DELETE|UPDATE|INSERT|ALTER|TRUNCATE|GRANT|REVOKE)\b/i;
+    if (destructive.test(sql)) {
+      return { content: "Error: Only read-only queries (SELECT, SHOW, DESCRIBE, EXPLAIN, WITH) are permitted.", sseEvents };
+    }
+
+    // Auto-namespace unqualified table names to workspace.campus_explorer.<table_name>
+    const tables = ["campus_events", "knowledge_sources", "campus_surveys", "campus_locations", "clubs_and_labs"];
+    for (const tbl of tables) {
+      const regex = new RegExp(`(?<!workspace\\.campus_explorer\\.)\\b${tbl}\\b`, "gi");
+      sql = sql.replace(regex, `workspace.campus_explorer.${tbl}`);
+    }
+
     try {
-      const result = await executeLakehouseSql(sql, undefined, 15);
+      const result = await executeLakehouseSql(sql, undefined, 20);
       if (result.state === "SUCCEEDED" && result.records) {
         const rows = result.records.slice(0, 30);
+
+        // Auto-extract event IDs from result rows so cards render immediately
+        const eventIdsInResult: string[] = [];
+        for (const row of rows) {
+          const rawId = row.event_id || row.id;
+          if (rawId && typeof rawId === "string" && /^EV-?\d+/i.test(rawId)) {
+            const cleanId = rawId.trim().toUpperCase().replace(/^EV(\d+)$/, "EV-$1");
+            if (!eventIdsInResult.includes(cleanId)) eventIdsInResult.push(cleanId);
+          }
+        }
+        if (eventIdsInResult.length > 0) {
+          sseEvents.push({ type: "events_grid", eventIds: eventIdsInResult });
+        }
+
         const content = rows.length === 0
-          ? "Query returned 0 rows. No matching records found."
-          : `Query returned ${rows.length} row(s):\n${JSON.stringify(rows, null, 2)}`;
+          ? "Query returned 0 rows. No matching records found in workspace.campus_explorer."
+          : `Query returned ${rows.length} record(s):\n${JSON.stringify(rows, null, 2)}`;
         return { content, sseEvents };
       } else {
         return {
-          content: `Query failed with state: ${result.state}. Error: ${result.error || "Unknown error"}`,
+          content: `Query status: ${result.state}. Message: ${result.error || "No records returned"}. Tables in workspace.campus_explorer: campus_events, knowledge_sources, campus_locations, campus_surveys.`,
           sseEvents,
         };
       }
@@ -249,6 +319,52 @@ async function executeToolCall(
     };
   }
 
+  if (toolName === "show_campus_directions") {
+    const fromTerm = String(toolArgs.from_location || "").trim();
+    const toTerm = String(toolArgs.to_location || "").trim();
+    if (!fromTerm || !toTerm) {
+      return { content: "Error: both from_location and to_location are required.", sseEvents };
+    }
+
+    const college = ctx.college || DEFAULT_COLLEGE;
+    let rows: Awaited<ReturnType<typeof fetchCampusLocations>> = [];
+    try {
+      rows = await fetchCampusLocations(college);
+    } catch (e: any) {
+      return { content: `Campus location lookup failed: ${e?.message || "unknown error"}`, sseEvents };
+    }
+    const known = rows.map((r) => r.name).join(", ") || "none seeded yet";
+
+    const fromMatch = resolveCampusPoint(rows, fromTerm);
+    const toMatch = resolveCampusPoint(rows, toTerm);
+    if (!fromMatch || !toMatch) {
+      const missing = !fromMatch ? fromTerm : toTerm;
+      return {
+        content: `Could not find "${missing}" on the ${college} campus. Known locations: ${known}. Tell the student which places are available and ask them to pick from those.`,
+        sseEvents,
+      };
+    }
+    if (fromMatch.point.name === toMatch.point.name) {
+      return {
+        content: `Origin and destination both resolved to ${fromMatch.point.name}. Ask the student for two different places.`,
+        sseEvents,
+      };
+    }
+
+    const route = buildWalkingRoute(fromMatch.point, toMatch.point, college);
+    sseEvents.push({ type: "directions", directions: route });
+
+    const stepsText = route.steps.map((s, i) => `${i + 1}. ${s.instruction}`).join("\n");
+    return {
+      content:
+        `Walking route from ${route.from.name} to ${route.to.name} at ${college} is now displayed on the interactive map card.\n` +
+        `Distance: ${route.distanceMeters} m, about ${route.durationMinutes} min on foot.\n` +
+        `Turn-by-turn directions:\n${stepsText}\n` +
+        `Summarize these directions as text for the student in a friendly tone.`,
+      sseEvents,
+    };
+  }
+
   if (toolName === "ask_user_questions") {
     const questions = toolArgs.questions;
     if (Array.isArray(questions) && questions.length > 0) {
@@ -261,6 +377,40 @@ async function executeToolCall(
   }
 
   return { content: `Unknown tool: ${toolName}`, sseEvents };
+}
+
+function generateFallbackSummary(toolCallsRan: Array<{ name: string; result: any }>): string {
+  let summary = "";
+  for (const tc of toolCallsRan) {
+    if (tc.name === "query_campus_data") {
+      try {
+        const raw = String(tc.result || "");
+        if (raw.includes("0 rows") || raw.includes("0 record")) {
+          summary += "No campus records matching that criteria were found in Databricks Lakehouse.\n\n";
+          continue;
+        }
+        const jsonStart = raw.indexOf("[\n");
+        const jsonStr = jsonStart !== -1 ? raw.slice(jsonStart) : "";
+        const records = jsonStr ? JSON.parse(jsonStr) : [];
+        if (Array.isArray(records) && records.length > 0) {
+          summary += `Here are the matching records from Databricks Lakehouse:\n\n`;
+          for (const r of records) {
+            if (r.title) {
+              const dateStr = r.event_date ? ` on ${r.event_date}` : "";
+              const timeStr = r.start_time ? ` at ${r.start_time}` : "";
+              const locStr = r.location ? ` in ${r.location}` : "";
+              summary += `* **${r.title}** (${r.event_id || ""})${dateStr}${timeStr}${locStr}\n`;
+              if (r.description) summary += `  ${r.description}\n`;
+            } else if (r.name) {
+              summary += `* **${r.name}** (${r.source_id || ""}) — ${r.category || ""}\n`;
+              if (r.description) summary += `  ${r.description}\n`;
+            }
+          }
+        }
+      } catch {}
+    }
+  }
+  return summary || "Query executed against Databricks Lakehouse.";
 }
 
 // ─── Main POST Handler ────────────────────────────────────────────────────────
@@ -384,9 +534,19 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Build system prompt with sources
-    const sourcesSnippet = await getSourcesSnippet();
-    const systemPrompt = buildSystemPrompt(sourcesSnippet);
+    // Resolve the signed-in student's saved college (drives the directions tool)
+    const profileUser = await getCurrentUser().catch(() => null);
+    const college = profileUser?.college || DEFAULT_COLLEGE;
+
+    // Build system prompt with sources + campus places
+    const [sourcesSnippet, campusLocationsSnippet] = await Promise.all([
+      getSourcesSnippet(),
+      listCampusLocationNames(college).catch(() => [] as string[]),
+    ]);
+    const systemPrompt = buildSystemPrompt(
+      sourcesSnippet,
+      campusLocationsSnippet.length > 0 ? campusLocationsSnippet.join(", ") : "see workspace.campus_explorer.campus_locations"
+    );
 
     // Determine if this provider supports tool calling
     // Gemini via OpenAI-compat does support tools; Anthropic has its own format
@@ -412,6 +572,7 @@ export async function POST(req: NextRequest) {
 
           let iterationCount = 0;
           const MAX_TOOL_ITERATIONS = 5;
+          const allToolCallsRan: Array<{ name: string; result: any }> = [];
 
           while (iterationCount < MAX_TOOL_ITERATIONS) {
             iterationCount++;
@@ -440,7 +601,13 @@ export async function POST(req: NextRequest) {
 
             if (!upstreamRes.ok || !upstreamRes.body) {
               const errText = await upstreamRes.text().catch(() => "");
-              sendEvent({ error: `Upstream error (${upstreamRes.status}): ${errText}` });
+              console.error(`[Chat API] Upstream error in turn ${iterationCount} (${upstreamRes.status}):`, errText);
+              if (allToolCallsRan.length > 0) {
+                const fallback = generateFallbackSummary(allToolCallsRan);
+                sendEvent({ choices: [{ delta: { content: fallback } }] });
+              } else {
+                sendEvent({ error: `Upstream error (${upstreamRes.status}): ${errText || "Request failed"}` });
+              }
               break;
             }
 
@@ -514,23 +681,27 @@ export async function POST(req: NextRequest) {
               break;
             }
 
-            // Execute all tool calls
+            // Assign stable, consistent IDs to every tool call
+            const validatedToolCalls = toolCalls
+              .filter((tc) => tc.name)
+              .map((tc, idx) => ({
+                id: tc.id && tc.id.trim().length > 0 ? tc.id : `call_${tc.name}_${Date.now()}_${idx}`,
+                name: tc.name,
+                args: tc.args || "{}",
+              }));
+
             const assistantMsg: any = {
               role: "assistant",
               content: assistantContent || null,
-              tool_calls: toolCalls
-                .filter((tc) => tc.name)
-                .map((tc) => ({
-                  id: tc.id || `call_${tc.name}_${Date.now()}`,
-                  type: "function",
-                  function: { name: tc.name, arguments: tc.args },
-                })),
+              tool_calls: validatedToolCalls.map((tc) => ({
+                id: tc.id,
+                type: "function",
+                function: { name: tc.name, arguments: tc.args },
+              })),
             };
             conversationMessages.push(assistantMsg);
 
-            for (const tc of toolCalls) {
-              if (!tc.name) continue;
-
+            for (const tc of validatedToolCalls) {
               let toolArgs: any = {};
               try {
                 toolArgs = JSON.parse(tc.args || "{}");
@@ -546,11 +717,14 @@ export async function POST(req: NextRequest) {
                   ? `Querying Lakehouse: ${(toolArgs.sql || "").slice(0, 60)}...`
                   : tc.name === "show_event_cards"
                   ? `Rendering ${(toolArgs.event_ids || []).length} event cards`
+                  : tc.name === "show_campus_directions"
+                  ? `Mapping route: ${toolArgs.from_location || "?"} → ${toolArgs.to_location || "?"}`
                   : `Asking ${(toolArgs.questions || []).length} questions`,
                 active: true,
               });
 
-              const { content: toolResult, sseEvents } = await executeToolCall(tc.name, toolArgs);
+              const { content: toolResult, sseEvents } = await executeToolCall(tc.name, toolArgs, { college });
+              allToolCallsRan.push({ name: tc.name, result: toolResult });
 
               // Emit any UI events from the tool (events_grid, survey)
               for (const evt of sseEvents) {
@@ -559,9 +733,11 @@ export async function POST(req: NextRequest) {
 
               sendEvent({ type: "tool_status", toolName: tc.name, label: "", active: false });
 
+              // Critical: MUST include name: tc.name and exact tc.id for Gemini / VoidAI
               conversationMessages.push({
                 role: "tool",
-                tool_call_id: tc.id || `call_${tc.name}_${Date.now()}`,
+                tool_call_id: tc.id,
+                name: tc.name,
                 content: toolResult,
               });
             }

@@ -9,9 +9,35 @@ export default function ProfileView() {
   // Optimistic local role override, valid only for the loaded account.
   const [override, setOverride] = useState<{ userId: string; role: "student" | "admin" } | null>(null);
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [collegeValue, setCollegeValue] = useState<string | null>(null);
+  const [collegeSaveState, setCollegeSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
 
   const role = override && user && override.userId === user.userId ? override.role : user?.role ?? "student";
   const isAdmin = role === "admin";
+  const college = collegeValue ?? user?.college ?? "Databricks University";
+
+  const saveCollege = async (next: string) => {
+    const trimmed = next.trim();
+    if (!user || !trimmed || trimmed === (user.college ?? "Databricks University") || collegeSaveState === "saving") return;
+    const prev = college;
+    setCollegeValue(trimmed);
+    setCollegeSaveState("saving");
+    try {
+      const res = await fetch("/api/users", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ college: trimmed }),
+      });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({})))?.error || "Failed");
+      setCurrentUserCached({ ...user, college: trimmed });
+      setCollegeSaveState("saved");
+    } catch {
+      setCollegeValue(prev);
+      setCollegeSaveState("error");
+      return;
+    }
+    setTimeout(() => setCollegeSaveState("idle"), 2400);
+  };
 
   const toggleAdmin = async (next: boolean) => {
     if (!user || saveState === "saving") return;
@@ -157,7 +183,7 @@ export default function ProfileView() {
               <div className="facts">
                 <span className="fact mono"><svg className="i i12" aria-hidden="true"><use href="#i-id"/></svg>{user?.userId ?? "user_…"}</span>
                 <span className="fact"><svg className="i i12" aria-hidden="true"><use href="#i-mail"/></svg>{user?.email ?? "—"}</span>
-                <span className="fact"><svg className="i i12" aria-hidden="true"><use href="#i-building"/></svg>College of Engineering</span>
+                <span className="fact"><svg className="i i12" aria-hidden="true"><use href="#i-building"/></svg>{loading && !user ? "…" : college}</span>
               </div>
               <div className="hero-act">
                 <span className="dirty"><i aria-hidden="true"></i>Unsaved edits</span>
@@ -185,7 +211,19 @@ export default function ProfileView() {
                   <div className="rows">
                     <div className="row">
                       <span className="ic"><svg className="i i12" aria-hidden="true"><use href="#i-building"/></svg></span>
-                      <div><div className="k">College</div><div className="v">College of Engineering</div></div>
+                      <div><div className="k">College</div>
+                        <div className="v">
+                          <span className="v-static">{college}</span>
+                          <input
+                            className="fld v-edit"
+                            defaultValue={college}
+                            aria-label="College"
+                            key={user?.userId ?? "college"}
+                            onChange={(e) => setCollegeValue(e.target.value)}
+                            onBlur={(e) => saveCollege(e.target.value)}
+                          />
+                        </div>
+                      </div>
                     </div>
                     <div className="row">
                       <span className="ic"><svg className="i i12" aria-hidden="true"><use href="#i-cap"/></svg></span>
@@ -506,10 +544,10 @@ export default function ProfileView() {
                   <div className="qrow">
                     <svg className="i i13" aria-hidden="true"><use href="#i-db"/></svg>
                     app_users.delta
-                    {saveState === "saving" && <span className="pill pill-quiet" style={{ marginLeft: "auto" }}><svg className="i i11" aria-hidden="true"><use href="#i-rotate"/></svg>Saving…</span>}
-                    {saveState === "saved" && <span className="pill pill-going" style={{ marginLeft: "auto" }}><svg className="i i10" aria-hidden="true"><use href="#i-check"/></svg>Saved to Lakehouse</span>}
-                    {saveState === "error" && <span className="pill pill-pend" style={{ marginLeft: "auto" }}>Save failed — try again</span>}
-                    {saveState === "idle" && <span className="tm" style={{ marginLeft: "auto" }}>{isAdmin ? "Events · surveys · sources" : "Browse · RSVP · chat"}</span>}
+                    {(saveState === "saving" || collegeSaveState === "saving") && <span className="pill pill-quiet" style={{ marginLeft: "auto" }}><svg className="i i11" aria-hidden="true"><use href="#i-rotate"/></svg>Saving…</span>}
+                    {(saveState === "saved" || collegeSaveState === "saved") && <span className="pill pill-going" style={{ marginLeft: "auto" }}><svg className="i i10" aria-hidden="true"><use href="#i-check"/></svg>Saved to Lakehouse</span>}
+                    {(saveState === "error" || collegeSaveState === "error") && <span className="pill pill-pend" style={{ marginLeft: "auto" }}>Save failed — try again</span>}
+                    {saveState === "idle" && collegeSaveState === "idle" && <span className="tm" style={{ marginLeft: "auto" }}>{isAdmin ? "Events · surveys · sources" : "Browse · RSVP · chat"}</span>}
                   </div>
 
                   <div className="gn">

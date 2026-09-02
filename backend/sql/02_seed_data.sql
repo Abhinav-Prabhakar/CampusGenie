@@ -60,3 +60,18 @@ INSERT INTO procurement_inventory VALUES
   ('ITEM-01', 'A2 Organic Full-Cream Milk (20L Cans)', 'Dairy', 4, 8, 'Amul Dairy & Organic Farms', 14250.00, 2, '2026-04-01'),
   ('ITEM-02', 'Handmade Crispy Waffle Cones (Box of 500)', 'Waffle Cones', 2, 5, 'Cone King Supplies', 4800.00, 7, '2026-03-28'),
   ('ITEM-03', 'Belgian Dark Chocolate Chips (10kg)', 'Dry Goods', 6, 4, 'Royal Confectioneries', 6200.00, 3, '2026-04-03');
+
+-- 8. Insert Campus Building Locations (Databricks University · Jayanagar campus)
+INSERT INTO campus_locations VALUES
+  ('LOC-01', 'Databricks University', 'Central Library', 'library', 12.92640, 77.58950, 'Four-floor stack with silent study decks, the Delta Reading Room, and a terrace garden open till 11 PM.'),
+  ('LOC-02', 'Databricks University', 'Main Canteen', 'dining', 12.92520, 77.59180, 'The busiest eatery on campus — filter coffee, masala dosas, and late-night Maggi counters.'),
+  ('LOC-03', 'Databricks University', 'Student Center Cafe', 'dining', 12.92430, 77.59040, 'Espresso bar and waffle station tucked beside the Student Center lounge.'),
+  ('LOC-04', 'Databricks University', 'Main Gate', 'landmark', 12.92380, 77.59300, 'Grand arched entrance on 9th Main Road with the campus map plinth and security desk.'),
+  ('LOC-05', 'Databricks University', 'Innovation Lab', 'lab', 12.92710, 77.59090, 'Maker space with 3D printers, robotics benches, and the Genie agent sandbox cluster.'),
+  ('LOC-06', 'Databricks University', 'Kemper Hall', 'academics', 12.92660, 77.59210, 'Primary lecture block for CS and Statistics; houses Kemper 210 and the CS department office.'),
+  ('LOC-07', 'Databricks University', 'Open Air Auditorium', 'landmark', 12.92580, 77.58880, 'Amphitheatre stage on the west quad used for fests, club showcases, and moonlight jams.'),
+  ('LOC-08', 'Databricks University', 'Sports Complex', 'sports', 12.92330, 77.58970, 'Basketball courts, badminton halls, and the campus gym with morning yoga on the lawn.'),
+  ('LOC-09', 'Databricks University', 'North Hostel', 'housing', 12.92800, 77.59280, 'Undergraduate residence block with the night canteen on the ground floor.'),
+  ('LOC-10', 'Databricks University', 'South Hostel', 'housing', 12.92260, 77.59140, 'Senior-year residence block facing the south lawn and the astro turf court.'),
+  ('LOC-11', 'Databricks University', 'Health Center', 'wellness', 12.92470, 77.58840, 'Campus clinic with a resident nurse, counseling rooms, and 24x7 emergency contact.'),
+  ('LOC-12', 'Databricks University', 'Admin Block', 'admin', 12.92590, 77.59350, 'Registrar, accounts, and the Dean of Students office behind the banyan courtyard.');

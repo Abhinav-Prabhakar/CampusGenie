@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useMemo } from "react";
+import dynamic from "next/dynamic";
 import SidebarNav, { type SidebarRecent } from "@/components/primitives/SidebarNav";
 import PromptBar, { type RoutingMode } from "@/components/primitives/PromptBar";
 import ThinkingState from "@/components/primitives/ThinkingState";
@@ -18,7 +19,13 @@ import { useChatStore, createThreadTitle, type ChatThread } from "@/lib/chatStor
 import ChatEventCards from "@/components/events/ChatEventCards";
 import type { EventRecord } from "@/app/api/events/route";
 import type { ApprovalQuestion } from "@/components/primitives/ApprovalCard";
+import type { DirectionsPayload } from "@/lib/campusDirections";
 import "@/app/events.css";
+
+// Map card pulls in MapLibre GL — load it lazily, client-side only.
+const ChatDirectionsCard = dynamic(() => import("@/components/maps/ChatDirectionsCard"), {
+  ssr: false,
+});
 
 export type ChatMessage = {
   id: string;
@@ -46,6 +53,9 @@ export type ChatMessage = {
     eventId?: string;
   };
   finetune?: boolean;
+  directions?: DirectionsPayload;
+  error?: string;
+  activeToolLabel?: string;
   timestamp: string;
 };
 
@@ -382,6 +392,8 @@ export default function CampusGenieChatPage() {
     const effectiveApiKey = selectedModel.customApiKey || customApiKey || undefined;
     const effectiveBaseUrl = selectedModel.customBaseUrl || customBaseUrl || undefined;
 
+    const assistantMsgId = (Date.now() + 1).toString();
+
     try {
       const response = await fetch("/api/chat", {
         method: "POST",
@@ -420,8 +432,7 @@ export default function CampusGenieChatPage() {
       let parsedQuestions: any = null;
       let parsedApproval: any = null;
       let parsedRecommendation: any = null;
-
-      const assistantMsgId = (Date.now() + 1).toString();
+      let parsedDirections: DirectionsPayload | null = null;
 
       if (reader) {
         while (true) {
@@ -444,6 +455,20 @@ export default function CampusGenieChatPage() {
 
               if (parsed.error) {
                 streamError = parsed.error;
+                setMessages((prev) => {
+                  const filtered = prev.filter((m) => m.id !== assistantMsgId);
+                  return [
+                    ...filtered,
+                    {
+                      id: assistantMsgId,
+                      role: "assistant" as const,
+                      content: assistantContent,
+                      thinking: assistantThinking || undefined,
+                      error: parsed.error,
+                      timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+                    },
+                  ];
+                });
                 continue;
               }
 
@@ -456,6 +481,10 @@ export default function CampusGenieChatPage() {
 
               if (parsed.type === "survey" && Array.isArray(parsed.questions)) {
                 parsedQuestions = normalizeQuestions(parsed.questions);
+              }
+
+              if (parsed.type === "directions" && parsed.directions?.coordinates?.length > 1) {
+                parsedDirections = parsed.directions as DirectionsPayload;
               }
 
               if (parsed.type === "tool_status") {
@@ -506,7 +535,9 @@ export default function CampusGenieChatPage() {
                     content: assistantContent,
                     thinking: assistantThinking || undefined,
                     questions: parsedQuestions || undefined,
+                    directions: parsedDirections || undefined,
                     events: currentMatchedEvents.length > 0 ? currentMatchedEvents : undefined,
+                    activeToolLabel: toolActivity?.active ? toolActivity.label : undefined,
                     timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
                   },
                 ];
@@ -525,6 +556,7 @@ export default function CampusGenieChatPage() {
       let finalQuestions: any = parsedQuestions || null;
       let finalApproval: any = parsedApproval || null;
       let finalRecommendation: any = parsedRecommendation || null;
+      const finalDirections: DirectionsPayload | null = parsedDirections;
       const finalToolEventIds: string[] = [...explicitToolEventIds];
 
       for (const ti of finalToolInvocations) {
@@ -581,6 +613,7 @@ export default function CampusGenieChatPage() {
         questions: finalQuestions || undefined,
         approvalCard: finalApproval || undefined,
         recommendation: finalRecommendation || undefined,
+        directions: finalDirections || undefined,
         events: finalMatchedEvents.length > 0 ? finalMatchedEvents : undefined,
         timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
       };
@@ -599,7 +632,33 @@ export default function CampusGenieChatPage() {
     } catch (err: any) {
       if (abortController.signal.aborted) return;
       console.error("Chat Error:", err);
-      setErrorMessage(err.message || "Failed to communicate with LLM provider API.");
+      const errMsg = err.message || "Failed to communicate with LLM provider API.";
+      setErrorMessage(errMsg);
+
+      // Keep the assistant message visible with its error state and retry trigger
+      setMessages((prev) => {
+        const existing = prev.find((m) => m.id === assistantMsgId);
+        const errAssistantMsg: ChatMessage = {
+          id: assistantMsgId,
+          role: "assistant",
+          content: existing?.content || "",
+          thinking: existing?.thinking,
+          directions: existing?.directions,
+          events: existing?.events,
+          questions: existing?.questions,
+          error: errMsg,
+          timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+        };
+        const updated = [...prev.filter((m) => m.id !== assistantMsgId), errAssistantMsg];
+        saveThread({
+          id: targetThreadId,
+          title: targetTitle,
+          messages: updated,
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        });
+        return updated;
+      });
     } finally {
       if (requestAbortRef.current === abortController) requestAbortRef.current = null;
       setIsLoading(false);
@@ -791,10 +850,64 @@ export default function CampusGenieChatPage() {
                           </div>
                         )}
 
+                        {/* Error Message Card with Retry Action */}
+                        {msg.error && (
+                          <div className="rounded-[12px] border border-red/40 bg-red-tint/20 p-3.5 text-[13px] text-red shadow-card space-y-2.5 animate-fade-in">
+                            <div className="flex items-center justify-between gap-2">
+                              <div className="flex items-center gap-2">
+                                <span className="flex size-2 rounded-full bg-red animate-pulse" />
+                                <span className="font-semibold text-ink">Lakehouse Agent Error</span>
+                              </div>
+                              <Button
+                                variant="quiet"
+                                size="sm"
+                                className="text-xs text-red hover:bg-red-tint cursor-pointer"
+                                onClick={() => {
+                                  const prevUser = [...messages].slice(0, idx).reverse().find((m) => m.role === "user");
+                                  if (prevUser?.content) handleSend(prevUser.content);
+                                }}
+                              >
+                                Retry Query
+                              </Button>
+                            </div>
+                            <p className="text-[12px] text-ink-2 font-mono leading-relaxed bg-canvas/70 rounded-[8px] p-2.5 border border-line-soft select-text">
+                              {msg.error}
+                            </p>
+                          </div>
+                        )}
+
+                        {/* In-Message Live Loading State while waiting for assistant output or tool execution */}
+                        {isLoading && idx === messages.length - 1 && (!msg.content || !msg.content.trim()) && !msg.error && (
+                          <div className="w-full flex items-center justify-between gap-3 rounded-[12px] border border-line bg-surface p-3.5 shadow-card animate-fade-in">
+                            <LoadingState
+                              variant="Drive"
+                              label={
+                                toolActivity?.active && toolActivity.label
+                                  ? toolActivity.label
+                                  : msg.activeToolLabel || (selectedModel.isReasoning ? "Reasoning through Lakehouse Delta tables…" : "Querying Databricks Lakehouse…")
+                              }
+                            />
+                          </div>
+                        )}
+
                         {/* Markdown Text Response Body - Only render when content is non-empty */}
                         {Boolean(msg.content && msg.content.trim()) && (
                           <div className="rounded-[14px] border border-line bg-surface p-4 text-[13.5px] text-ink leading-relaxed shadow-card">
                             <MarkdownMessage content={msg.content} />
+                          </div>
+                        )}
+
+                        {/* Active Tool Sub-Task Running Bar when tools execute mid-stream */}
+                        {isLoading && idx === messages.length - 1 && Boolean(msg.content && msg.content.trim()) && toolActivity?.active && (
+                          <div className="w-full flex items-center gap-2.5 rounded-[10px] border border-line bg-canvas/80 px-3 py-2 text-[12px] text-ink-2 shadow-hairline animate-fade-in">
+                            <LoadingState variant="Drive" label={toolActivity.label} />
+                          </div>
+                        )}
+
+                        {/* Interactive 3D campus directions map (show_campus_directions tool) */}
+                        {msg.directions && (
+                          <div className="w-full animate-fade-in">
+                            <ChatDirectionsCard route={msg.directions} isDark={isDark} />
                           </div>
                         )}
 
@@ -891,12 +1004,12 @@ export default function CampusGenieChatPage() {
                   </div>
                 ))}
 
-                {/* Loading State Spinner Component when waiting for assistant response or running tools */}
-                {isLoading && (messages.length === 0 || messages[messages.length - 1]?.role === "user" || (!messages[messages.length - 1]?.content && !messages[messages.length - 1]?.thinking) || toolActivity?.active) && (
+                {/* Fallback loading indicator before assistant message is created */}
+                {isLoading && (messages.length === 0 || messages[messages.length - 1]?.role === "user") && (
                   <div className="w-full flex items-center py-2 animate-fade-in">
                     <LoadingState
                       variant="Drive"
-                      label={toolActivity?.active ? toolActivity.label : (selectedModel.isReasoning ? "Reasoning through Lakehouse Delta tables…" : "Querying Unity Catalog…")}
+                      label={selectedModel.isReasoning ? "Reasoning through Lakehouse Delta tables…" : "Querying Databricks Lakehouse…"}
                     />
                   </div>
                 )}

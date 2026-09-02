@@ -7,6 +7,8 @@ import { executeLakehouseSql } from "@/lib/lakehouse";
 
 export type AppUserRole = "student" | "admin";
 
+export const DEFAULT_COLLEGE = "Databricks University";
+
 export type AppUser = {
   userId: string;
   email: string | null;
@@ -14,6 +16,7 @@ export type AppUser = {
   lastName: string | null;
   fullName: string;
   role: AppUserRole;
+  college: string | null;
   createdAt?: string;
   updatedAt?: string;
 };
@@ -37,6 +40,7 @@ function mapRowToAppUser(r: Record<string, any>): AppUser {
     lastName,
     fullName,
     role: r.role === "admin" ? "admin" : "student",
+    college: r.college || null,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   };
@@ -71,9 +75,18 @@ export async function ensureAppUser(userId: string): Promise<AppUser | null> {
     console.warn("[ensureAppUser] Clerk lookup failed:", err?.message);
   }
 
+  // Tables provisioned before the college column existed need a lazy migration.
+  try {
+    await executeLakehouseSql(
+      "ALTER TABLE workspace.campus_explorer.app_users ADD COLUMN IF NOT EXISTS college STRING"
+    );
+  } catch {
+    console.warn("[ensureAppUser] college column migration skipped");
+  }
+
   const insertRes = await executeLakehouseSql(`
-    INSERT INTO workspace.campus_explorer.app_users (user_id, email, first_name, last_name, role, created_at, updated_at)
-    VALUES (${sqlString(userId)}, ${sqlString(email)}, ${sqlString(firstName)}, ${sqlString(lastName)}, 'student', current_timestamp(), current_timestamp())
+    INSERT INTO workspace.campus_explorer.app_users (user_id, email, first_name, last_name, role, college, created_at, updated_at)
+    VALUES (${sqlString(userId)}, ${sqlString(email)}, ${sqlString(firstName)}, ${sqlString(lastName)}, 'student', ${sqlString(DEFAULT_COLLEGE)}, current_timestamp(), current_timestamp())
   `);
 
   if (insertRes.state !== "SUCCEEDED") {
@@ -97,6 +110,7 @@ export async function ensureAppUser(userId: string): Promise<AppUser | null> {
     lastName,
     fullName: [firstName, lastName].filter(Boolean).join(" ") || email?.split("@")[0] || "Student",
     role: "student",
+    college: DEFAULT_COLLEGE,
   };
 }
 
@@ -132,6 +146,17 @@ export async function setUserRole(userId: string, role: AppUserRole): Promise<bo
   `);
   if (res.state !== "SUCCEEDED") {
     console.error("[setUserRole] failed:", res.error);
+    return false;
+  }
+  return true;
+}
+
+export async function setUserCollege(userId: string, college: string): Promise<boolean> {
+  const res = await executeLakehouseSql(
+    `UPDATE workspace.campus_explorer.app_users SET college = ${sqlString(college)}, updated_at = current_timestamp() WHERE user_id = ${sqlString(userId)}`
+  );
+  if (res.state !== "SUCCEEDED") {
+    console.error("[setUserCollege] failed:", res.error);
     return false;
   }
   return true;
