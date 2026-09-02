@@ -1,0 +1,32 @@
+{
+  "name": "campus-genie-whatsapp-tracker",
+  "version": "1.0.0",
+  "description": "WhatsApp Web event tracking daemon for Campus Genie, powered by Gemini (VoidAI) and Databricks Lakehouse.",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node index.js",
+    "scan": "node index.js --scan",
+    "watch": "node index.js --watch",
+    "groups": "node index.js --groups",
+    "test": "node --test test/*.test.js"
+  },
+  "dependencies": {
+    "@inquirer/prompts": "^7.3.3",
+    "chalk": "^5.4.1",
+    "cli-table3": "^0.6.5",
+    "dotenv": "^16.4.7",
+    "qrcode-terminal": "^0.12.0",
+    "whatsapp-web.js": "^1.26.0"
+  },
+  "keywords": [
+    "whatsapp",
+    "databricks",
+    "gemini",
+    "lakehouse",
+    "events",
+    "campus"
+  ],
+  "author": "Campus Genie",
+  "license": "MIT"
+}
