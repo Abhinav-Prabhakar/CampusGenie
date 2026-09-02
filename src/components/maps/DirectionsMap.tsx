@@ -33,8 +33,6 @@ const PAINT = {
   },
 } as const;
 
-const LOG = "[DirectionsMap]";
-
 function routeFeatureCollection(route: DirectionsPayload) {
   return {
     type: "FeatureCollection" as const,
@@ -96,15 +94,8 @@ export default function DirectionsMap({ route, isDark }: { route: DirectionsPayl
 
     (async () => {
       try {
-        console.info(LOG, "importing maplibre-gl…");
         const maplibreglModule: any = await import("maplibre-gl");
         const maplibregl = maplibreglModule.default || maplibreglModule;
-        console.info(LOG, "maplibre imported", {
-          version: maplibregl?.version ?? "unknown",
-          hasMap: typeof maplibregl?.Map,
-          hasMarker: typeof maplibregl?.Marker,
-          hasNavigationControl: typeof maplibregl?.NavigationControl,
-        });
 
         // maplibre v6 derives its worker URL from import.meta.url, which is not
         // a real http(s) URL under Next's bundlers — the worker then resolves
@@ -112,40 +103,17 @@ export default function DirectionsMap({ route, isDark }: { route: DirectionsPayl
         // map blank. Point it at the copy served from /public/maplibre.
         if (typeof maplibregl?.setWorkerUrl === "function") {
           maplibregl.setWorkerUrl("/maplibre/maplibre-gl-worker.mjs");
-          console.info(LOG, "worker URL set → /maplibre/maplibre-gl-worker.mjs");
-        } else {
-          console.warn(LOG, "setWorkerUrl unavailable on this maplibre build");
         }
 
         if (cancelled || !containerRef.current || mapRef.current) return;
 
-        // WebGL probe — maplibre cannot render without it.
-        const probe = document.createElement("canvas");
-        const gl = probe.getContext("webgl2") || probe.getContext("webgl");
-        if (!gl) {
-          console.error(LOG, "WebGL UNAVAILABLE — canvas context is null");
-          setMapError("WebGL is unavailable in this browser");
-          return;
-        }
-        console.info(LOG, "WebGL OK:", gl.getParameter(gl.VERSION));
-
         const r = routeRef.current;
-        console.info(LOG, "route payload", {
-          from: r.from,
-          to: r.to,
-          college: r.college,
-          coordinateCount: r.coordinates?.length,
-          steps: r.steps?.length,
-        });
-
         const midIndex = Math.floor(r.coordinates.length / 2);
         const mid = r.coordinates[midIndex] ?? [r.from.lng, r.from.lat];
-        const styleUrl = BASE_STYLES[isDarkRef.current ? "dark" : "light"];
-        console.info(LOG, "constructing Map", { style: styleUrl, center: mid });
 
         const map = new maplibregl.Map({
           container: containerRef.current,
-          style: styleUrl,
+          style: BASE_STYLES[isDarkRef.current ? "dark" : "light"],
           center: mid,
           zoom: 15.6,
           pitch: 52,
@@ -156,26 +124,18 @@ export default function DirectionsMap({ route, isDark }: { route: DirectionsPayl
         styleThemeRef.current = isDarkRef.current;
 
         map.addControl(new maplibregl.NavigationControl({ visualize_pitch: true }), "top-right");
-        map.on("error", (e: any) => {
-          console.error(LOG, "maplibre error event:", e?.error ?? e);
-        });
 
         const applyOverlays = () => {
           const current = mapRef.current;
-          if (!current || !current.isStyleLoaded()) {
-            console.info(LOG, "applyOverlays skipped — style not loaded yet");
-            return;
-          }
+          if (!current || !current.isStyleLoaded()) return;
           const dark = isDarkRef.current;
           const palette = PAINT[dark ? "dark" : "light"];
 
           // 3D buildings (fill-extrusion)
           try {
-            const style = current.getStyle();
-            const vectorSourceEntry = Object.entries(style?.sources ?? {}).find(
+            const vectorSourceEntry = Object.entries(current.getStyle()?.sources ?? {}).find(
               ([, source]) => source.type === "vector"
             );
-            console.info(LOG, "style sources:", Object.keys(style?.sources ?? {}), "vector source:", vectorSourceEntry?.[0] ?? "NONE", "layers:", style?.layers?.length);
             if (vectorSourceEntry && !current.getLayer("cg-3d-buildings")) {
               current.addLayer({
                 id: "cg-3d-buildings",
@@ -198,10 +158,9 @@ export default function DirectionsMap({ route, isDark }: { route: DirectionsPayl
                   "fill-extrusion-opacity": palette.buildingOpacity,
                 },
               } as const);
-              console.info(LOG, "added cg-3d-buildings layer");
             }
-          } catch (bErr: any) {
-            console.warn(LOG, "3d buildings error:", bErr?.message ?? bErr);
+          } catch {
+            // basemap without a building layer — skip extrusions
           }
 
           // Route casing + main line
@@ -239,9 +198,8 @@ export default function DirectionsMap({ route, isDark }: { route: DirectionsPayl
                 },
               });
             }
-            console.info(LOG, "route layers applied");
-          } catch (rErr: any) {
-            console.warn(LOG, "route layer error:", rErr?.message ?? rErr);
+          } catch {
+            // route overlay failure is non-fatal — markers may still render
           }
 
           // Origin and Destination markers
@@ -256,9 +214,8 @@ export default function DirectionsMap({ route, isDark }: { route: DirectionsPayl
               .setLngLat([to.lng, to.lat])
               .addTo(current);
             markersRef.current = [originMarker, destMarker];
-            console.info(LOG, "markers placed", { from: [from.lng, from.lat], to: [to.lng, to.lat] });
-          } catch (mErr: any) {
-            console.warn(LOG, "markers error:", mErr?.message ?? mErr);
+          } catch {
+            // markers are decorative — the route line carries the path
           }
 
           // Fit bounds
@@ -274,8 +231,8 @@ export default function DirectionsMap({ route, isDark }: { route: DirectionsPayl
                 { padding: { top: 70, bottom: 70, left: 60, right: 60 }, maxZoom: 17.2, duration: 800, essential: true }
               );
             }
-          } catch (fErr: any) {
-            console.warn(LOG, "fitBounds error:", fErr?.message ?? fErr);
+          } catch {
+            // fall back to the initial center/zoom
           }
 
           setTimeout(() => current.resize(), 120);
@@ -285,16 +242,11 @@ export default function DirectionsMap({ route, isDark }: { route: DirectionsPayl
         applyOverlaysRef.current = applyOverlays;
 
         map.on("style.load", () => {
-          console.info(LOG, "style.load — basemap style ready");
-          map.once("idle", () => {
-            console.info(LOG, "idle — tiles rendered");
-            applyOverlays();
-          });
+          map.once("idle", applyOverlays);
           if (map.isStyleLoaded()) applyOverlays();
         });
 
         map.on("load", () => {
-          console.info(LOG, "load — map ready, applying overlays");
           applyOverlays();
           map.resize();
           if (containerRef.current) {
@@ -303,18 +255,16 @@ export default function DirectionsMap({ route, isDark }: { route: DirectionsPayl
           }
         });
 
-        // If the basemap style never loads (blocked network, bad URL, worker
-        // failure), surface it instead of a silently blank container.
+        // If the basemap never loads (blocked network, dead worker), surface a
+        // visible state instead of a silently blank container.
         watchdog = setTimeout(() => {
           const current = mapRef.current;
           if (cancelled || !current) return;
           if (!current.isStyleLoaded()) {
-            console.error(LOG, "STYLE TIMEOUT — basemap did not load within 15s", { style: styleUrl });
-            setMapError("Basemap style failed to load (timeout) — see console");
+            setMapError("Basemap style failed to load — check your network and refresh.");
           }
         }, 15000);
       } catch (err: any) {
-        console.error(LOG, "INIT FAILED:", err?.stack ?? err?.message ?? err);
         setMapError(String(err?.message ?? err));
       }
     })();
@@ -349,7 +299,6 @@ export default function DirectionsMap({ route, isDark }: { route: DirectionsPayl
         >
           <span className="text-[12.5px] font-semibold text-red">Map failed to render</span>
           <span className="font-mono text-[10.5px] leading-relaxed text-ink-3">{mapError}</span>
-          <span className="text-[10.5px] text-ink-3">console logs prefixed [DirectionsMap] have details</span>
         </div>
       )}
     </div>
