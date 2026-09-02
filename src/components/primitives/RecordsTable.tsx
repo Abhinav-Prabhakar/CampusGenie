@@ -79,6 +79,22 @@ const TAG_COLORS: Record<string, TagColor> = {
   Champion: TAG_PALETTE.amber,
   "Runner-up": TAG_PALETTE.cyan,
   Third: TAG_PALETTE.pink,
+  // Complaint Box category, urgency, and status tags
+  Academics: TAG_PALETTE.amber,
+  Facilities: TAG_PALETTE.cyan,
+  Hostel: TAG_PALETTE.purple,
+  Dining: TAG_PALETTE.red,
+  Administration: TAG_PALETTE.orange,
+  "IT & Library": TAG_PALETTE.lime,
+  Safety: TAG_PALETTE.magenta,
+  General: TAG_PALETTE.pink,
+  Urgent: TAG_PALETTE.red,
+  High: TAG_PALETTE.orange,
+  Medium: TAG_PALETTE.cyan,
+  Low: TAG_PALETTE.green,
+  Open: TAG_PALETTE.yellow,
+  "In review": TAG_PALETTE.cyan,
+  Resolved: TAG_PALETTE.green,
 };
 
 export type RecordRow = {
