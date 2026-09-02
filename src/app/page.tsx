@@ -213,29 +213,16 @@ function resolveRelevantEvents(
     if (ev) matched.set(ev.id, ev);
   };
 
-  // 1. Explicit tool call IDs
+  // 1. Explicit tool call IDs from show_event_cards tool or events_grid SSE event
   if (Array.isArray(toolEventIds)) {
     for (const id of toolEventIds) matchAndAdd(id);
   }
 
-  // 2. Extracted JSON block IDs
+  // 2. JSON block IDs — fallback for Genie mode responses that include {"eventIds":[...]}
   const { eventIds } = extractStructuredJson(content);
   for (const id of eventIds) matchAndAdd(id);
 
-  // 3. Mentioned event IDs in the assistant's final response text (e.g. EV-01, EV-10)
-  if (content && typeof content === "string") {
-    const idMatches = content.match(/\bEV-?\d+\b/gi) || [];
-    for (const raw of idMatches) matchAndAdd(raw);
-
-    // 4. Exact full title match in the assistant's response text
-    for (const ev of allEvents) {
-      if (ev.title && ev.title.length > 6) {
-        if (content.toLowerCase().includes(ev.title.toLowerCase())) {
-          matched.set(ev.id, ev);
-        }
-      }
-    }
-  }
+  // Intentionally no fuzzy title/inline-regex matching — caused false positives.
 
   return Array.from(matched.values());
 }
@@ -429,6 +416,10 @@ export default function CampusGenieChatPage() {
       const toolIndexMap = new Map<number, string>();
       let lineBuffer = "";
       let streamError: string | null = null;
+      const explicitToolEventIds: string[] = [];
+      let parsedQuestions: any = null;
+      let parsedApproval: any = null;
+      let parsedRecommendation: any = null;
 
       const assistantMsgId = (Date.now() + 1).toString();
 
@@ -456,6 +447,17 @@ export default function CampusGenieChatPage() {
                 continue;
               }
 
+              // Handle new structured SSE events from tool harness
+              if (parsed.type === "events_grid" && Array.isArray(parsed.eventIds)) {
+                for (const id of parsed.eventIds) {
+                  if (!explicitToolEventIds.includes(id)) explicitToolEventIds.push(id);
+                }
+              }
+
+              if (parsed.type === "survey" && Array.isArray(parsed.questions)) {
+                parsedQuestions = normalizeQuestions(parsed.questions);
+              }
+
               if (parsed.type === "tool_status") {
                 setToolActivity({
                   label: parsed.label,
@@ -475,6 +477,7 @@ export default function CampusGenieChatPage() {
                 assistantContent += delta.content;
               }
 
+              // Track tool calls still streaming (for legacy/fallback Genie mode)
               if (delta?.tool_calls) {
                 for (const tc of delta.tool_calls) {
                   const idx = tc.index ?? 0;
@@ -484,44 +487,6 @@ export default function CampusGenieChatPage() {
                   if (tc.function?.name) current.name = tc.function.name;
                   if (tc.function?.arguments) current.args += tc.function.arguments;
                   toolMap.set(toolKey, current);
-                }
-              }
-
-              const toolInvocations = Array.from(toolMap.values());
-              let parsedQuestions: any = null;
-              let parsedApproval: any = null;
-              let parsedRecommendation: any = null;
-              const explicitToolEventIds: string[] = [];
-
-              for (const ti of toolInvocations) {
-                try {
-                  const parsedArgs = JSON.parse(ti.args);
-                  if (
-                    (ti.name === "ask_questions" || ti.name === "trigger_survey" || ti.name === "ask_survey") &&
-                    (parsedArgs.questions || Array.isArray(parsedArgs) || parsedArgs.survey)
-                  ) {
-                    parsedQuestions = normalizeQuestions(parsedArgs);
-                  } else if (ti.name === "show_approval_card") {
-                    parsedApproval = parsedArgs;
-                  } else if (ti.name === "show_recommendation_card") {
-                    parsedRecommendation = parsedArgs;
-                  } else if (ti.name === "show_events_grid" && Array.isArray(parsedArgs.eventIds)) {
-                    explicitToolEventIds.push(...parsedArgs.eventIds);
-                  } else if (ti.name === "search_events") {
-                    const q = (parsedArgs.query || "").toLowerCase();
-                    for (const ev of lakehouseEvents) {
-                      if (
-                        ev.title.toLowerCase().includes(q) ||
-                        ev.cat.toLowerCase().includes(q) ||
-                        (ev.subhead && ev.subhead.toLowerCase().includes(q)) ||
-                        (ev.description && ev.description.toLowerCase().includes(q))
-                      ) {
-                        explicitToolEventIds.push(ev.id);
-                      }
-                    }
-                  }
-                } catch {
-                  // Arguments still streaming
                 }
               }
 
@@ -540,10 +505,7 @@ export default function CampusGenieChatPage() {
                     role: "assistant" as const,
                     content: assistantContent,
                     thinking: assistantThinking || undefined,
-                    toolCalls: toolInvocations.length > 0 ? toolInvocations : undefined,
                     questions: parsedQuestions || undefined,
-                    approvalCard: parsedApproval || undefined,
-                    recommendation: parsedRecommendation || undefined,
                     events: currentMatchedEvents.length > 0 ? currentMatchedEvents : undefined,
                     timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
                   },
@@ -551,7 +513,7 @@ export default function CampusGenieChatPage() {
                 return updated;
               });
             } catch (pErr) {
-              // Non-JSON SSE payload
+              // Non-JSON SSE payload — skip
             }
           }
         }
@@ -560,10 +522,10 @@ export default function CampusGenieChatPage() {
       if (streamError) throw new Error(streamError);
 
       const finalToolInvocations = Array.from(toolMap.values());
-      let finalQuestions: any = null;
-      let finalApproval: any = null;
-      let finalRecommendation: any = null;
-      const finalToolEventIds: string[] = [];
+      let finalQuestions: any = parsedQuestions || null;
+      let finalApproval: any = parsedApproval || null;
+      let finalRecommendation: any = parsedRecommendation || null;
+      const finalToolEventIds: string[] = [...explicitToolEventIds];
 
       for (const ti of finalToolInvocations) {
         try {
@@ -572,13 +534,15 @@ export default function CampusGenieChatPage() {
             (ti.name === "ask_questions" || ti.name === "trigger_survey" || ti.name === "ask_survey") &&
             (parsedArgs.questions || Array.isArray(parsedArgs) || parsedArgs.survey)
           ) {
-            finalQuestions = normalizeQuestions(parsedArgs);
+            finalQuestions = normalizeQuestions(parsedArgs) || finalQuestions;
           } else if (ti.name === "show_approval_card") {
             finalApproval = parsedArgs;
           } else if (ti.name === "show_recommendation_card") {
             finalRecommendation = parsedArgs;
           } else if (ti.name === "show_events_grid" && Array.isArray(parsedArgs.eventIds)) {
-            finalToolEventIds.push(...parsedArgs.eventIds);
+            for (const id of parsedArgs.eventIds) {
+              if (!finalToolEventIds.includes(id)) finalToolEventIds.push(id);
+            }
           }
         } catch {}
       }

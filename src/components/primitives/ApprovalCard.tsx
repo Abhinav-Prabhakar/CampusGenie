@@ -34,19 +34,19 @@ export type SurveySubmissionResult = {
 
 const QUESTIONS: ApprovalQuestion[] = [
   {
-    q: "How many flavors should we launch?",
+    q: "Which track or technical area interests you most?",
     type: "radio",
-    options: ["Three (core line)", "Five (full case)", "Just one hero"],
+    options: ["AI & Lakehouse Agents", "Distributed Systems & Cloud", "Fullstack UI & Product Design"],
   },
   {
-    q: "Which mix-ins should we stock?",
+    q: "What kind of campus events are you looking for?",
     type: "check",
-    options: ["Chocolate chips", "Waffle bits", "Sprinkles"],
+    options: ["Technical Workshops & Bootcamps", "Career Mixers & Alumni Chats", "Socials, Game Nights & Free Food"],
   },
   {
-    q: "Which market do we enter first?",
+    q: "How much weekly time can you commit to extracurriculars?",
     type: "radio",
-    options: ["Food trucks", "Grocery freezers", "Scoop shops"],
+    options: ["2–4 hours (light exploration)", "5–8 hours (active project member)", "10+ hours (intensive / leadership)"],
   },
 ];
 

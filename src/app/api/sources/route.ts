@@ -264,7 +264,7 @@ export async function POST(req: NextRequest) {
       type = (formData.get("type") as string) || type;
       description = (formData.get("description") as string) || description;
       uploadedBy = (formData.get("uploadedBy") as string) || uploadedBy;
-      if (formData.get("content")) {
+      if (!content && formData.get("content")) {
         content = formData.get("content") as string;
       }
     } else {

@@ -1,4 +1,5 @@
 import { createRequire } from "module";
+import { createWorker } from "tesseract.js";
 
 const require = createRequire(import.meta.url);
 
@@ -9,7 +10,31 @@ export async function extractTextFromFile(
 ): Promise<{ text: string; pageCount?: number }> {
   const lowerName = filename.toLowerCase();
 
-  // 1. PDF File
+  // 1. Image Files (PNG, JPG, JPEG, WEBP, GIF, BMP, TIFF) via Tesseract OCR
+  const isImage =
+    mimeType?.startsWith("image/") ||
+    /\.(png|jpe?g|webp|bmp|gif|tiff)$/i.test(lowerName);
+
+  if (isImage) {
+    try {
+      const worker = await createWorker("eng");
+      const ret = await worker.recognize(buffer);
+      await worker.terminate();
+      const ocrText = (ret.data?.text || "").trim();
+      return {
+        text: ocrText.length > 0 ? ocrText : `[OCR scan of image ${filename}: No readable text detected]`,
+        pageCount: 1,
+      };
+    } catch (err: any) {
+      console.error("[Tesseract OCR Error]", err);
+      return {
+        text: `Image document (${filename}) uploaded to Databricks Lakehouse (OCR processing encountered: ${err?.message || "unknown error"}).`,
+        pageCount: 1,
+      };
+    }
+  }
+
+  // 2. PDF File
   if (lowerName.endsWith(".pdf") || mimeType === "application/pdf") {
     try {
       const pdfParse = require("pdf-parse");
@@ -35,7 +60,7 @@ export async function extractTextFromFile(
     }
   }
 
-  // 2. JSON File
+  // 3. JSON File
   if (lowerName.endsWith(".json") || mimeType === "application/json") {
     try {
       const text = buffer.toString("utf-8");
@@ -48,7 +73,7 @@ export async function extractTextFromFile(
     }
   }
 
-  // 3. Markdown / Plain Text / CSV
+  // 4. Markdown / Plain Text / CSV
   return {
     text: buffer.toString("utf-8"),
   };

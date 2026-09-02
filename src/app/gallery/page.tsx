@@ -335,8 +335,34 @@ export default function GalleryPage() {
                   </div>
 
                   <div className="rounded-[12px] border border-line bg-canvas p-4 shadow-card">
-                    <div className="mb-2 text-[12.5px] font-semibold text-ink">Approval Card (Action Gate)</div>
-                    <ApprovalCard />
+                    <div className="mb-1 text-[12.5px] font-semibold text-ink">LLM MCQ Survey Component (ApprovalCard)</div>
+                    <p className="mb-3 text-[11.5px] text-ink-3">Interactive multi-step questionnaire triggered by the LLM via <code className="font-mono text-accent-ink">ask_user_questions</code> tool.</p>
+                    <ApprovalCard
+                      questions={[
+                        {
+                          q: "Which track or technical area interests you most?",
+                          type: "radio",
+                          options: ["AI & Lakehouse Agents", "Distributed Systems & Cloud", "Fullstack UI & Product Design"],
+                        },
+                        {
+                          q: "What kind of campus events are you looking for?",
+                          type: "check",
+                          options: ["Technical Workshops & Bootcamps", "Career Mixers & Alumni Chats", "Socials, Game Nights & Free Food"],
+                        },
+                        {
+                          q: "How much weekly time can you commit to extracurriculars?",
+                          type: "radio",
+                          options: ["2–4 hours (light exploration)", "5–8 hours (active project member)", "10+ hours (intensive / leadership)"],
+                        },
+                      ]}
+                      labels={{
+                        skip: "Skip",
+                        continue: "Next",
+                        send: "Submit Preferences",
+                        customPlaceholder: "Other preferences…",
+                        sentMessage: "Preferences recorded",
+                      }}
+                    />
                   </div>
 
                   <div className="rounded-[12px] border border-line bg-canvas p-4 shadow-card">

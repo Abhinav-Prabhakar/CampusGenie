@@ -28,6 +28,11 @@ export const metadata: Metadata = {
   title: "Campus Genie — Databricks AI Campus & City Intelligence",
   description:
     "Databricks Lakehouse & Genie Agent powered intelligence for campus life, clubs, labs, alumni pathways, and Bengaluru tech opportunities.",
+  icons: {
+    icon: [
+      { url: "/icon.svg", type: "image/svg+xml" },
+    ],
+  },
 };
 
 const themeScript = `(function(){try{var t=localStorage.getItem("bui-theme");document.documentElement.classList.toggle("dark",t!=="light")}catch(e){document.documentElement.classList.add("dark")}})()`;

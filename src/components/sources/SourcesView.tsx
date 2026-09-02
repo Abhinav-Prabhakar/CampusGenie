@@ -73,18 +73,31 @@ export default function SourcesView({ onAskGenie }: SourcesViewProps) {
     else if (lowerName.includes("architecture") || lowerName.includes("whitepaper") || lowerName.includes("delta")) setDocType("technical");
     else setDocType("document");
 
-    // Read text content
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const text = event.target?.result as string;
-      if (text) {
-        setDocContent(text.slice(0, 5000));
-        if (!docDesc.trim()) {
-          setDocDesc(`Uploaded file (${file.name}, ${(file.size / 1024).toFixed(1)} KB) containing campus documentation.`);
+    // Read text content only for text-based files (PDFs and images are parsed server-side via pdf-parse/tesseract)
+    const isTextFile = /\.(txt|md|json|csv|tsv|html)$/i.test(file.name) || file.type.startsWith("text/");
+    if (isTextFile) {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const text = event.target?.result as string;
+        if (text) {
+          setDocContent(text.slice(0, 5000));
+          if (!docDesc.trim()) {
+            setDocDesc(`Uploaded file (${file.name}, ${(file.size / 1024).toFixed(1)} KB) containing campus documentation.`);
+          }
         }
+      };
+      reader.readAsText(file);
+    } else {
+      setDocContent("");
+      if (!docDesc.trim()) {
+        const isImg = file.type.startsWith("image/") || /\.(png|jpe?g|webp|bmp|tiff)$/i.test(file.name);
+        setDocDesc(
+          isImg
+            ? `Uploaded image (${file.name}, ${(file.size / 1024).toFixed(1)} KB) — scanned with Tesseract.js OCR into Databricks Lakehouse.`
+            : `Uploaded PDF (${file.name}, ${(file.size / 1024).toFixed(1)} KB) — parsed into Databricks Lakehouse knowledge base.`
+        );
       }
-    };
-    reader.readAsText(file);
+    }
   };
 
   const handleUploadSubmit = async (e: React.FormEvent) => {
