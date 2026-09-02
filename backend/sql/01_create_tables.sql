@@ -1,19 +1,44 @@
 -- ──────────────────────────────────────────────────────────
 -- Campus Genie Lakehouse · Unity Catalog Schema & Delta Tables
+-- Multi-user schema: identity + per-user storage keyed by Clerk user_id
 -- ──────────────────────────────────────────────────────────
 
-CREATE CATALOG IF NOT EXISTS campus_explorer;
-USE CATALOG campus_explorer;
+CREATE SCHEMA IF NOT EXISTS workspace.campus_explorer;
+USE CATALOG workspace;
+USE SCHEMA campus_explorer;
 
-CREATE SCHEMA IF NOT EXISTS lakehouse_prod;
-USE SCHEMA lakehouse_prod;
+-- 0. Application Users (Clerk identity mirror; role is app-level)
+CREATE TABLE IF NOT EXISTS app_users (
+  user_id STRING NOT NULL,          -- Clerk user id (user_...)
+  email STRING,
+  first_name STRING,
+  last_name STRING,
+  role STRING,                      -- 'student' | 'admin'
+  created_at TIMESTAMP,
+  updated_at TIMESTAMP
+)
+USING DELTA
+TBLPROPERTIES ('delta.enableChangeDataFeed' = 'true');
 
--- 1. Campus Events Table
-CREATE OR REPLACE TABLE campus_events (
+-- 0b. Per-user chat threads (server-side chat history)
+CREATE TABLE IF NOT EXISTS chat_threads (
+  thread_id STRING NOT NULL,
+  user_id STRING NOT NULL,          -- Clerk user id
+  title STRING,
+  messages_json STRING,             -- serialized ChatMessage[]
+  created_at TIMESTAMP,
+  updated_at TIMESTAMP
+)
+USING DELTA
+TBLPROPERTIES ('delta.enableChangeDataFeed' = 'true');
+
+-- 1. Campus Events Table (shared; created_by tracks the admin author)
+CREATE TABLE IF NOT EXISTS campus_events (
   event_id STRING,
   title STRING,
   category STRING,
   host_organization STRING,
+  host_code STRING,
   location STRING,
   is_virtual BOOLEAN,
   event_date DATE,
@@ -22,15 +47,81 @@ CREATE OR REPLACE TABLE campus_events (
   capacity INT,
   registered_count INT,
   food_provided BOOLEAN,
+  is_featured BOOLEAN,
+  status STRING,
+  visibility STRING,
   tags ARRAY<STRING>,
   description STRING,
-  created_at TIMESTAMP
+  created_at TIMESTAMP,
+  created_by STRING                 -- Clerk user id of the author (NULL = seed)
 )
 USING DELTA
 TBLPROPERTIES ('delta.enableChangeDataFeed' = 'true');
 
--- 2. Research Labs & Student Clubs
-CREATE OR REPLACE TABLE clubs_and_labs (
+-- 2. Campus Surveys (shared; created_by tracks the admin author)
+CREATE TABLE IF NOT EXISTS campus_surveys (
+  survey_id STRING,
+  title STRING,
+  description STRING,
+  target_event_id STRING,
+  is_published BOOLEAN,
+  is_featured BOOLEAN,
+  audience STRING,
+  response_count INT,
+  questions_json STRING,
+  created_at TIMESTAMP,
+  created_by STRING                 -- Clerk user id of the author (NULL = seed)
+)
+USING DELTA
+TBLPROPERTIES ('delta.enableChangeDataFeed' = 'true');
+
+-- 3. Per-user course enrollments
+CREATE TABLE IF NOT EXISTS student_courses (
+  course_id STRING,
+  course_code STRING,
+  title STRING,
+  instructor STRING,
+  location STRING,
+  schedule_days ARRAY<STRING>,
+  start_time STRING,
+  duration_mins INT,
+  min_attendance_pct INT,
+  user_id STRING                    -- Clerk user id owning this enrollment
+)
+USING DELTA;
+
+-- 4. Per-user attendance logs
+CREATE TABLE IF NOT EXISTS student_attendance_logs (
+  log_id STRING,
+  student_id STRING,                -- Clerk user id
+  course_id STRING,
+  session_date DATE,
+  status STRING,                    -- 'PRESENT' | 'LATE' | 'ABSENT' | 'SCHEDULED'
+  check_in_time TIMESTAMP,
+  verification_method STRING,
+  notes STRING,
+  created_at TIMESTAMP
+)
+USING DELTA;
+
+-- 5. Knowledge Sources (governed RAG documents)
+CREATE TABLE IF NOT EXISTS knowledge_sources (
+  source_id STRING,
+  name STRING,
+  type STRING,
+  category STRING,
+  description STRING,
+  chunk_count INT,
+  file_size STRING,
+  status STRING,
+  content_sample STRING,
+  uploaded_by STRING,
+  updated_at TIMESTAMP
+)
+USING DELTA;
+
+-- 6. Research Labs & Student Clubs
+CREATE TABLE IF NOT EXISTS clubs_and_labs (
   entity_id STRING,
   name STRING,
   type STRING, -- 'research_lab', 'tech_club', 'cultural_society', 'sports_club'
@@ -47,8 +138,8 @@ CREATE OR REPLACE TABLE clubs_and_labs (
 )
 USING DELTA;
 
--- 3. City & Bengaluru Tech Meetups
-CREATE OR REPLACE TABLE city_tech_events (
+-- 7. City & Bengaluru Tech Meetups
+CREATE TABLE IF NOT EXISTS city_tech_events (
   meetup_id STRING,
   title STRING,
   organizer STRING,
@@ -63,8 +154,8 @@ CREATE OR REPLACE TABLE city_tech_events (
 )
 USING DELTA;
 
--- 4. Alumni Career Pathways & Research Outcomes
-CREATE OR REPLACE TABLE alumni_career_pathways (
+-- 8. Alumni Career Pathways & Research Outcomes
+CREATE TABLE IF NOT EXISTS alumni_career_pathways (
   alumni_id STRING,
   graduation_year INT,
   major STRING,
@@ -79,8 +170,8 @@ CREATE OR REPLACE TABLE alumni_career_pathways (
 )
 USING DELTA;
 
--- 5. Campus Cafe & Procurement Operations
-CREATE OR REPLACE TABLE procurement_inventory (
+-- 9. Campus Cafe & Procurement Operations
+CREATE TABLE IF NOT EXISTS procurement_inventory (
   item_id STRING,
   item_name STRING,
   category STRING, -- 'Dairy', 'Waffle Cones', 'Packaging', 'Dry Goods'
