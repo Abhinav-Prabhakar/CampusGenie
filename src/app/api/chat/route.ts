@@ -7,6 +7,7 @@ import { getCurrentUser, DEFAULT_COLLEGE } from "@/lib/appUsers";
 import { buildWalkingRoute } from "@/lib/campusDirections";
 import { getCollegeForUser, fetchCampusLocations, resolveCampusPoint, listCampusLocationNames } from "@/lib/campusLocations";
 import { validateCampusReadOnlySql } from "@/lib/chatSqlSecurity";
+import { customEndpointsEnabled, validateCustomEndpointDestination } from "@/lib/llmEndpointSecurity";
 
 export const runtime = "nodejs";
 
@@ -449,6 +450,40 @@ export async function POST(req: NextRequest) {
       customBaseUrl,
     } = body;
 
+    const supportedProviders = new Set(["databricks", "openai", "gemini", "anthropic", "ollama", "custom"]);
+    if (!supportedProviders.has(inputProvider)) {
+      return NextResponse.json({ error: "Unsupported LLM provider" }, { status: 400 });
+    }
+    const callerRequestedCustomEndpoint =
+      inputProvider === "custom" || customBaseUrl !== undefined || customApiKey !== undefined;
+    if (callerRequestedCustomEndpoint && inputProvider !== "custom") {
+      return NextResponse.json(
+        { error: "Custom endpoint credentials are accepted only when provider is 'custom'" },
+        { status: 400 },
+      );
+    }
+    if (callerRequestedCustomEndpoint && !customEndpointsEnabled(process.env)) {
+      return NextResponse.json(
+        { error: "Custom LLM endpoints are disabled on this deployment" },
+        { status: 403 },
+      );
+    }
+
+    let validatedCallerBaseUrl: string | undefined;
+    if (callerRequestedCustomEndpoint) {
+      if (typeof customApiKey !== "string" || !customApiKey.trim()) {
+        return NextResponse.json(
+          { error: "A caller-owned API key is required for a custom endpoint" },
+          { status: 400 },
+        );
+      }
+      const endpointValidation = await validateCustomEndpointDestination(customBaseUrl);
+      if (!endpointValidation.ok) {
+        return NextResponse.json({ error: endpointValidation.error }, { status: 400 });
+      }
+      validatedCallerBaseUrl = endpointValidation.url;
+    }
+
     const latestPrompt = [...messages]
       .reverse()
       .find((m: { role?: string }) => m.role === "user")?.content;
@@ -474,9 +509,8 @@ export async function POST(req: NextRequest) {
         ? process.env.LLM_MODEL || process.env.NEXT_PUBLIC_DEFAULT_MODEL || "gemini-2.5-flash"
         : inputModel;
 
-    let provider =
-      requestsGenie && !routeToGenie ? "custom" : inputProvider;
-    if (provider === "custom" && !customBaseUrl && !process.env.LLM_BASE_URL) {
+    let provider = requestsGenie && !routeToGenie ? "custom" : inputProvider;
+    if (provider === "custom" && !callerRequestedCustomEndpoint && !process.env.LLM_BASE_URL) {
       const lower = model.toLowerCase();
       if (lower.includes("gemini")) provider = "gemini";
       else if (lower.includes("claude")) provider = "anthropic";
@@ -484,15 +518,15 @@ export async function POST(req: NextRequest) {
       else provider = "openai";
     }
 
-    const apiKey =
-      customApiKey ||
-      process.env.LLM_API_KEY ||
-      (provider === "databricks" ? process.env.DATABRICKS_TOKEN : undefined) ||
-      (provider === "openai" ? process.env.OPENAI_API_KEY : undefined) ||
-      (provider === "gemini" ? process.env.GEMINI_API_KEY : undefined) ||
-      (provider === "anthropic" ? process.env.ANTHROPIC_API_KEY : undefined);
+    const apiKey = callerRequestedCustomEndpoint
+      ? customApiKey.trim()
+      : process.env.LLM_API_KEY ||
+        (provider === "databricks" ? process.env.DATABRICKS_TOKEN : undefined) ||
+        (provider === "openai" ? process.env.OPENAI_API_KEY : undefined) ||
+        (provider === "gemini" ? process.env.GEMINI_API_KEY : undefined) ||
+        (provider === "anthropic" ? process.env.ANTHROPIC_API_KEY : undefined);
 
-    let baseUrl = customBaseUrl || process.env.LLM_BASE_URL;
+    let baseUrl = validatedCallerBaseUrl || process.env.LLM_BASE_URL;
     let endpoint = "";
     const headers: Record<string, string> = { "Content-Type": "application/json" };
 
@@ -500,7 +534,7 @@ export async function POST(req: NextRequest) {
       if (provider === "databricks") {
         const host = process.env.DATABRICKS_HOST || "https://adb-default.cloud.databricks.com";
         baseUrl = host.replace(/\/+$/, "");
-        endpoint = `${baseUrl}/serving-endpoints/${model}/invocations`;
+        endpoint = `${baseUrl}/serving-endpoints/${encodeURIComponent(model)}/invocations`;
       } else if (provider === "gemini") {
         baseUrl = "https://generativelanguage.googleapis.com/v1beta/openai";
         endpoint = `${baseUrl}/chat/completions`;
@@ -594,6 +628,7 @@ export async function POST(req: NextRequest) {
               headers,
               body: JSON.stringify(payload),
               signal: req.signal,
+              redirect: callerRequestedCustomEndpoint ? "error" : "follow",
             });
 
             if (!upstreamRes.ok || !upstreamRes.body) {

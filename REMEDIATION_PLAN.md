@@ -23,12 +23,12 @@ This plan is intentionally sequential. Complete and verify one item before start
    - Keep private tables such as `app_users`, `chat_threads`, attendance, complaints, and intro requests unavailable to model-authored SQL.
    - Add deterministic tests for DDL/DML, multi-statement, cross-schema, comment, and obfuscation cases.
 
-3. **Custom LLM endpoint SSRF and server-key exfiltration — next**
+3. **Custom LLM endpoint SSRF and server-key exfiltration — fixed locally**
    - Never combine a caller-supplied base URL with a server-owned API key.
    - Restrict or remove arbitrary custom endpoints in production.
    - Reject loopback, link-local, private-network, and non-HTTPS destinations.
 
-4. **Production Clerk configuration**
+4. **Production Clerk configuration — next**
    - Replace the deployed `pk_test_…`/development Clerk instance with production keys and domain configuration.
    - Verify signed-out navigation, sign-in, sign-up, session refresh, and admin access on Vercel.
    - This requires deployment-environment changes, not only repository code.
