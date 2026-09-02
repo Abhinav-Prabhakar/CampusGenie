@@ -29,6 +29,7 @@ export default function SourcesView({ onAskGenie }: SourcesViewProps) {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isUploading, setIsUploading] = useState<boolean>(false);
   const [uploadSuccess, setUploadSuccess] = useState<boolean>(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState<boolean>(false);
 
   // Preview modal state
@@ -83,17 +84,19 @@ export default function SourcesView({ onAskGenie }: SourcesViewProps) {
 
   const handleFileChange = (file: File) => {
     setSelectedFile(file);
+    setUploadError(null);
     if (!docName.trim()) setDocName(file.name);
-    
-    // Auto-detect type
+
     const lowerName = file.name.toLowerCase();
-    if (lowerName.endsWith(".json") || lowerName.endsWith(".csv")) setDocType("dataset");
+    const isImg = file.type.startsWith("image/") || /\.(png|jpe?g|webp|bmp|tiff)$/i.test(lowerName);
+
+    if (isImg) setDocType("document");
+    else if (lowerName.endsWith(".json") || lowerName.endsWith(".csv")) setDocType("dataset");
     else if (lowerName.includes("syllabus") || lowerName.includes("course")) setDocType("syllabus");
     else if (lowerName.includes("policy") || lowerName.includes("senate") || lowerName.includes("rule")) setDocType("policy");
     else if (lowerName.includes("architecture") || lowerName.includes("whitepaper") || lowerName.includes("delta")) setDocType("technical");
     else setDocType("document");
 
-    // Read text content only for text-based files (PDFs and images are parsed server-side via pdf-parse/tesseract)
     const isTextFile = /\.(txt|md|json|csv|tsv|html)$/i.test(file.name) || file.type.startsWith("text/");
     if (isTextFile) {
       const reader = new FileReader();
@@ -110,7 +113,6 @@ export default function SourcesView({ onAskGenie }: SourcesViewProps) {
     } else {
       setDocContent("");
       if (!docDesc.trim()) {
-        const isImg = file.type.startsWith("image/") || /\.(png|jpe?g|webp|bmp|tiff)$/i.test(file.name);
         setDocDesc(
           isImg
             ? `Uploaded image (${file.name}, ${(file.size / 1024).toFixed(1)} KB) — scanned with Tesseract.js OCR into Databricks Lakehouse.`
@@ -125,6 +127,7 @@ export default function SourcesView({ onAskGenie }: SourcesViewProps) {
     if (!docName.trim()) return;
 
     setIsUploading(true);
+    setUploadError(null);
     try {
       let res: Response;
       if (selectedFile) {
@@ -135,7 +138,6 @@ export default function SourcesView({ onAskGenie }: SourcesViewProps) {
         fd.append("type", docType);
         fd.append("description", docDesc);
         if (docContent.trim()) fd.append("content", docContent);
-        fd.append("uploadedBy", "Campus Admin");
         res = await fetch("/api/sources", {
           method: "POST",
           body: fd,
@@ -154,13 +156,16 @@ export default function SourcesView({ onAskGenie }: SourcesViewProps) {
             content: docContent || docDesc || "Document text indexed for Databricks Lakehouse RAG.",
             chunkCount,
             fileSize: fileSizeStr,
-            uploadedBy: "Campus Admin",
           }),
         });
       }
 
-      if (res.ok) {
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.success) {
         setUploadSuccess(true);
+        if (data.document) {
+          setSources((prev) => [data.document, ...prev.filter((s) => s.id !== data.document.id)]);
+        }
         setTimeout(() => {
           setUploadSuccess(false);
           setIsUploadOpen(false);
@@ -168,11 +173,15 @@ export default function SourcesView({ onAskGenie }: SourcesViewProps) {
           setDocDesc("");
           setDocContent("");
           setSelectedFile(null);
+          setUploadError(null);
           fetchSources();
-        }, 600);
+        }, 800);
+      } else {
+        setUploadError(data?.error || "Failed to index document into Databricks Lakehouse.");
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error("Upload error:", err);
+      setUploadError(err?.message || "An error occurred while uploading to Databricks Lakehouse.");
     } finally {
       setIsUploading(false);
     }
@@ -352,7 +361,7 @@ export default function SourcesView({ onAskGenie }: SourcesViewProps) {
             <input
               type="file"
               id="file-upload"
-              accept=".pdf,.md,.txt,.json,.csv,.docx"
+              accept=".pdf,.png,.jpg,.jpeg,.webp,.bmp,.tiff,.md,.txt,.json,.csv,.docx,image/*"
               onChange={(e) => {
                 if (e.target.files && e.target.files[0]) {
                   handleFileChange(e.target.files[0]);
@@ -371,7 +380,7 @@ export default function SourcesView({ onAskGenie }: SourcesViewProps) {
                   <>Drag &amp; drop file here, or <span className="text-accent-ink underline">browse</span></>
                 )}
               </div>
-              <span className="text-[11px] text-ink-3">Supports PDF, Markdown, TXT, JSON, CSV, DOCX</span>
+              <span className="text-[11px] text-ink-3">Supports PDF, Images (PNG/JPG/WEBP OCR), Markdown, TXT, JSON, CSV</span>
             </label>
           </div>
 
@@ -443,6 +452,15 @@ export default function SourcesView({ onAskGenie }: SourcesViewProps) {
               className="w-full rounded-[8px] border border-line bg-field p-2.5 text-[12.5px] text-ink outline-none focus:border-accent resize-none font-mono text-xs"
             />
           </div>
+
+          {uploadError && (
+            <div className="rounded-[8px] bg-red-tint/50 border border-red/40 p-2.5 text-[12px] text-red flex items-center gap-2">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="shrink-0">
+                <circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" />
+              </svg>
+              <span>{uploadError}</span>
+            </div>
+          )}
 
           <div className="flex items-center justify-end gap-2 pt-1 border-t border-line">
             <Button variant="ghost" size="sm" type="button" onClick={() => setIsUploadOpen(false)}>

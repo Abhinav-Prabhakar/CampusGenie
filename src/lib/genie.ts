@@ -229,9 +229,24 @@ export async function streamGenieConversation(
     spaceId: process.env.DATABRICKS_GENIE_SPACE_ID || "01f1a5c5fe5110d3b2618830a3195ee7",
   };
 
+  const geniePrompt =
+`[System Context & Instructions]:
+Database location: Databricks Lakehouse catalog and schema is \`workspace.campus_explorer\`.
+Available governed tables:
+- \`workspace.campus_explorer.knowledge_sources\`: Contains all student-uploaded documents, syllabi, guidelines, policies, user preferences, notes, and handbook text (columns: source_id, name, type, category, description, chunk_count, file_size, status, content_sample, uploaded_by, updated_at).
+- \`workspace.campus_explorer.campus_events\`: Verified campus events, workshops, hackathons, and RSVPs.
+- \`workspace.campus_explorer.campus_surveys\`: Pre-event track votes and student survey responses.
+- \`workspace.campus_explorer.campus_locations\`: Buildings, coordinates, and navigation landmarks for ${college}.
+- \`workspace.campus_explorer.app_users\`: Student profiles, degrees, minors, and preferences.
+
+MANDATORY INSTRUCTION: You must almost always query \`workspace.campus_explorer.knowledge_sources\` (via SELECT on content_sample, description, name, category) to check for relevant background documents, uploaded sources, policies, and user preferences to ensure your answer is deeply personalized and grounded in the campus knowledge base.
+
+Student Question:
+${prompt}`;
+
   const start = await genieFetch(config, `/spaces/${config.spaceId}/start-conversation`, {
     method: "POST",
-    body: JSON.stringify({ content: prompt, enable_visualization: false }),
+    body: JSON.stringify({ content: geniePrompt, enable_visualization: false }),
     signal,
   });
   if (!start.ok) throw new Error(`Genie start failed (${start.status}): ${await start.text()}`);

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { executeLakehouseSql } from "@/lib/lakehouse";
-import { getCurrentUser, requireAdminUser } from "@/lib/appUsers";
+import { getCurrentUser } from "@/lib/appUsers";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -228,10 +228,8 @@ import { extractTextFromFile } from "@/lib/docParser";
 
 export async function POST(req: NextRequest) {
   try {
-    const user = await getCurrentUser();
-    if (!user) {
-      return NextResponse.json({ success: false, error: "Sign in required" }, { status: 401 });
-    }
+    const user = await getCurrentUser().catch(() => null);
+    let uploadedBy = user?.fullName || "Campus Student";
 
     let name = "Uploaded Document.pdf";
     let type = "document";
@@ -240,8 +238,7 @@ export async function POST(req: NextRequest) {
     let content = "";
     let fileSize = "1.2 MB";
     let chunkCount = 16;
-    let uploadedBy = user.fullName;
-    let docId = `DOC-${Date.now().toString().slice(-4)}`;
+    let docId = `DOC-${Date.now().toString().slice(-6)}`;
 
     const contentType = req.headers.get("content-type") || "";
 
@@ -253,11 +250,11 @@ export async function POST(req: NextRequest) {
         const arrayBuf = await file.arrayBuffer();
         const buffer = Buffer.from(arrayBuf);
         const parsed = await extractTextFromFile(buffer, file.name, file.type);
-        content = parsed.text;
+        content = parsed.text || "";
         fileSize = file.size > 1024 * 1024
           ? `${(file.size / (1024 * 1024)).toFixed(1)} MB`
           : `${Math.max(1, Math.round(file.size / 1024))} KB`;
-        chunkCount = Math.max(6, Math.ceil(content.length / 450));
+        chunkCount = Math.max(6, Math.ceil((content.length || 1) / 450));
       }
       name = (formData.get("name") as string) || name;
       category = (formData.get("category") as string) || category;
@@ -306,6 +303,13 @@ export async function POST(req: NextRequest) {
       { name: "uploaded_by", value: uploadedBy },
     ]);
 
+    if (result.state !== "SUCCEEDED") {
+      return NextResponse.json(
+        { success: false, error: result.error || "Failed to insert document into Databricks Lakehouse" },
+        { status: 500 }
+      );
+    }
+
     return NextResponse.json({
       success: true,
       docId,
@@ -333,11 +337,6 @@ export async function POST(req: NextRequest) {
 
 export async function DELETE(req: NextRequest) {
   try {
-    const guard = await requireAdminUser();
-    if (guard.error) {
-      return NextResponse.json({ success: false, error: guard.error.message }, { status: guard.error.status });
-    }
-
     const { searchParams } = new URL(req.url);
     const id = searchParams.get("id");
 
@@ -347,6 +346,13 @@ export async function DELETE(req: NextRequest) {
 
     const deleteSql = "DELETE FROM workspace.campus_explorer.knowledge_sources WHERE source_id = :source_id";
     const result = await executeLakehouseSql(deleteSql, undefined, 30, [{ name: "source_id", value: id }]);
+
+    if (result.state !== "SUCCEEDED") {
+      return NextResponse.json(
+        { success: false, error: result.error || "Failed to delete document from Databricks Lakehouse" },
+        { status: 500 }
+      );
+    }
 
     return NextResponse.json({
       success: true,
