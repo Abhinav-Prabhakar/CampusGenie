@@ -15,14 +15,17 @@ CREATE TABLE IF NOT EXISTS app_users (
   last_name STRING,
   role STRING,                      -- 'student' | 'admin'
   college STRING,                   -- campus the student belongs to (drives navigation tools)
+  phone_number STRING,              -- shared via the profile QR contact card
   created_at TIMESTAMP,
   updated_at TIMESTAMP
 )
 USING DELTA
 TBLPROPERTIES ('delta.enableChangeDataFeed' = 'true');
 
--- Lazy migration for tables provisioned before the college column existed.
+-- Lazy migration for tables provisioned before newer columns existed.
 ALTER TABLE app_users ADD COLUMN IF NOT EXISTS college STRING;
+ALTER TABLE app_users ADD COLUMN IF NOT EXISTS phone_number STRING;
+ALTER TABLE campus_events ADD COLUMN IF NOT EXISTS whatsapp_url STRING;
 
 -- 0b. Per-user chat threads (server-side chat history)
 CREATE TABLE IF NOT EXISTS chat_threads (
@@ -57,7 +60,8 @@ CREATE TABLE IF NOT EXISTS campus_events (
   tags ARRAY<STRING>,
   description STRING,
   created_at TIMESTAMP,
-  created_by STRING                 -- Clerk user id of the author (NULL = seed)
+  created_by STRING,                -- Clerk user id of the author (NULL = seed)
+  whatsapp_url STRING               -- official WhatsApp group invite link (NULL = none)
 )
 USING DELTA
 TBLPROPERTIES ('delta.enableChangeDataFeed' = 'true');
@@ -197,5 +201,52 @@ CREATE TABLE IF NOT EXISTS campus_locations (
   lat DOUBLE,
   lng DOUBLE,
   description STRING
+)
+USING DELTA;
+
+-- 11. Event Awards & Prize Distributions (winners podium per event)
+CREATE TABLE IF NOT EXISTS event_awards (
+  award_id STRING,
+  event_id STRING,
+  event_title STRING,
+  position INT,                     -- 1 | 2 | 3
+  winner_name STRING,
+  winner_student_id STRING,
+  team_name STRING,
+  project_title STRING,
+  prize STRING,
+  category STRING,
+  awarded_at TIMESTAMP
+)
+USING DELTA
+TBLPROPERTIES ('delta.enableChangeDataFeed' = 'true');
+
+-- 12. Teammate Matcher Profiles (details only — no photos by design)
+CREATE TABLE IF NOT EXISTS teammate_profiles (
+  profile_id STRING,
+  name STRING,
+  year STRING,
+  major STRING,
+  college STRING,
+  seeking STRING,                   -- 'hackathon' | 'project' | 'study'
+  bio STRING,
+  skills ARRAY<STRING>,
+  availability_note STRING,
+  commitment_note STRING,
+  collaboration INT,                -- 0-100 working-style metrics
+  availability INT,
+  skill_depth INT,
+  consistency INT,
+  contact_hint STRING,
+  created_at TIMESTAMP
+)
+USING DELTA;
+
+-- 13. Per-user Teammate Swipes ('like' | 'pass')
+CREATE TABLE IF NOT EXISTS teammate_swipes (
+  user_id STRING,                   -- Clerk user id
+  profile_id STRING,
+  action STRING,
+  created_at TIMESTAMP
 )
 USING DELTA;

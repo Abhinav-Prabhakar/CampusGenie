@@ -75,3 +75,43 @@ INSERT INTO campus_locations VALUES
   ('LOC-10', 'Databricks University', 'South Hostel', 'housing', 12.92260, 77.59140, 'Senior-year residence block facing the south lawn and the astro turf court.'),
   ('LOC-11', 'Databricks University', 'Health Center', 'wellness', 12.92470, 77.58840, 'Campus clinic with a resident nurse, counseling rooms, and 24x7 emergency contact.'),
   ('LOC-12', 'Databricks University', 'Admin Block', 'admin', 12.92590, 77.59350, 'Registrar, accounts, and the Dean of Students office behind the banyan courtyard.');
+
+-- 8. Official WhatsApp group invite links (join buttons on event detail)
+UPDATE campus_events SET whatsapp_url = CASE event_id
+  WHEN 'EV-01' THEN 'https://chat.whatsapp.com/KernelBypassPizzaNights'
+  WHEN 'EV-04' THEN 'https://chat.whatsapp.com/DatabricksCoffeeChats26'
+  WHEN 'EV-08' THEN 'https://chat.whatsapp.com/LightningBlitzCrew'
+  WHEN 'EV-10' THEN 'https://chat.whatsapp.com/HackDavis36Teams'
+  WHEN 'EV-11' THEN 'https://chat.whatsapp.com/HoopsBlitzBracket'
+  WHEN 'EV-13' THEN 'https://chat.whatsapp.com/GenieIdeathonBuilds'
+  ELSE NULL END;
+
+-- 9. Event Awards (podium winners per event)
+INSERT INTO event_awards VALUES
+ ('AW-101','EV-10','HackDavis 36 — Build for Good',1,'Aarav Patel','STU-104281','Team Lakehouse Llamas','KrishiMitra — vernacular crop advisory agent','₹25,000 + Databricks mentorship','AI for Social Impact',current_timestamp()),
+ ('AW-102','EV-10','HackDavis 36 — Build for Good',2,'Meera Krishnan','STU-107315','Team Pixel Panchayat','CivicEye — pothole & streetlight GIS reporter','₹15,000','AI for Social Impact',current_timestamp()),
+ ('AW-103','EV-10','HackDavis 36 — Build for Good',3,'Rohan Das','STU-109902','Team Night Owls','MedBridge — offline-first clinic handoff summaries','₹10,000','AI for Social Impact',current_timestamp()),
+ ('AW-201','EV-08','Lightning Blitz Mini-Hack',1,'Ishita Rao','STU-112044','Solo','PulseBoard — live campus sentiment wall','₹5,000 micro-grant','Rapid Prototyping',current_timestamp()),
+ ('AW-202','EV-08','Lightning Blitz Mini-Hack',2,'Kabir Singh','STU-113871','Team Stack Smash','QueueLess — dining-hall crowd predictor','₹3,000 micro-grant','Rapid Prototyping',current_timestamp()),
+ ('AW-203','EV-08','Lightning Blitz Mini-Hack',3,'Ananya Gopal','STU-115528','Team Stack Smash','QueueLess — dining-hall crowd predictor','₹2,000 micro-grant','Rapid Prototyping',current_timestamp()),
+ ('AW-301','EV-13','Genie Ideathon — 48h Virtual Build',1,'Dev Nair','STU-201347','Team Agent Swarm','AutoTa — Genie-powered TA office-hours agent','Cloud credits + showcase slot','Genie Agents',current_timestamp()),
+ ('AW-302','EV-13','Genie Ideathon — 48h Virtual Build',2,'Sara Mathew','STU-203918','Team Delta Queens','LineageLens — Unity Catalog lineage explorer','Cloud credits','Genie Agents',current_timestamp()),
+ ('AW-303','EV-13','Genie Ideathon — 48h Virtual Build',3,'Farhan Ali','STU-207660','Team Agent Swarm','AutoTa — Genie-powered TA office-hours agent','Cloud credits','Genie Agents',current_timestamp()),
+ ('AW-401','EV-01','ACM Weekly — Systems & Pizza',1,'Elena Rostova','STU-301002','—','Zero-copy Parquet deserializer benchmark suite','Pizza royalty + ACM spotlight','Systems',current_timestamp()),
+ ('AW-402','EV-01','ACM Weekly — Systems & Pizza',2,'Vikram Shetty','STU-302755','—','eBPF kernel-bypass demo harness','ACM spotlight','Systems',current_timestamp()),
+ ('AW-403','EV-01','ACM Weekly — Systems & Pizza',3,'Tara Bose','STU-304411','—','Chaos testing Raft visualizer','ACM spotlight','Systems',current_timestamp());
+
+-- 10. Teammate Matcher profiles (details only — no photos by design)
+INSERT INTO teammate_profiles VALUES
+ ('TM-01','Aarav Patel','3rd Year','Computer Science','College of Engineering','hackathon','Ships fast, breaks things, patches faster. Looking for a HackDavis team that actually demos.',ARRAY('PyTorch','TypeScript','Databricks','Figma'),'Tue/Thu evenings + weekends','10+ hrs/week sprint mode',92,74,88,81,'DM on campus chat',current_timestamp()),
+ ('TM-02','Meera Krishnan','4th Year','Information Science','College of Engineering','project','Design-engineer hybrid. I obsess over the last 10% — motion, empty states, a11y.',ARRAY('React','Tailwind','Figma','Motion'),'Weekday afternoons','6–8 hrs/week steady',85,68,79,94,'Design Guild studio hours',current_timestamp()),
+ ('TM-03','Rohan Das','2nd Year','Electronics & Communication','College of Engineering','study','Circuits + signals survivor. Want a fixed weekly problem-set group for ECE core.',ARRAY('Signals','MATLAB','C++','KiCad'),'Mon/Wed/Fri mornings','4–6 hrs/week fixed slots',78,90,72,88,'Library 3rd floor carrels',current_timestamp()),
+ ('TM-04','Ishita Rao','3rd Year','Data Science','School of Statistics','project','Lakehouse maximalist. If it is not in Delta format I am not touching it.',ARRAY('Spark SQL','Delta Lake','Python','dbt'),'Flexible weekdays','8–10 hrs/week',88,80,91,76,'Data Club lab desk',current_timestamp()),
+ ('TM-05','Kabir Singh','1st Year','Computer Science','College of Engineering','hackathon','First-year energy, infinite enthusiasm. I learn frameworks overnight and document everything.',ARRAY('Next.js','Node','Supabase','Python'),'Evenings + Sundays','10+ hrs/week sprints',74,82,64,70,'CruX coding club wing',current_timestamp()),
+ ('TM-06','Sara Mathew','4th Year','Mathematics','School of Statistics','study','Proofs before coffee. Hosting a Putnam-style weekly problem circle.',ARRAY('Real Analysis','Linear Algebra','LaTeX','Python'),'Tue/Thu 7–9 AM','4 hrs/week precise',90,86,95,92,'Math reading room',current_timestamp()),
+ ('TM-07','Farhan Ali','3rd Year','Mechanical','College of Engineering','project','Robotics + firmware. I bring the quadruped; you bring the perception stack.',ARRAY('ROS2','C++','CAD','Embedded C'),'Lab nights','8 hrs/week build sessions',82,72,84,79,'AIS Lab B2',current_timestamp()),
+ ('TM-08','Tara Bose','2nd Year','Cognitive Science','School of Liberal Arts','study','Spaced-repetition nerd. Building a shared Notion brain for orgo + cog-sci finals.',ARRAY('Anki','R','Notion','Writing'),'Weekend mornings','5 hrs/week consistent',87,84,71,90,'Quad study tables',current_timestamp()),
+ ('TM-09','Vikram Shetty','4th Year','Computer Science','College of Engineering','hackathon','Systems gremlin. eBPF, io_uring, and hot takes about your ORM.',ARRAY('Rust','eBPF','Linux','Go'),'Late nights','Weekend warrior mode',69,58,93,74,'ACM kernel lab',current_timestamp()),
+ ('TM-10','Ananya Gopal','3rd Year','Electrical Engineering','College of Engineering','project','Power systems by day, PCB art by night. Seeking a capstone crew that tests before shipping.',ARRAY('PCB Design','Simulink','Firmware','Soldering'),'Tue/Sat blocks','6–8 hrs/week milestone-based',84,78,83,87,'IEEE lab bench 4',current_timestamp()),
+ ('TM-11','Dev Nair','2nd Year','Computer Science','College of Engineering','hackathon','Agent wrangler. My side projects have side projects. Genie prompt-chef.',ARRAY('LangGraph','Databricks Genie','Python','Vercel AI'),'Fri evenings','Sprint weekends + demos',80,65,86,68,'GDG campus loft',current_timestamp()),
+ ('TM-12','Nikhila Reddy','4th Year','Chemical Engineering','College of Engineering','study','Thermo tutor with color-coded notes. Forming a 6 AM focus cohort before placements.',ARRAY('Thermo','Fluid Mechanics','MATLAB'),'Daily 6–8 AM','Daily 2 hr deep-work',93,96,82,97,'Cafe corner booth',current_timestamp());
