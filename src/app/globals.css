@@ -191,6 +191,65 @@ body {
   line-height: 1.5;
 }
 
+/* ── Campus Genie aura — shared with the mobile app ────────────────
+ * The portrait artwork remains a quiet, cropped edge treatment on desktop;
+ * it never sits behind copy or changes the semantic surface tokens. */
+.campus-genie-shell {
+  isolation: isolate;
+  position: relative;
+}
+
+.campus-genie-shell::before {
+  background: url("/campus-aura.png") no-repeat right bottom / contain;
+  content: "";
+  height: min(820px, 92vh);
+  opacity: 0.58;
+  pointer-events: none;
+  position: absolute;
+  right: clamp(-180px, -8vw, -72px);
+  top: max(32px, 4vh);
+  width: min(560px, 44vw);
+  z-index: 0;
+}
+
+.campus-genie-shell > * {
+  position: relative;
+  z-index: 1;
+}
+
+.campus-genie-workspace {
+  background-color: color-mix(in srgb, var(--canvas) 80%, transparent) !important;
+  backdrop-filter: blur(18px);
+}
+
+.campus-genie-welcome-mark {
+  background: linear-gradient(135deg, oklch(0.91 0.05 30), oklch(0.9 0.055 290) 52%, oklch(0.88 0.07 246));
+  box-shadow: 0 12px 30px oklch(0.55 0.09 280 / 0.18), var(--shadow-hairline);
+}
+
+.campus-genie-suggestion {
+  background-color: color-mix(in srgb, var(--surface) 82%, transparent) !important;
+  backdrop-filter: blur(10px);
+}
+
+.dark .campus-genie-shell::before {
+  content: none;
+}
+
+.dark .campus-genie-workspace,
+.dark .campus-genie-suggestion {
+  backdrop-filter: none;
+}
+
+@media (max-width: 640px) {
+  .campus-genie-shell::before {
+    opacity: 0.36;
+    right: -148px;
+    top: 22%;
+    width: 480px;
+  }
+}
+
 ::selection {
   background: var(--accent-tint);
   color: var(--ink);
@@ -1874,4 +1933,3 @@ th.is-colsel .records-header-icon {
 @media (max-width: 640px) {
   .foot-right { margin-left: 0; width: 100%; justify-content: space-between; }
 }
-

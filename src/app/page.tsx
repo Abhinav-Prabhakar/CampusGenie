@@ -653,7 +653,7 @@ export default function CampusGenieChatPage() {
   };
 
   return (
-    <main className="flex h-[100dvh] w-full gap-0 bg-canvas p-2.5 text-ink lg:pl-0 select-none">
+    <main className="campus-genie-shell flex h-[100dvh] w-full gap-0 bg-canvas p-2.5 text-ink lg:pl-0 select-none">
       {/* Left Collapsible Sidebar Navigation */}
       <SidebarNav
         fill
@@ -673,7 +673,7 @@ export default function CampusGenieChatPage() {
       />
 
       <div className="flex min-w-0 flex-1 flex-col gap-2.5">
-        <section className="relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-[14px] border border-line bg-canvas shadow-card">
+        <section className="campus-genie-workspace relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-[14px] border border-line bg-canvas shadow-card">
           {/* Top Bar */}
           <header className="flex h-11 shrink-0 items-center justify-between border-b border-line/35 px-3 sm:px-4 bg-canvas">
             <div className="flex items-center gap-2">
@@ -737,15 +737,15 @@ export default function CampusGenieChatPage() {
           {/* Main Chat Flow */}
           <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-3 pt-2 pb-28 sm:px-6 sm:pt-3 sm:pb-36">
             {messages.length === 0 ? (
-              <div className="my-auto flex flex-col items-center justify-center text-center max-w-3xl mx-auto w-full space-y-6 px-2">
-                <div className="flex size-12 items-center justify-center rounded-2xl bg-hover-2 text-ink shadow-hairline">
+              <div className="campus-genie-welcome my-auto flex flex-col items-center justify-center text-center max-w-3xl mx-auto w-full space-y-6 px-2">
+                <div className="campus-genie-welcome-mark flex size-12 items-center justify-center rounded-2xl text-ink shadow-hairline">
                   <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                     <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" />
                   </svg>
                 </div>
 
                 <div className="space-y-2 max-w-lg mx-auto">
-                  <h2 className="text-xl font-semibold text-ink">How can Campus Genie assist you today?</h2>
+                  <h2 className="text-xl font-semibold text-ink">What matters is already within reach.</h2>
                   <p className="text-[13px] text-ink-2 leading-relaxed">
                     Powered by Databricks Unity Catalog Delta tables &amp; AI reasoning. Explore research labs, AI club recruitment, campus fests, and alumni career paths.
                   </p>
@@ -758,7 +758,7 @@ export default function CampusGenieChatPage() {
                       key={idx}
                       type="button"
                       onClick={() => handleSend(s.prompt)}
-                      className="group flex flex-col justify-between rounded-[10px] border border-line bg-surface p-3.5 text-left transition-all duration-150 hover:border-line-strong hover:bg-hover hover:shadow-card active:scale-[0.99]"
+                      className="campus-genie-suggestion group flex flex-col justify-between rounded-[10px] border border-line bg-surface p-3.5 text-left transition-all duration-150 hover:border-line-strong hover:bg-hover hover:shadow-card active:scale-[0.99]"
                     >
                       <span className="text-[13px] font-medium text-ink group-hover:text-ink">{s.title}</span>
                       <span className="text-[11.5px] text-ink-3 line-clamp-2 mt-1">{s.prompt}</span>
