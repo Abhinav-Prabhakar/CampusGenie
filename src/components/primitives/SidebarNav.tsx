@@ -207,6 +207,15 @@ function IconTrophy({ size = 18 }: { size?: number }) {
  * Primary navigation: Chat, Events, Admin, Sources, and Gallery.
  * ───────────────────────────────────────────────────────── */
 
+function IconBoxCheck({ size = 18 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3.5" y="3.5" width="17" height="17" rx="3" />
+      <polyline points="8.5 12.5 11 15 15.5 9.5" />
+    </svg>
+  );
+}
+
 function IconCalCheck({ size = 18 }: { size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -228,6 +237,7 @@ const NAV_ITEMS = [
   { key: "awards", label: "Awards", icon: <IconTrophy size={18} />, count: "4", href: "/awards" },
   { key: "sources", label: "Sources", icon: <IconDatabase size={18} />, count: "5", href: "/sources" },
   { key: "gallery", label: "Gallery", icon: <IconSparkles size={18} />, href: "/gallery" },
+  { key: "compliance", label: "Compliant Box", icon: <IconBoxCheck size={18} />, href: "/compliance" },
 ];
 
 export type SidebarRecent = {
