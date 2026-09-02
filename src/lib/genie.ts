@@ -1,5 +1,6 @@
 import { execFile } from "child_process";
 import { promisify } from "util";
+import { executeLakehouseSql } from "@/lib/lakehouse";
 
 const execFileAsync = promisify(execFile);
 
@@ -72,6 +73,71 @@ function recordsFromStatementResponse(response: any): Record<string, unknown>[] 
   );
 }
 
+type LakehouseEvent = {
+  event_id: string;
+  title: string;
+};
+
+function normalizeText(value: unknown): string {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function normalizeEventId(value: unknown): string | null {
+  const match = String(value || "").match(/^EV-?(\d+)$/i);
+  return match ? `EV-${match[1]}` : null;
+}
+
+async function getLiveLakehouseEvents(): Promise<LakehouseEvent[]> {
+  const result = await executeLakehouseSql(
+    "SELECT event_id, title FROM workspace.campus_explorer.campus_events WHERE visibility = 'public' ORDER BY event_date ASC, start_time ASC",
+    undefined,
+    20
+  );
+
+  if (result.state !== "SUCCEEDED" || !result.records) return [];
+  return result.records
+    .map((record) => ({
+      event_id: String(record.event_id || ""),
+      title: String(record.title || ""),
+    }))
+    .filter((event) => Boolean(normalizeEventId(event.event_id) && normalizeText(event.title)));
+}
+
+function resolveLiveEventIds(
+  records: Record<string, unknown>[],
+  answer: string,
+  prompt: string,
+  liveEvents: LakehouseEvent[]
+): string[] {
+  const ids = new Set<string>();
+  const textCandidates = [answer, prompt, ...records.flatMap((record) => Object.values(record).map(String))]
+    .map(normalizeText)
+    .filter(Boolean);
+
+  for (const record of records) {
+    for (const value of Object.values(record)) {
+      const id = normalizeEventId(value);
+      if (id) ids.add(id);
+    }
+  }
+
+  for (const event of liveEvents) {
+    const id = normalizeEventId(event.event_id);
+    const title = normalizeText(event.title);
+    if (!id || !title) continue;
+
+    if (textCandidates.some((candidate) => candidate.includes(title))) {
+      ids.add(id);
+    }
+  }
+
+  const liveIds = new Set(liveEvents.map((event) => normalizeEventId(event.event_id)).filter(Boolean));
+  return Array.from(ids).filter((id) => liveIds.has(id));
+}
+
 export async function streamGenieConversation(
   prompt: string,
   signal: AbortSignal,
@@ -116,7 +182,7 @@ export async function streamGenieConversation(
   const answer = attachments.find((attachment) => attachment.text?.purpose?.includes("ANSWER"))?.text?.content;
   const queries = attachments.filter((attachment) => attachment.query?.query);
   const thoughts = queries.flatMap((attachment) => attachment.query?.thoughts || []).map((thought) => thought.content).filter(Boolean);
-  const eventIds = new Set<string>();
+  const genieRecords: Record<string, unknown>[] = [];
 
   for (const thought of thoughts) send({ choices: [{ delta: { reasoning_content: `${thought}\n` } }] });
   for (const attachment of queries) {
@@ -127,48 +193,16 @@ export async function streamGenieConversation(
       const result = await genieFetch(config, `/spaces/${config.spaceId}/conversations/${conversationId}/messages/${messageId}/attachments/${attachment.attachment_id}/query-result`, { signal });
       if (result.ok) records = recordsFromStatementResponse(await result.json());
     }
-    for (const record of records) {
-      const id = record.event_id || record.id;
-      if (typeof id === "string" && /^EV-?\d+$/i.test(id)) {
-        eventIds.add(id.toUpperCase().replace(/^EV(\d+)$/, "EV-$1"));
-      }
-    }
+    genieRecords.push(...records);
     send({ type: "tool_status", toolName: "genie_agent", label: `Genie SQL completed (${records.length} rows)`, active: false });
     send({ choices: [{ delta: { reasoning_content: `\n\`\`\`sql\n${query}\n\`\`\`\n` } }] });
   }
 
-  // Strictly match event IDs or exact titles if explicitly mentioned in Genie's answer
-  if (answer) {
-    for (const raw of answer.match(/\bEV-?\d+\b/gi) || []) {
-      eventIds.add(raw.toUpperCase().replace(/^EV(\d+)$/, "EV-$1"));
-    }
-
-    const KNOWN_EVENTS = [
-      { id: "EV-01", title: "ACM Weekly — Systems & Pizza" },
-      { id: "EV-02", title: "Figma 101 — Campus Design Systems" },
-      { id: "EV-03", title: "Transfer Student Firepit Mixer" },
-      { id: "EV-04", title: "Databricks Coffee Chats & Career AMA" },
-      { id: "EV-05", title: "Robotics Lab Open House" },
-      { id: "EV-06", title: "Resume Lab — Drop-in Review" },
-      { id: "EV-07", title: "Debate Society — Practice Rounds" },
-      { id: "EV-08", title: "Lightning Blitz Mini-Hack" },
-      { id: "EV-09", title: "Moonlight Jam on the Quad" },
-      { id: "EV-10", title: "HackDavis 36 — Build for Good" },
-      { id: "EV-11", title: "Intramural 3v3 Hoops Blitz" },
-      { id: "EV-12", title: "Sunrise Yoga — Library Terrace" },
-      { id: "EV-13", title: "Genie Ideathon — 48h Virtual Build" },
-      { id: "EV-14", title: "Delta Lake Deep-Dive with Genie" },
-    ];
-
-    for (const ke of KNOWN_EVENTS) {
-      if (answer.toLowerCase().includes(ke.title.toLowerCase())) {
-        eventIds.add(ke.id);
-      }
-    }
-  }
+  const liveEvents = await getLiveLakehouseEvents();
+  const eventIds = resolveLiveEventIds(genieRecords, answer || "", prompt, liveEvents);
 
   // Only emit show_events_grid if specific verified events were matched
-  if (eventIds.size > 0) {
+  if (eventIds.length > 0) {
     send({
       choices: [{
         delta: {
@@ -177,7 +211,7 @@ export async function streamGenieConversation(
             id: "genie_events",
             function: {
               name: "show_events_grid",
-              arguments: JSON.stringify({ eventIds: Array.from(eventIds), summary: `Matched ${eventIds.size} events` }),
+              arguments: JSON.stringify({ eventIds, summary: `Matched ${eventIds.length} live Lakehouse events` }),
             },
           }],
         },

@@ -63,19 +63,6 @@ function createGenieResponse(req: NextRequest, prompt: string) {
   });
 }
 
-const STATIC_FALLBACK_EVENTS = `
-- [EV-01] "ACM Weekly — Systems & Pizza" | Category: meeting | Date: Wed Apr 09, 6:30 PM | Location: Ocean Eng 214 | Host: ACM | Food: Yes | Tags: systems, pizza, networking
-- [EV-02] "Figma 101 — Campus Design Systems" | Category: workshop | Date: Wed Apr 09, 4:00 PM | Location: Virtual | Host: Design Club | Food: No | Tags: figma, design, ui/ux
-- [EV-03] "Transfer Student Firepit Mixer" | Category: social | Date: Wed Apr 09, 7:30 PM | Location: Quad Firepit | Host: Peer Mentors | Food: Yes | Tags: mixer, bonfire
-- [EV-04] "Databricks Coffee Chats" | Category: career | Date: Thu Apr 10, 1:00 PM | Location: Alumni Lounge | Host: Career Center | Food: Yes | Tags: career, databricks, coffee
-- [EV-05] "Robotics Lab Open House" | Category: meeting | Date: Thu Apr 10, 5:00 PM | Location: High Bay 102 | Host: Robotics Club | Food: No | Tags: robotics, lab, hardware
-- [EV-06] "Intramural 3v3 Hoops" | Category: sports | Date: Fri Apr 11, 4:00 PM | Location: RSF Court 2 | Host: Rec Sports | Food: No | Tags: basketball, sports, rec
-- [EV-07] "CruX Web3 & Distributed Systems" | Category: meeting | Date: Fri Apr 11, 6:00 PM | Location: Soda 306 | Host: CruX | Food: Yes | Tags: web3, crypto, systems
-- [EV-08] "Alumni in AI Panel" | Category: career | Date: Sat Apr 12, 11:00 AM | Location: Banatao Aud | Host: IEEE | Food: Yes | Tags: ai, alumni, career, panel
-- [EV-09] "Sunset Yoga on the Glade" | Category: sports | Date: Sun Apr 13, 5:30 PM | Location: Memorial Glade | Host: Mind & Body | Food: No | Tags: yoga, wellness, outdoor
-- [EV-10] "Hack the Lake — 48h Genie Build Sprint" | Category: hackathon | Date: Sat Apr 25, 9:00 AM | Location: Colt Arena | Host: AI Student Alliance | Food: Yes | Tags: hackathon, ai, lakehouse, prizes
-`.trim();
-
 async function getCampusEventsPromptSnippet(): Promise<string> {
   try {
     const res = await executeLakehouseSql(
@@ -96,7 +83,7 @@ async function getCampusEventsPromptSnippet(): Promise<string> {
   } catch (e) {
     console.error("Failed to query Lakehouse events for prompt snippet:", e);
   }
-  return STATIC_FALLBACK_EVENTS;
+  return "No live Lakehouse event records are available. Do not invent events or event IDs.";
 }
 
 function buildSystemPrompt(eventsSnippet: string): string {
