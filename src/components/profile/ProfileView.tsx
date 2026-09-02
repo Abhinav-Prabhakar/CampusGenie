@@ -167,6 +167,7 @@ export default function ProfileView() {
         <symbol id="i-down" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></symbol>
         <symbol id="i-flask" viewBox="0 0 24 24"><path d="M10 2.5v6.2L4.6 18a2 2 0 0 0 1.8 3h11.2a2 2 0 0 0 1.8-3L14 8.7V2.5"/><path d="M8.5 2.5h7M7.5 14.5h9"/></symbol>
         <symbol id="i-qr" viewBox="0 0 24 24"><path d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4z"/><path d="M14 14h2v2h-2zM18 14h2v2h-2zM14 18h2v2h-2zM18 18h2v2h-2z"/></symbol>
+        <symbol id="i-spark" viewBox="0 0 24 24"><path d="M12 2.5 14 9l6.5 2L14 13l-2 6.5L10 13l-6.5-2L10 9l2-6.5Z"/><path d="M19 15.5v3M17.5 17h3"/></symbol>
       </svg>
 
       {/* theme toggle lives outside the form */}

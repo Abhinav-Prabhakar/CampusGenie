@@ -1,263 +1,445 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import SidebarNav from "@/components/primitives/SidebarNav";
 import KeyboardShortcutsModal from "@/components/shortcuts/KeyboardShortcutsModal";
 import EventIcons from "@/components/events/EventIcons";
 import RecoveryPlanModal from "@/components/attendance/RecoveryPlanModal";
 import { useTheme } from "@/lib/theme";
-import type { AttendanceStatus, CourseAttendance } from "@/app/api/attendance/route";
+import { useCurrentUser, initialsFor } from "@/lib/useCurrentUser";
+import type { AttendanceLog, AttendanceStatus, CourseAttendance, TermMeta, TodaySession } from "@/app/api/attendance/route";
+
+/* ─────────────────────────────────────────────────────────
+ * ATTENDANCE TRACKER — live from workspace.campus_explorer.
+ * Client state is the flat log list; every view (courses,
+ * stats, term heatmap, today schedule) derives from it with
+ * the same math the API uses, so optimistic updates stay
+ * truthful. Every mutation PUTs to the Lakehouse.
+ * ───────────────────────────────────────────────────────── */
+
+type AttendancePayload = {
+  term: TermMeta;
+  stats: {
+    overallPct: number;
+    attendedCount: number;
+    missedCount: number;
+    lateCount: number;
+    presentCount: number;
+    scheduledCount: number;
+    totalSessionsToDate: number;
+    streakDays: number;
+    atRiskCoursesCount: number;
+  };
+  weekdayRates: { MON: number; TUE: number; WED: number; THU: number; FRI: number };
+  courses: CourseAttendance[];
+  termGrid: {
+    date: string;
+    week: number;
+    dayLabel: string;
+    status: "full" | "partial" | "missed" | "today" | "scheduled";
+    presentCount: number;
+    lateCount: number;
+    absentCount: number;
+    totalSessions: number;
+  }[];
+  todaySchedule: TodaySession[];
+};
+
+const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const WEEKDAY_KEYS = ["MON", "TUE", "WED", "THU", "FRI"] as const;
+
+function toISODate(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+function dayNameOf(dateStr: string): string {
+  const [y, m, d] = dateStr.split("-").map(Number);
+  return DAY_NAMES[new Date(y, m - 1, d).getDay()];
+}
+
+function nextStatus(s: AttendanceStatus): AttendanceStatus {
+  if (s === "PRESENT") return "LATE";
+  if (s === "LATE") return "ABSENT";
+  if (s === "ABSENT") return "PRESENT";
+  return "SCHEDULED";
+}
+
+/* Monogram tints — mid-lightness OKLCH hues derived like the records tags */
+const COURSE_TINTS = [
+  { color: "var(--accent)", bg: "var(--accent-tint)", border: "color-mix(in srgb, var(--accent) 30%, transparent)" },
+  { color: "oklch(0.66 0.17 300)", bg: "oklch(0.66 0.17 300 / 0.14)", border: "oklch(0.66 0.17 300 / 0.26)" },
+  { color: "oklch(0.72 0.10 221)", bg: "oklch(0.72 0.10 221 / 0.14)", border: "oklch(0.72 0.10 221 / 0.26)" },
+  { color: "var(--green)", bg: "var(--green-tint)", border: "color-mix(in srgb, var(--green) 30%, transparent)" },
+  { color: "var(--orange)", bg: "var(--orange-tint)", border: "color-mix(in srgb, var(--orange) 30%, transparent)" },
+];
+
+function fmtTime(hhmm: string): string {
+  const [h, m] = hhmm.split(":").map(Number);
+  const hour = ((h + 11) % 12) + 1;
+  return `${hour}:${String(m ?? 0).padStart(2, "0")} ${h < 12 ? "AM" : "PM"}`;
+}
 
 export default function AttendancePage() {
   const { isDark, toggleTheme } = useTheme();
+  const { user } = useCurrentUser();
   const [shortcutsOpen, setShortcutsOpen] = useState<boolean>(false);
   const [recoveryModalOpen, setRecoveryModalOpen] = useState<boolean>(false);
   const [selectedCourseForRecovery, setSelectedCourseForRecovery] = useState<CourseAttendance | null>(null);
 
-  // Data from Databricks Lakehouse
   const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [fetchError, setFetchError] = useState<string | null>(null);
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
-  const [dataSource, setDataSource] = useState<string>("lakehouse");
-  const [courses, setCourses] = useState<CourseAttendance[]>([]);
-  const [termGrid, setTermGrid] = useState<any[]>([]);
-  const [weekdayRates, setWeekdayRates] = useState({ MON: 79, TUE: 93, WED: 86, THU: 92, FRI: 83 });
-  const [stats, setStats] = useState({
-    overallPct: 86,
-    attendedCount: 56,
-    missedCount: 9,
-    lateCount: 6,
-    presentCount: 49,
-    scheduledCount: 74,
-    totalSessionsToDate: 65,
-    streakDays: 9,
-    atRiskCoursesCount: 1,
-  });
-
-  // Interactive States
-  const [isAlertDismissed, setIsAlertDismissed] = useState<boolean>(false);
-  const [activeView, setActiveView] = useState<"heatmap" | "trend">("heatmap");
-  const [checkInEng, setCheckInEng] = useState<boolean>(false);
-  const [remindCs, setRemindCs] = useState<boolean>(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
-  // Filter Chips State
+  // Source of truth: the flat list of this user's session logs
+  const [logs, setLogs] = useState<AttendanceLog[]>([]);
+  const [courseInfo, setCourseInfo] = useState<Omit<CourseAttendance, "logs" | "heatmapDays" | "totalSessionsToDate" | "scheduledCount" | "attendedCount" | "lateCount" | "absentCount" | "currentPercentage" | "isAtRisk" | "statusLabel">[]>([]);
+  const [term, setTerm] = useState<TermMeta | null>(null);
+
+  const todayStr = toISODate(new Date());
+
+  // Filter chips + view state
   const [filterPresent, setFilterPresent] = useState<boolean>(true);
   const [filterLate, setFilterLate] = useState<boolean>(true);
   const [filterAbsent, setFilterAbsent] = useState<boolean>(true);
   const [filterScheduled, setFilterScheduled] = useState<boolean>(true);
+  const [activeView, setActiveView] = useState<"heatmap" | "trend">("heatmap");
 
-  const fetchAttendance = async () => {
+  const fetchAttendance = useCallback(async () => {
     try {
-      const res = await fetch("/api/attendance");
-      if (res.ok) {
-        const data = await res.json();
-        if (data.courses) setCourses(data.courses);
-        if (data.termGrid) setTermGrid(data.termGrid);
-        if (data.stats) setStats(data.stats);
-        if (data.weekdayRates) setWeekdayRates(data.weekdayRates);
-        if (data.source) setDataSource(data.source);
-      }
-    } catch (err) {
-      console.warn("Failed to fetch attendance:", err);
+      const res = await fetch("/api/attendance", { cache: "no-store" });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || `Request failed (${res.status})`);
+      setFetchError(null);
+      setLogs((data.courses as CourseAttendance[]).flatMap((c) => c.logs));
+      setCourseInfo(
+        (data.courses as CourseAttendance[]).map((c) => ({
+          courseId: c.courseId,
+          courseCode: c.courseCode,
+          title: c.title,
+          instructor: c.instructor,
+          location: c.location,
+          scheduleDays: c.scheduleDays,
+          startTime: c.startTime,
+          durationMins: c.durationMins,
+          minAttendancePct: c.minAttendancePct,
+        }))
+      );
+      setTerm(data.term);
+    } catch (err: any) {
+      setFetchError(err?.message || "Failed to load attendance");
     } finally {
       setIsLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     fetchAttendance();
-  }, []);
+  }, [fetchAttendance]);
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
-    setTimeout(() => setToastMessage(null), 2500);
+    setTimeout(() => setToastMessage(null), 2600);
   };
 
-  // ── TOGGLE A CELL IN TERM HEATMAP ──────────────────────────────
-  const handleToggleTermCell = async (cellIndex: number) => {
-    const cell = termGrid[cellIndex];
-    if (!cell || cell.status === "scheduled" || cell.status === "today") return;
+  /* ── persist a mutation; roll back to server truth on failure ── */
+  const persist = useCallback(
+    async (body: Record<string, unknown>, successMsg: string, optimistic: () => void) => {
+      optimistic();
+      setIsSyncing(true);
+      try {
+        const res = await fetch("/api/attendance", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data?.error || `Request failed (${res.status})`);
+        showToast(successMsg);
+      } catch {
+        showToast("Sync failed — restoring from Lakehouse");
+        await fetchAttendance();
+      } finally {
+        setIsSyncing(false);
+      }
+    },
+    [fetchAttendance]
+  );
 
-    // Cycle: full -> partial -> missed -> full
-    const nextStatusMap: Record<string, "full" | "partial" | "missed"> = {
-      full: "partial",
-      partial: "missed",
-      missed: "full",
-    };
-    const nextStatus = nextStatusMap[cell.status] || "full";
-
-    const updatedGrid = [...termGrid];
-    updatedGrid[cellIndex] = { ...cell, status: nextStatus };
-    setTermGrid(updatedGrid);
-
-    // Map nextStatus to AttendanceStatus
-    const logStatus = nextStatus === "full" ? "PRESENT" : nextStatus === "partial" ? "LATE" : "ABSENT";
-
-    // Optimistically update stats
-    recalculateFromGrid(updatedGrid);
-
-    // Persist to Databricks Lakehouse
-    setIsSyncing(true);
-    try {
-      await fetch("/api/attendance", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          courseId: "MATH-201",
-          sessionDate: cell.date,
-          newStatus: logStatus,
-        }),
-      });
-      showToast(`Updated ${cell.dayLabel}, ${cell.date} to ${logStatus} in Lakehouse`);
-    } catch (e) {
-      console.error("Failed to sync cell update:", e);
-    } finally {
-      setIsSyncing(false);
+  /* ── derive every view from the log list ─────────────────────── */
+  const view = useMemo(() => {
+    const logsByCourse = new Map<string, AttendanceLog[]>();
+    for (const l of logs) {
+      if (!logsByCourse.has(l.courseId)) logsByCourse.set(l.courseId, []);
+      logsByCourse.get(l.courseId)!.push(l);
     }
-  };
 
-  // ── TOGGLE A CELL IN A SPECIFIC COURSE CARD ────────────────────
-  const handleToggleCourseSession = async (courseId: string, dayIndex: number) => {
-    const course = courses.find((c) => c.courseId === courseId);
-    if (!course || !course.heatmapDays[dayIndex]) return;
-
-    const currentItem = course.heatmapDays[dayIndex];
-    if (currentItem.status === "SCHEDULED") return;
-
-    const nextStatusMap: Record<AttendanceStatus, AttendanceStatus> = {
-      PRESENT: "LATE",
-      LATE: "ABSENT",
-      ABSENT: "PRESENT",
-      SCHEDULED: "SCHEDULED",
-    };
-    const nextStatus = nextStatusMap[currentItem.status];
-
-    // Optimistically update courses
-    const updatedCourses = courses.map((c) => {
-      if (c.courseId !== courseId) return c;
-      const updatedDays = [...c.heatmapDays];
-      updatedDays[dayIndex] = { ...currentItem, status: nextStatus };
-
-      const past = updatedDays.filter((d) => d.status !== "SCHEDULED");
-      const att = past.filter((d) => d.status === "PRESENT").length;
-      const lte = past.filter((d) => d.status === "LATE").length;
-      const abs = past.filter((d) => d.status === "ABSENT").length;
-      const total = past.length || 1;
-      const effective = att + lte * 0.75;
-      const pct = Math.round((effective / total) * 100);
-      const isAtRisk = pct < c.minAttendancePct;
-
+    const courses: CourseAttendance[] = courseInfo.map((c) => {
+      const courseLogs = (logsByCourse.get(c.courseId) || []).sort((a, b) => a.sessionDate.localeCompare(b.sessionDate));
+      const pastLogs = courseLogs.filter((l) => l.status !== "SCHEDULED");
+      const attended = pastLogs.filter((l) => l.status === "PRESENT").length;
+      const late = pastLogs.filter((l) => l.status === "LATE").length;
+      const absent = pastLogs.filter((l) => l.status === "ABSENT").length;
+      const total = pastLogs.length || 1;
+      const pct = total > 0 ? Math.round(((attended + late * 0.75) / total) * 100) : 0;
       return {
         ...c,
-        attendedCount: att,
-        lateCount: lte,
-        absentCount: abs,
+        totalSessionsToDate: pastLogs.length,
+        scheduledCount: courseLogs.filter((l) => l.status === "SCHEDULED").length,
+        attendedCount: attended,
+        lateCount: late,
+        absentCount: absent,
         currentPercentage: pct,
-        isAtRisk,
-        statusLabel: pct >= 95 ? "Perfect" : isAtRisk ? "At risk" : "On track",
-        heatmapDays: updatedDays,
+        isAtRisk: pct < c.minAttendancePct,
+        statusLabel: pct >= 95 ? "Perfect" : pct < c.minAttendancePct ? "At risk" : "On track",
+        logs: courseLogs,
+        heatmapDays: courseLogs.map((l) => ({
+          date: l.sessionDate,
+          day: dayNameOf(l.sessionDate),
+          status: l.status,
+          logId: l.logId,
+        })),
       };
     });
 
-    setCourses(updatedCourses);
+    const pastLogs = logs.filter((l) => l.status !== "SCHEDULED");
+    const presentCount = pastLogs.filter((l) => l.status === "PRESENT").length;
+    const lateCount = pastLogs.filter((l) => l.status === "LATE").length;
+    const absentCount = pastLogs.filter((l) => l.status === "ABSENT").length;
+    const totalToDate = pastLogs.length;
+    const overallPct = totalToDate > 0 ? Math.round(((presentCount + lateCount * 0.75) / totalToDate) * 100) : 0;
 
-    // Recalculate global stats
-    recalculateGlobalStats(updatedCourses);
-
-    // Persist to Databricks
-    setIsSyncing(true);
-    try {
-      await fetch("/api/attendance", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          logId: currentItem.logId,
-          courseId,
-          sessionDate: currentItem.date,
-          newStatus: nextStatus,
-        }),
-      });
-      showToast(`${course.courseCode} ${currentItem.date} set to ${nextStatus}`);
-    } catch (e) {
-      console.error("Failed to update course session:", e);
-    } finally {
-      setIsSyncing(false);
-    }
-  };
-
-  const recalculateFromGrid = (grid: any[]) => {
-    const pastCells = grid.filter((c) => c.status !== "scheduled" && c.status !== "today");
-    const full = pastCells.filter((c) => c.status === "full").length;
-    const partial = pastCells.filter((c) => c.status === "partial").length;
-    const missed = pastCells.filter((c) => c.status === "missed").length;
-    const total = pastCells.length || 1;
-    const pct = Math.round(((full * 2 + partial * 1.5) / (total * 2)) * 100);
-
-    setStats((prev) => ({
-      ...prev,
-      overallPct: pct,
-      attendedCount: full * 2 + partial,
-      missedCount: missed * 2,
-      lateCount: partial * 2,
-      presentCount: full * 2,
-    }));
-  };
-
-  const recalculateGlobalStats = (courseList: CourseAttendance[]) => {
-    let totalAtt = 0;
-    let totalLte = 0;
-    let totalAbs = 0;
-    let atRisk = 0;
-
-    for (const c of courseList) {
-      totalAtt += c.attendedCount;
-      totalLte += c.lateCount;
-      totalAbs += c.absentCount;
-      if (c.isAtRisk) atRisk++;
+    // Streak: most-recent consecutive school days without an absence
+    const sorted = [...pastLogs].sort((a, b) => b.sessionDate.localeCompare(a.sessionDate));
+    let streak = 0;
+    const seen = new Set<string>();
+    for (const l of sorted) {
+      if (!seen.has(l.sessionDate)) {
+        seen.add(l.sessionDate);
+        if (l.status === "ABSENT") break;
+        streak++;
+      }
     }
 
-    const totalToDate = totalAtt + totalLte + totalAbs || 65;
-    const overallPct = Math.round(((totalAtt + totalLte * 0.75) / totalToDate) * 100);
+    // Weekday rates
+    const weekday = Object.fromEntries(WEEKDAY_KEYS.map((k) => [k, { total: 0, attended: 0 }])) as Record<
+      (typeof WEEKDAY_KEYS)[number],
+      { total: number; attended: number }
+    >;
+    for (const l of pastLogs) {
+      const key = dayNameOf(l.sessionDate).toUpperCase() as (typeof WEEKDAY_KEYS)[number];
+      if (weekday[key]) {
+        weekday[key].total++;
+        if (l.status === "PRESENT" || l.status === "LATE") weekday[key].attended++;
+      }
+    }
+    const weekdayRates = Object.fromEntries(
+      WEEKDAY_KEYS.map((k) => [k, weekday[k].total ? Math.round((weekday[k].attended / weekday[k].total) * 100) : 0])
+    ) as AttendancePayload["weekdayRates"];
 
-    setStats((prev) => ({
-      ...prev,
-      overallPct,
-      attendedCount: totalAtt + totalLte,
-      missedCount: totalAbs,
-      lateCount: totalLte,
-      presentCount: totalAtt,
-      atRiskCoursesCount: atRisk,
-    }));
+    // Term heatmap grid
+    const termGrid: AttendancePayload["termGrid"] = [];
+    if (term) {
+      const [sy, sm, sd] = term.startDate.split("-").map(Number);
+      const termStart = new Date(sy, sm - 1, sd);
+      for (let w = 1; w <= term.weeksTotal; w++) {
+        for (let d = 0; d < 5; d++) {
+          const cellDate = new Date(termStart);
+          cellDate.setDate(termStart.getDate() + (w - 1) * 7 + d);
+          const dateStr = toISODate(cellDate);
+          const dayLogs = logs.filter((l) => l.sessionDate === dateStr);
+          const pres = dayLogs.filter((l) => l.status === "PRESENT").length;
+          const lte = dayLogs.filter((l) => l.status === "LATE").length;
+          const abs = dayLogs.filter((l) => l.status === "ABSENT").length;
+          let status: "full" | "partial" | "missed" | "today" | "scheduled" = "scheduled";
+          if (dateStr === todayStr) status = "today";
+          else if (dateStr < todayStr && dayLogs.length > 0) {
+            if (pres === 0 && lte === 0 && abs > 0) status = "missed";
+            else if (abs > 0 || lte > 0) status = "partial";
+            else status = "full";
+          }
+          termGrid.push({
+            date: dateStr,
+            week: w,
+            dayLabel: DAY_NAMES[cellDate.getDay()],
+            status,
+            presentCount: pres,
+            lateCount: lte,
+            absentCount: abs,
+            totalSessions: dayLogs.length,
+          });
+        }
+      }
+    }
+
+    // Today's real schedule
+    const todayDay = DAY_NAMES[new Date().getDay()];
+    const todaySchedule: (TodaySession & { courseIndex: number })[] = courseInfo
+      .map((c, i) => ({ c, i }))
+      .filter(({ c }) => c.scheduleDays.includes(todayDay))
+      .map(({ c, i }) => {
+        const log = logs.find((l) => l.courseId === c.courseId && l.sessionDate === todayStr);
+        return {
+          courseId: c.courseId,
+          courseCode: c.courseCode,
+          title: c.title,
+          startTime: c.startTime,
+          durationMins: c.durationMins,
+          room: c.location,
+          logId: log?.logId ?? null,
+          status: log?.status ?? "SCHEDULED",
+          courseIndex: i,
+        };
+      })
+      .sort((a, b) => a.startTime.localeCompare(b.startTime));
+
+    return {
+      courses,
+      stats: {
+        overallPct,
+        attendedCount: presentCount + lateCount,
+        missedCount: absentCount,
+        lateCount,
+        presentCount,
+        scheduledCount: logs.filter((l) => l.status === "SCHEDULED").length,
+        totalSessionsToDate: totalToDate,
+        streakDays: streak,
+        atRiskCoursesCount: courses.filter((c) => c.isAtRisk).length,
+      },
+      weekdayRates,
+      termGrid,
+      todaySchedule,
+    };
+  }, [logs, courseInfo, term, todayStr]);
+
+  const { courses, stats, weekdayRates, termGrid, todaySchedule } = view;
+
+  /* ── interactions (all persist to the Lakehouse) ─────────────── */
+
+  // Course card cell: cycle this single session's status
+  const handleToggleCourseSession = (course: CourseAttendance, dayIndex: number) => {
+    const item = course.heatmapDays[dayIndex];
+    if (!item || item.status === "SCHEDULED") return;
+    const next = nextStatus(item.status);
+    persist(
+      { logId: item.logId, newStatus: next },
+      `${course.courseCode} · ${item.date} set to ${next}`,
+      () =>
+        setLogs((prev) => prev.map((l) => (l.logId === item.logId ? { ...l, status: next } : l)))
+    );
   };
+
+  // Term heatmap cell: advance every session that day one step
+  const handleAdvanceDay = (cell: AttendancePayload["termGrid"][number]) => {
+    if (cell.status === "scheduled" || cell.status === "today" || cell.totalSessions === 0) return;
+    persist(
+      { advanceDate: cell.date },
+      `Advanced ${cell.totalSessions} session${cell.totalSessions === 1 ? "" : "s"} on ${cell.date}`,
+      () =>
+        setLogs((prev) =>
+          prev.map((l) =>
+            l.sessionDate === cell.date && l.status !== "SCHEDULED" ? { ...l, status: nextStatus(l.status) } : l
+          )
+        )
+    );
+  };
+
+  // Today check-in: mark PRESENT (or undo back to SCHEDULED)
+  const handleCheckIn = (session: TodaySession, status: AttendanceStatus) => {
+    persist(
+      { courseId: session.courseId, sessionDate: todayStr, newStatus: status },
+      status === "PRESENT"
+        ? `Checked in to ${session.courseCode} — recorded in the Lakehouse`
+        : `${session.courseCode} reset to scheduled`,
+      () => {
+        setLogs((prev) => {
+          if (session.logId) {
+            return prev.map((l) => (l.logId === session.logId ? { ...l, status } : l));
+          }
+          return [
+            ...prev,
+            {
+              logId: `LOG-local-${session.courseId}-${todayStr.replace(/-/g, "")}`,
+              studentId: user?.userId ?? "local",
+              courseId: session.courseId,
+              sessionDate: todayStr,
+              status,
+            },
+          ];
+        });
+      }
+    );
+  };
+
+  /* ── derived bits for copy ────────────────────────────────────── */
+  const atRiskCourses = useMemo(
+    () => [...courses].filter((c) => c.isAtRisk).sort((a, b) => a.currentPercentage - b.currentPercentage),
+    [courses]
+  );
+  const alertCourse = atRiskCourses[0] ?? null;
+
+  // Sessions needed to clear the cutoff: (eff + p) / (n + p) >= cutoff
+  const recoveryMath = useMemo(() => {
+    if (!alertCourse) return null;
+    const cutoff = alertCourse.minAttendancePct / 100;
+    const eff = alertCourse.attendedCount + alertCourse.lateCount * 0.75;
+    const n = alertCourse.totalSessionsToDate;
+    const needed = Math.max(0, Math.ceil((cutoff * n - eff) / (1 - cutoff)));
+    return { needed, remaining: alertCourse.scheduledCount };
+  }, [alertCourse]);
+
+  const worstCourse = useMemo(
+    () => [...courses].sort((a, b) => b.absentCount - a.absentCount)[0] ?? null,
+    [courses]
+  );
+
+  const todayLabel = new Date().toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
+  const todayDone = todaySchedule.filter((s) => s.status !== "SCHEDULED").length;
+
+  // Month segments across the heatmap (JUL · AUG · SEP …)
+  const monthSegments = useMemo(() => {
+    const segs: { label: string; span: number }[] = [];
+    for (const cell of termGrid) {
+      const label = new Date(cell.date + "T00:00:00").toLocaleDateString("en-US", { month: "short" }).toUpperCase();
+      const last = segs[segs.length - 1];
+      if (last && last.label === label) last.span++;
+      else segs.push({ label, span: 1 });
+    }
+    return segs;
+  }, [termGrid]);
+
+  const lowestDay = WEEKDAY_KEYS.reduce((a, b) => (weekdayRates[a] <= weekdayRates[b] ? a : b), "MON" as (typeof WEEKDAY_KEYS)[number]);
+  const highestDay = WEEKDAY_KEYS.reduce((a, b) => (weekdayRates[a] >= weekdayRates[b] ? a : b), "MON" as (typeof WEEKDAY_KEYS)[number]);
+  const worstDayLabel = { MON: "Mon", TUE: "Tue", WED: "Wed", THU: "Thu", FRI: "Fri" }[lowestDay];
+  const bestDayLabel = { MON: "Mon", TUE: "Tue", WED: "Wed", THU: "Thu", FRI: "Fri" }[highestDay];
 
   const handleResetFilters = () => {
     setFilterPresent(true);
     setFilterLate(true);
     setFilterAbsent(true);
     setFilterScheduled(true);
-    setActiveView("heatmap");
   };
 
-  // Find MATH 201 course for the alert
-  const mathCourse: CourseAttendance = courses.find((c) => c.courseCode.includes("201")) || {
-    courseId: "MATH-201",
-    courseCode: "MATH 201",
-    title: "Linear Algebra",
-    instructor: "Dr. Okafor",
-    location: "Hart 112",
-    scheduleDays: ["Mon", "Wed", "Fri"],
-    startTime: "09:00",
-    durationMins: 50,
-    minAttendancePct: 75,
-    currentPercentage: 70,
-    isAtRisk: true,
-    statusLabel: "At risk",
-    attendedCount: 11,
-    lateCount: 2,
-    absentCount: 6,
-    totalSessionsToDate: 19,
-    logs: [],
-    heatmapDays: [],
+  const handleExportCsv = () => {
+    const header = "Course,Title,Instructor,Attended,Late,Absent,Scheduled,To Date,Percentage";
+    const lines = courses.map((c) =>
+      [c.courseCode, c.title, c.instructor, c.attendedCount, c.lateCount, c.absentCount, c.scheduledCount, c.totalSessionsToDate, `${c.currentPercentage}%`]
+        .map((v) => {
+          const s = String(v);
+          return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+        })
+        .join(",")
+    );
+    const blob = new Blob([`${header}\n${lines.join("\n")}\n`], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `attendance-${term?.startDate ?? todayStr}.csv`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(url);
+    showToast("Attendance report downloaded");
   };
 
   return (
@@ -273,7 +455,7 @@ export default function AttendancePage() {
       <div className="flex min-w-0 flex-1 flex-col gap-2.5">
         <section className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-[14px] border border-line bg-canvas shadow-card">
           {/* Header */}
-          <header className="flex h-11 shrink-0 items-center justify-between border-b border-line px-3 sm:px-4 bg-surface">
+          <header className="flex h-11 shrink-0 items-center justify-between border-b border-line px-3 sm:px-4 bg-canvas">
             <div className="flex items-center gap-2">
               <span className="flex items-center gap-1.5 text-[13.5px] font-semibold text-ink">
                 <span className="text-accent">
@@ -284,9 +466,11 @@ export default function AttendancePage() {
                 </span>
                 <span>Attendance Tracker</span>
               </span>
-              <span className="hidden sm:inline-flex items-center rounded-full border border-line bg-inset px-2 py-0.5 font-mono text-[10px] font-medium tracking-wide text-ink-3">
-                SPRING · WEEK 7/14
-              </span>
+              {term && (
+                <span className="hidden sm:inline-flex items-center rounded-full border border-line bg-inset px-2 py-0.5 font-mono text-[10px] font-medium tracking-wide text-ink-3 tabular-nums">
+                  {term.label} · WEEK {term.weekNumber}/{term.weeksTotal}
+                </span>
+              )}
               {isSyncing && (
                 <span className="inline-flex items-center gap-1 text-[11px] text-accent animate-pulse font-mono">
                   <span className="size-1.5 rounded-full bg-accent animate-ping" />
@@ -300,7 +484,7 @@ export default function AttendancePage() {
                 type="button"
                 onClick={() => setShortcutsOpen(true)}
                 title="Keyboard Shortcuts (⌘K)"
-                className="flex size-7 items-center justify-center rounded-[7px] border border-line bg-canvas text-ink-2 hover:bg-hover hover:text-ink transition-colors duration-100"
+                className="flex size-7 items-center justify-center rounded-[7px] border border-line bg-surface text-ink-2 hover:bg-hover hover:text-ink transition-colors duration-100"
               >
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                   <rect x="2.5" y="6" width="19" height="12" rx="2" />
@@ -312,7 +496,7 @@ export default function AttendancePage() {
                 type="button"
                 onClick={toggleTheme}
                 title="Toggle Theme"
-                className="flex size-7 items-center justify-center rounded-[7px] border border-line bg-canvas text-ink-2 hover:bg-hover hover:text-ink transition-colors duration-100"
+                className="flex size-7 items-center justify-center rounded-[7px] border border-line bg-surface text-ink-2 hover:bg-hover hover:text-ink transition-colors duration-100"
               >
                 {isDark ? (
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -325,41 +509,45 @@ export default function AttendancePage() {
                 )}
               </button>
 
-              <span className="flex size-6.5 items-center justify-center rounded-full border border-line bg-field text-[10px] font-semibold text-ink-2">
-                AK
+              <span
+                title={user?.fullName ?? "Student"}
+                className="flex size-6.5 items-center justify-center rounded-full border border-line bg-field text-[10px] font-semibold text-ink-2"
+              >
+                {initialsFor(user)}
               </span>
             </div>
           </header>
 
           {/* Toast Notification */}
           {toastMessage && (
-            <div className="absolute top-14 right-6 z-50 rounded-[8px] border border-accent bg-surface px-3 py-1.5 text-[12px] font-medium text-ink shadow-lg animate-fade-in flex items-center gap-2">
-              <span className="size-2 rounded-full bg-accent animate-pulse" />
+            <div className="absolute top-14 right-6 z-50 rounded-[8px] border border-line bg-surface px-3 py-1.5 text-[12px] font-medium text-ink shadow-overlay animate-fade-in flex items-center gap-2">
+              <span className="size-2 rounded-full bg-green" />
               {toastMessage}
             </div>
           )}
 
           {/* Body content */}
           <div className="min-h-0 flex-1 overflow-y-auto p-3 sm:p-4 space-y-4 bg-canvas">
-            {/* ── risk alert (dismissible) ───────────────────── */}
-            {!isAlertDismissed && mathCourse.isAtRisk ? (
-              <div className="relative flex items-center justify-between gap-3 flex-wrap rounded-[12px] border border-orange/35 bg-orange-tint/20 p-3.5 shadow-sm animate-fade-in">
-                <button
-                  type="button"
-                  onClick={() => setIsAlertDismissed(true)}
-                  className="absolute top-2 right-2 flex size-6 items-center justify-center rounded-[6px] text-ink-3 hover:bg-hover hover:text-ink transition-colors"
-                  title="Dismiss warning"
-                >
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M18 6L6 18M6 6l12 12" /></svg>
+            {fetchError && (
+              <div className="flex items-center gap-2 rounded-[12px] border border-red/30 bg-red-tint/20 p-3.5 text-[12.5px] text-red">
+                <span className="font-semibold">Couldn&apos;t load attendance:</span>
+                <span>{fetchError}</span>
+                <button type="button" onClick={fetchAttendance} className="ml-auto text-[12px] font-medium underline hover:no-underline">
+                  Retry
                 </button>
+              </div>
+            )}
 
+            {/* ── risk alert (real at-risk course) ───────────── */}
+            {alertCourse && recoveryMath ? (
+              <div className="relative flex items-center justify-between gap-3 flex-wrap rounded-[12px] border border-orange/35 bg-orange-tint/20 p-3.5 shadow-sm animate-fade-in">
                 <div className="flex items-start gap-3 min-w-[260px] flex-1 pr-6">
                   <span className="flex size-8.5 shrink-0 items-center justify-center rounded-[9px] border border-orange/40 bg-orange-tint text-orange">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M10.3 3.8 1.9 18a2 2 0 0 0 1.7 3h16.8a2 2 0 0 0 1.7-3L13.7 3.8a2 2 0 0 0-3.4 0Z"/><path d="M12 9v4M12 17h.01"/></svg>
                   </span>
                   <div>
                     <div className="flex items-center gap-2 flex-wrap">
-                      <b className="text-[13.5px] font-semibold text-ink">MATH 201 · Linear Algebra</b>
+                      <b className="text-[13.5px] font-semibold text-ink">{alertCourse.courseCode} · {alertCourse.title}</b>
                       <span className="inline-flex items-center gap-1 rounded-full bg-red-tint px-2 py-0.5 text-[10.5px] font-medium text-red">
                         <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M10.3 3.8 1.9 18a2 2 0 0 0 1.7 3h16.8a2 2 0 0 0 1.7-3L13.7 3.8a2 2 0 0 0-3.4 0Z"/><path d="M12 9v4M12 17h.01"/></svg>
                         At risk
@@ -367,19 +555,27 @@ export default function AttendancePage() {
                       <span className="text-[12px] text-ink-2">exam eligibility</span>
                     </div>
                     <p className="mt-1 text-[12.5px] text-ink-2 leading-relaxed">
-                      Attendance is <b className="text-red font-semibold tabular-nums">{mathCourse.currentPercentage}%</b> — below the <b className="font-semibold text-ink">75%</b> cutoff. Attend <b className="text-ink tabular-nums">18 of the remaining 22</b> sessions to restore eligibility.
+                      Attendance is <b className="text-red font-semibold tabular-nums">{alertCourse.currentPercentage}%</b> — below the{" "}
+                      <b className="font-semibold text-ink tabular-nums">{alertCourse.minAttendancePct}%</b> cutoff.{" "}
+                      {recoveryMath.remaining > 0 ? (
+                        <>
+                          Attend <b className="text-ink tabular-nums">{Math.min(recoveryMath.needed, recoveryMath.remaining)} of the remaining {recoveryMath.remaining}</b> sessions to restore eligibility.
+                        </>
+                      ) : (
+                        <>No sessions remain this term — talk to your instructor about eligibility.</>
+                      )}
                     </p>
                   </div>
                 </div>
 
                 <div className="flex flex-col gap-1.5 w-40 shrink-0">
-                  <div className="relative h-1.5 w-full rounded-full bg-line overflow-hidden">
-                    <div className="absolute top-0 bottom-0 left-0 bg-red rounded-full" style={{ width: `${mathCourse.currentPercentage}%` }} />
-                    <div className="absolute top-0 bottom-0 w-0.5 bg-ink" style={{ left: "75%" }} />
+                  <div className="relative h-1.5 w-full rounded-full bg-hover overflow-hidden">
+                    <div className="absolute top-0 bottom-0 left-0 bg-red rounded-full" style={{ width: `${Math.min(100, alertCourse.currentPercentage)}%` }} />
+                    <div className="absolute top-0 bottom-0 w-0.5 bg-ink" style={{ left: `${alertCourse.minAttendancePct}%` }} />
                   </div>
                   <div className="flex justify-between text-[10.5px] font-medium tabular-nums">
-                    <span className="text-red font-semibold">{mathCourse.currentPercentage}% now</span>
-                    <span className="text-ink-3">75% cutoff</span>
+                    <span className="text-red font-semibold">{alertCourse.currentPercentage}% now</span>
+                    <span className="text-ink-3">{alertCourse.minAttendancePct}% cutoff</span>
                   </div>
                 </div>
 
@@ -387,49 +583,29 @@ export default function AttendancePage() {
                   <button
                     type="button"
                     onClick={() => {
-                      setSelectedCourseForRecovery(mathCourse);
+                      setSelectedCourseForRecovery(alertCourse);
                       setRecoveryModalOpen(true);
                     }}
-                    className="inline-flex h-7.5 items-center gap-1.5 rounded-[8px] bg-accent px-3 text-[12px] font-medium text-white shadow-sm hover:brightness-105 transition-all cursor-pointer active:scale-[0.98]"
+                    className="inline-flex h-7.5 items-center gap-1.5 rounded-[8px] bg-accent px-3 text-[12px] font-medium text-white shadow-sm transition-colors hover:bg-accent-ink active:scale-[0.98] cursor-pointer"
                   >
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.5"/></svg>
                     Recovery plan
                   </button>
-                  <button type="button" className="inline-flex h-7.5 items-center gap-1.5 rounded-[8px] border border-line bg-surface px-2.5 text-[12px] font-medium text-ink-2 hover:bg-hover hover:text-ink transition-colors">
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg>
-                    Remind me
-                  </button>
                 </div>
               </div>
-            ) : !isAlertDismissed && !mathCourse.isAtRisk ? (
+            ) : !fetchError && !isLoading && courses.length > 0 ? (
               <div className="flex items-center justify-between gap-3 rounded-[12px] border border-green/30 bg-green-tint/20 p-3 shadow-sm animate-fade-in">
                 <div className="flex items-center gap-2.5">
                   <span className="flex size-7 items-center justify-center rounded-full bg-green text-white">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="20 6 9 17 4 12" /></svg>
                   </span>
                   <div>
-                    <span className="text-[13px] font-semibold text-green">All 5 courses in safe standing!</span>
-                    <p className="text-[12px] text-ink-2">MATH 201 attendance is now {mathCourse.currentPercentage}% — meeting all final exam cutoffs.</p>
+                    <span className="text-[13px] font-semibold text-green">All {courses.length} courses in safe standing!</span>
+                    <p className="text-[12px] text-ink-2">Every course is meeting its {stats.overallPct >= 75 ? "final exam attendance cutoff" : "attendance threshold so far"}.</p>
                   </div>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setIsAlertDismissed(true)}
-                  className="text-[12px] font-medium text-ink-3 hover:text-ink"
-                >
-                  Dismiss
-                </button>
               </div>
-            ) : (
-              <button
-                type="button"
-                onClick={() => setIsAlertDismissed(false)}
-                className="inline-flex items-center gap-1.5 rounded-full border border-line bg-surface px-2.5 py-1 text-[11.5px] font-medium text-ink-3 hover:text-ink hover:bg-hover transition-colors"
-              >
-                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M10.3 3.8 1.9 18a2 2 0 0 0 1.7 3h16.8a2 2 0 0 0 1.7-3L13.7 3.8a2 2 0 0 0-3.4 0Z"/><path d="M12 9v4M12 17h.01"/></svg>
-                Course warning banner hidden — restore
-              </button>
-            )}
+            ) : null}
 
             {/* ── stats strip ────────────────────────────────── */}
             <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3" aria-label="Attendance summary">
@@ -462,10 +638,7 @@ export default function AttendancePage() {
                     <span className="text-[11.5px] text-ink-3 tabular-nums">{stats.attendedCount} / {stats.totalSessionsToDate} sessions</span>
                   </div>
                   <div className="flex items-center gap-1 mt-1 text-[11px] text-ink-3">
-                    <span className="inline-flex items-center rounded-full bg-green-tint px-1.5 py-0.2 text-[10px] font-medium text-green tabular-nums">
-                      +4.2 pts
-                    </span>
-                    vs winter term
+                    <span>lates count ¾ attendance</span>
                   </div>
                 </div>
               </div>
@@ -481,17 +654,9 @@ export default function AttendancePage() {
                     <b className="text-[18px] font-semibold text-ink tabular-nums">{stats.attendedCount}</b>
                     <span className="text-[11.5px] text-ink-3 tabular-nums">of {stats.totalSessionsToDate} to date</span>
                   </div>
-                  <div className="flex items-center gap-1.5 mt-1 text-[11px] text-ink-3">
-                    <span className="flex items-end gap-0.5 h-3.5">
-                      <i className="w-1 rounded-sm bg-accent/70 h-[90%]" />
-                      <i className="w-1 rounded-sm bg-accent/70 h-[90%]" />
-                      <i className="w-1 rounded-sm bg-accent/70 h-[80%]" />
-                      <i className="w-1 rounded-sm bg-accent/70 h-[90%]" />
-                      <i className="w-1 rounded-sm bg-accent/70 h-[80%]" />
-                      <i className="w-1 rounded-sm bg-accent/70 h-[80%]" />
-                      <i className="w-1 rounded-sm bg-accent/70 h-[75%]" />
-                    </span>
-                    weekly rate
+                  <div className="flex items-center gap-1 mt-1 text-[11px] text-ink-3">
+                    <span className="text-orange tabular-nums">{stats.lateCount} late</span>
+                    <span>· counted at ¾ credit</span>
                   </div>
                 </div>
               </div>
@@ -508,10 +673,8 @@ export default function AttendancePage() {
                     <span className="text-[11.5px] text-ink-3">school days</span>
                   </div>
                   <div className="flex items-center gap-1 mt-1 text-[11px] text-ink-3">
-                    <span className="inline-flex items-center rounded-full bg-green-tint px-1.5 py-0.2 text-[10px] font-medium text-green tabular-nums">
-                      best 21
-                    </span>
-                    since Mar 10
+                    <span>no absence since</span>
+                    <span className="tabular-nums">{term ? new Date(term.startDate + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "—"}</span>
                   </div>
                 </div>
               </div>
@@ -528,7 +691,13 @@ export default function AttendancePage() {
                     <span className="text-[11.5px] text-ink-3">sessions</span>
                   </div>
                   <div className="flex items-center gap-1 mt-1 text-[11px] text-ink-3">
-                    <span className="text-red font-medium tabular-nums">{mathCourse.absentCount} in MATH 201</span>
+                    {worstCourse && worstCourse.absentCount > 0 ? (
+                      <span className="truncate">
+                        <span className="text-red font-medium tabular-nums">{worstCourse.absentCount}</span> in {worstCourse.courseCode}
+                      </span>
+                    ) : (
+                      <span>nothing missed yet</span>
+                    )}
                   </div>
                 </div>
               </div>
@@ -541,24 +710,28 @@ export default function AttendancePage() {
                 <div className="flex-1 min-w-0">
                   <span className="text-[11px] font-semibold text-ink-3 uppercase tracking-wider">At risk</span>
                   <div className="flex items-baseline gap-1 mt-0.5">
-                    <b className="text-[18px] font-semibold text-orange tabular-nums">{stats.atRiskCoursesCount}</b>
-                    <span className="text-[11.5px] text-ink-3">of 5 courses</span>
+                    <b className={`text-[18px] font-semibold tabular-nums ${stats.atRiskCoursesCount > 0 ? "text-orange" : "text-ink"}`}>{stats.atRiskCoursesCount}</b>
+                    <span className="text-[11.5px] text-ink-3">of {courses.length} courses</span>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSelectedCourseForRecovery(mathCourse);
-                      setRecoveryModalOpen(true);
-                    }}
-                    className="flex items-center gap-1 mt-1 text-[11px] text-accent hover:underline cursor-pointer"
-                  >
-                    MATH 201 · {mathCourse.currentPercentage}% (Plan →)
-                  </button>
+                  {alertCourse ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedCourseForRecovery(alertCourse);
+                        setRecoveryModalOpen(true);
+                      }}
+                      className="flex items-center gap-1 mt-1 text-[11px] text-accent hover:underline cursor-pointer truncate"
+                    >
+                      {alertCourse.courseCode} · {alertCourse.currentPercentage}% (Plan →)
+                    </button>
+                  ) : (
+                    <span className="block mt-1 text-[11px] text-ink-3">all clear</span>
+                  )}
                 </div>
               </div>
             </section>
 
-            {/* ── today check-ins ────────────────────────────── */}
+            {/* ── today check-ins (real schedule from the Lakehouse) ── */}
             <section className="rounded-[12px] border border-line bg-surface shadow-card overflow-hidden" aria-label="Today's check-ins">
               <div className="flex items-center justify-between border-b border-line px-3.5 py-2.5 bg-surface">
                 <div className="flex items-center gap-2">
@@ -567,126 +740,103 @@ export default function AttendancePage() {
                     <path d="M8 2.5v4M16 2.5v4M3 10h18M9 15.5l2 2 4-4.5" />
                   </svg>
                   <div>
-                    <h2 className="text-[13.5px] font-semibold text-ink">Today · Wed, Mar 19</h2>
-                    <span className="text-[11.5px] text-ink-3 font-mono tabular-nums">3 scheduled · {checkInEng ? "3" : "2"} tracked</span>
+                    <h2 className="text-[13.5px] font-semibold text-ink">Today · {todayLabel}</h2>
+                    <span className="text-[11.5px] text-ink-3 font-mono tabular-nums">
+                      {todaySchedule.length} scheduled · {todayDone} tracked
+                    </span>
                   </div>
                 </div>
-                <div className="flex items-center gap-2">
-                  <span className="inline-flex items-center gap-1 rounded-full bg-green-tint px-2 py-0.5 text-[11px] font-medium text-green">
+                {todaySchedule.length > 0 && (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-green-tint px-2 py-0.5 text-[11px] font-medium text-green tabular-nums">
                     <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M20 6L9 17l-5-5"/></svg>
-                    {checkInEng ? "3 of 3 done" : "2 of 3 done"}
+                    {todayDone} of {todaySchedule.length} done
                   </span>
-                  <span className="hidden sm:inline-flex items-center gap-1 rounded-full border border-line bg-inset px-2 py-0.5 text-[11px] font-medium text-ink-3">
-                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M13 2 4.5 13.5H11L9.5 22 18 10.5h-6.5L13 2Z"/></svg>
-                    {stats.streakDays}-day streak on the line
-                  </span>
-                </div>
+                )}
               </div>
 
-              <ul className="divide-y divide-line p-1">
-                {/* MATH 201 */}
-                <li className="flex items-center justify-between gap-3 p-2.5 rounded-[8px] hover:bg-hover transition-colors">
-                  <span className="w-12 shrink-0 font-mono text-[12px] font-medium text-ink-2 tabular-nums">09:00</span>
-                  <span className="flex size-7.5 shrink-0 items-center justify-center rounded-[8px] border border-line bg-inset text-[10px] font-semibold text-accent">
-                    MA
+              {todaySchedule.length === 0 ? (
+                <div className="flex flex-col items-center gap-1.5 py-10 text-center">
+                  <span className="flex size-9 items-center justify-center rounded-[9px] bg-inset text-ink-3 shadow-hairline">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="4.5" width="18" height="17" rx="2.5"/><path d="M8 2.5v4M16 2.5v4M3 10h18"/></svg>
                   </span>
-                  <div className="flex-1 min-w-0">
-                    <b className="block text-[13px] font-semibold text-ink truncate">MATH 201 · Linear Algebra</b>
-                    <span className="text-[11.5px] text-ink-3">Hart 112 · 50 min</span>
-                  </div>
-                  <div className="flex items-center gap-2 shrink-0">
-                    <span className="inline-flex items-center gap-1 rounded-full bg-green-tint px-2 py-0.5 text-[10.5px] font-medium text-green">
-                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M20 6L9 17l-5-5"/></svg>
-                      Attended
-                    </span>
-                    <button type="button" className="inline-flex h-7 items-center gap-1 rounded-[7px] bg-green-tint px-2.5 text-[11.5px] font-medium text-green">
-                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M20 6L9 17l-5-5"/></svg>
-                      Done
-                    </button>
-                  </div>
-                </li>
+                  <p className="text-[12.5px] font-medium text-ink-2">No classes scheduled today</p>
+                  <p className="text-[11.5px] text-ink-3">Sessions from your enrolled courses will appear here.</p>
+                </div>
+              ) : (
+                <ul className="divide-y divide-line p-1">
+                  {todaySchedule.map((session) => {
+                    const tint = COURSE_TINTS[session.courseIndex % COURSE_TINTS.length];
+                    const [h, m] = session.startTime.split(":").map(Number);
+                    const startMins = h * 60 + m;
+                    const nowMins = new Date().getHours() * 60 + new Date().getMinutes();
+                    const delta = startMins - nowMins;
+                    const relative =
+                      session.status !== "SCHEDULED"
+                        ? null
+                        : delta > 0
+                          ? `in ${delta} min`
+                          : delta + session.durationMins > 0
+                            ? "happening now"
+                            : "started";
+                    const isNext = session.status === "SCHEDULED" && todaySchedule.filter((s) => s.status === "SCHEDULED")[0]?.courseId === session.courseId;
 
-                {/* ENG 105 */}
-                <li className="flex items-center justify-between gap-3 p-2.5 rounded-[8px] hover:bg-hover transition-colors">
-                  <span className="w-12 shrink-0 font-mono text-[12px] font-medium text-ink-2 tabular-nums">13:00</span>
-                  <span className="flex size-7.5 shrink-0 items-center justify-center rounded-[8px] border border-line bg-inset text-[10px] font-semibold text-orange">
-                    EN
-                  </span>
-                  <div className="flex-1 min-w-0">
-                    <b className="block text-[13px] font-semibold text-ink truncate">ENG 105 · Composition</b>
-                    <span className="text-[11.5px] text-ink-3">Olson 24 · 80 min</span>
-                  </div>
-                  <div className="flex items-center gap-2 shrink-0">
-                    {!checkInEng ? (
-                      <>
-                        <span className="inline-flex items-center gap-1.5 rounded-full bg-accent-tint px-2 py-0.5 text-[10.5px] font-medium text-accent">
-                          <span className="size-1.5 rounded-full bg-accent animate-pulse" />
-                          Next · in 25 min
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setCheckInEng(true);
-                            setStats((prev) => ({ ...prev, attendedCount: prev.attendedCount + 1 }));
-                            showToast("Checked in to ENG 105 in Lakehouse!");
-                          }}
-                          className="inline-flex h-7 items-center gap-1 rounded-[7px] bg-accent px-3 text-[11.5px] font-medium text-white shadow-sm hover:brightness-105 transition-all cursor-pointer active:scale-95"
+                    return (
+                      <li key={session.courseId} className="flex items-center justify-between gap-3 p-2.5 rounded-[8px] hover:bg-hover transition-colors">
+                        <span className="w-12 shrink-0 font-mono text-[12px] font-medium text-ink-2 tabular-nums">{fmtTime(session.startTime)}</span>
+                        <span
+                          className="flex size-7.5 shrink-0 items-center justify-center rounded-[8px] border text-[10px] font-semibold"
+                          style={{ color: tint.color, background: tint.bg, borderColor: tint.border }}
                         >
-                          Check in
-                        </button>
-                      </>
-                    ) : (
-                      <>
-                        <span className="inline-flex items-center gap-1 rounded-full bg-green-tint px-2 py-0.5 text-[10.5px] font-medium text-green">
-                          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M20 6L9 17l-5-5"/></svg>
-                          Checked In
+                          {session.courseCode.slice(0, 2).toUpperCase()}
                         </span>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setCheckInEng(false);
-                            setStats((prev) => ({ ...prev, attendedCount: prev.attendedCount - 1 }));
-                          }}
-                          className="inline-flex h-7 items-center gap-1 rounded-[7px] bg-green-tint px-2.5 text-[11.5px] font-medium text-green cursor-pointer"
-                        >
-                          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M20 6L9 17l-5-5"/></svg>
-                          Done
-                        </button>
-                      </>
-                    )}
-                  </div>
-                </li>
-
-                {/* CS 210 */}
-                <li className="flex items-center justify-between gap-3 p-2.5 rounded-[8px] hover:bg-hover transition-colors">
-                  <span className="w-12 shrink-0 font-mono text-[12px] font-medium text-ink-2 tabular-nums">16:00</span>
-                  <span className="flex size-7.5 shrink-0 items-center justify-center rounded-[8px] border border-line bg-inset text-[10px] font-semibold text-accent">
-                    CS
-                  </span>
-                  <div className="flex-1 min-w-0">
-                    <b className="block text-[13px] font-semibold text-ink truncate">CS 210 · Office hours</b>
-                    <span className="text-[11.5px] text-ink-3">Kemper 210 · drop-in</span>
-                  </div>
-                  <div className="flex items-center gap-2 shrink-0">
-                    <span className="inline-flex items-center rounded-full border border-line bg-inset px-2 py-0.5 text-[10.5px] font-medium text-ink-3">
-                      Optional
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setRemindCs(!remindCs);
-                        showToast(remindCs ? "Reminder removed" : "Reminder set for CS 210 office hours");
-                      }}
-                      className={`inline-flex h-7 items-center gap-1 rounded-[7px] border border-line px-2.5 text-[11.5px] font-medium transition-colors cursor-pointer ${
-                        remindCs ? "bg-accent-tint text-accent border-accent/40" : "bg-surface text-ink-2 hover:bg-hover hover:text-ink"
-                      }`}
-                    >
-                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg>
-                      {remindCs ? "Reminder set" : "Remind me"}
-                    </button>
-                  </div>
-                </li>
-              </ul>
+                        <div className="flex-1 min-w-0">
+                          <b className="block text-[13px] font-semibold text-ink truncate">{session.courseCode} · {session.title}</b>
+                          <span className="text-[11.5px] text-ink-3">{session.room} · {session.durationMins} min</span>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          {session.status === "SCHEDULED" ? (
+                            <>
+                              <span className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[10.5px] font-medium ${
+                                isNext ? "bg-accent-tint text-accent" : "border border-line bg-inset text-ink-3"
+                              }`}>
+                                {isNext && <span className="size-1.5 rounded-full bg-accent animate-pulse" />}
+                                {isNext && relative ? `Next · ${relative}` : relative ?? "Scheduled"}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => handleCheckIn(session, "PRESENT")}
+                                disabled={isSyncing}
+                                className="inline-flex h-7 items-center gap-1 rounded-[7px] bg-accent px-3 text-[11.5px] font-medium text-white shadow-sm transition-colors hover:bg-accent-ink active:scale-95 disabled:opacity-50 cursor-pointer"
+                              >
+                                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M20 6L9 17l-5-5"/></svg>
+                                Check in
+                              </button>
+                            </>
+                          ) : (
+                            <>
+                              <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10.5px] font-medium ${
+                                session.status === "PRESENT" ? "bg-green-tint text-green" : session.status === "LATE" ? "bg-orange-tint text-orange" : "bg-red-tint text-red"
+                              }`}>
+                                {session.status === "PRESENT" && <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M20 6L9 17l-5-5"/></svg>}
+                                {session.status === "PRESENT" ? "Checked in" : session.status === "LATE" ? "Marked late" : "Absent"}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => handleCheckIn(session, "SCHEDULED")}
+                                disabled={isSyncing}
+                                title="Undo check-in"
+                                className="inline-flex h-7 items-center rounded-[7px] border border-line bg-surface px-2.5 text-[11.5px] font-medium text-ink-3 transition-colors hover:bg-hover hover:text-ink disabled:opacity-50 cursor-pointer"
+                              >
+                                Undo
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
             </section>
 
             {/* ── toolbar: view switch + state chips ─────────── */}
@@ -788,26 +938,33 @@ export default function AttendancePage() {
                     </svg>
                     <div>
                       <h2 className="text-[13.5px] font-semibold text-ink">Term heatmap</h2>
-                      <span className="text-[11.5px] text-ink-3 font-mono">Feb 3 – May 9 · weeks 1–14 · click squares to toggle status</span>
+                      <span className="text-[11.5px] text-ink-3 font-mono tabular-nums">
+                        {term ? `${new Date(term.startDate + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })} – ${new Date(term.endDate + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })} · weeks 1–${term.weeksTotal}` : "…"}
+                        {" · click a day to advance its sessions"}
+                      </span>
                     </div>
                   </div>
                   <div className="flex items-center gap-1.5">
-                    <span className="inline-flex items-center gap-1 rounded-full bg-green-tint px-2 py-0.5 text-[10.5px] font-medium text-green">
+                    <span className="inline-flex items-center gap-1 rounded-full bg-green-tint px-2 py-0.5 text-[10.5px] font-medium text-green tabular-nums">
                       <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M13 2 4.5 13.5H11L9.5 22 18 10.5h-6.5L13 2Z"/></svg>
                       {stats.streakDays}-day streak
-                    </span>
-                    <span className="hidden sm:inline-flex items-center rounded-full border border-line bg-inset px-2 py-0.5 text-[10.5px] font-medium text-ink-3">
-                      This week 5/5
                     </span>
                   </div>
                 </div>
 
                 <div className="overflow-x-auto p-3.5">
                   <div className="grid grid-cols-[18px_auto] gap-x-2 gap-y-1 w-max">
-                    <div className="col-start-2 grid grid-cols-14 gap-1 font-mono text-[9.5px] font-medium text-ink-3">
-                      <span className="col-span-4">FEB</span>
-                      <span className="col-span-5">MAR</span>
-                      <span className="col-span-5">APR</span>
+                    {/* month segments, computed from the real term window */}
+                    <div className="col-start-2 flex gap-1 font-mono text-[9.5px] font-medium text-ink-3">
+                      {monthSegments.map((seg, i) => (
+                        <span
+                          key={i}
+                          className="text-center"
+                          style={{ width: seg.span * 24 + (seg.span - 1) * 4 }}
+                        >
+                          {seg.label}
+                        </span>
+                      ))}
                     </div>
                     <div className="grid grid-rows-5 gap-1 font-mono text-[9px] font-medium text-ink-3">
                       <span className="flex items-center h-6">M</span>
@@ -825,11 +982,11 @@ export default function AttendancePage() {
                           const isPartial = cell.status === "partial";
                           const isMissed = cell.status === "missed";
 
-                          let bg = "bg-accent/80";
-                          if (isToday) bg = "bg-accent-tint border-2 border-accent animate-pulse";
-                          else if (isScheduled) bg = "border border-line/60 bg-transparent";
+                          let bg = "border border-line/60 bg-transparent";
+                          if (isToday) bg = "bg-accent-tint border-2 border-accent";
                           else if (isMissed) bg = "bg-red/70";
                           else if (isPartial) bg = "bg-accent/40";
+                          else if (isFull) bg = "bg-accent/80";
 
                           const opacityClass =
                             (isFull && !filterPresent) ||
@@ -839,21 +996,29 @@ export default function AttendancePage() {
                               ? "opacity-20"
                               : "opacity-100";
 
+                          const interactive = !isToday && !isScheduled && cell.totalSessions > 0;
+                          const tooltip = interactive
+                            ? `${cell.dayLabel}, ${cell.date} — ${cell.totalSessions} session${cell.totalSessions === 1 ? "" : "s"}: ${cell.presentCount} present, ${cell.lateCount} late, ${cell.absentCount} absent (click to advance)`
+                            : isToday
+                              ? "Today"
+                              : isScheduled
+                                ? `${cell.dayLabel}, ${cell.date} — no sessions recorded`
+                                : cell.dayLabel;
+
                           return (
                             <button
                               key={idx}
                               type="button"
-                              onClick={() => handleToggleTermCell(idx)}
-                              title={`${cell.dayLabel} · ${cell.date} — ${
-                                isFull ? "Present (Full day)" : isPartial ? "Late (Partial day)" : isMissed ? "Missed" : isToday ? "Today" : "Scheduled"
-                              } (Click to toggle)`}
-                              className={`size-6 rounded-[5px] transition-transform hover:scale-125 cursor-pointer hover:ring-2 hover:ring-accent ${bg} ${opacityClass}`}
+                              onClick={() => handleAdvanceDay(cell)}
+                              disabled={!interactive}
+                              title={tooltip}
+                              className={`size-6 rounded-[5px] transition-transform ${interactive ? "cursor-pointer hover:scale-125 hover:ring-2 hover:ring-accent" : "cursor-default"} ${bg} ${opacityClass}`}
                             />
                           );
                         })
                       ) : (
                         Array.from({ length: 70 }).map((_, idx) => (
-                          <span key={idx} className="size-6 rounded-[5px] bg-accent/40 animate-pulse" />
+                          <span key={idx} className="size-6 rounded-[5px] bg-inset animate-pulse" />
                         ))
                       )}
                     </div>
@@ -866,9 +1031,9 @@ export default function AttendancePage() {
                     <span><b className="text-ink-2 font-semibold tabular-nums">{stats.attendedCount}</b> of {stats.totalSessionsToDate} sessions recorded</span>
                   </div>
                   <div className="flex items-center gap-3">
-                    <span className="inline-flex items-center gap-1.5"><i className="size-2.5 rounded-[3px] bg-accent/80" /> Full day</span>
-                    <span className="inline-flex items-center gap-1.5"><i className="size-2.5 rounded-[3px] bg-accent/40" /> Partial</span>
-                    <span className="inline-flex items-center gap-1.5"><i className="size-2.5 rounded-[3px] bg-red/70" /> Missed</span>
+                    <span className="inline-flex items-center gap-1.5"><i className="size-2.5 rounded-[3px] bg-accent/80" /> All present</span>
+                    <span className="inline-flex items-center gap-1.5"><i className="size-2.5 rounded-[3px] bg-accent/40" /> Mixed</span>
+                    <span className="inline-flex items-center gap-1.5"><i className="size-2.5 rounded-[3px] bg-red/70" /> All missed</span>
                     <span className="inline-flex items-center gap-1.5"><i className="size-2.5 rounded-[3px] border border-accent bg-accent-tint" /> Today</span>
                   </div>
                 </div>
@@ -889,105 +1054,63 @@ export default function AttendancePage() {
                 </div>
 
                 <div className="flex items-end justify-around gap-2 px-4 py-4 h-36">
-                  {/* Mon */}
-                  <div className="flex flex-col items-center gap-2 flex-1">
-                    <div className="relative w-full max-w-[36px] h-24 flex items-end rounded-[6px] bg-inset p-0.5">
-                      <span className="w-full rounded-[4px] bg-orange/70 transition-all duration-300" style={{ height: `${weekdayRates.MON}%` }} title={`Mon — ${weekdayRates.MON}%`} />
-                    </div>
-                    <div className="text-center">
-                      <span className="block text-[10.5px] font-semibold text-ink-2">MON</span>
-                      <span className="font-mono text-[10px] text-orange tabular-nums">{weekdayRates.MON}%</span>
-                    </div>
-                  </div>
-
-                  {/* Tue */}
-                  <div className="flex flex-col items-center gap-2 flex-1">
-                    <div className="relative w-full max-w-[36px] h-24 flex items-end rounded-[6px] bg-inset p-0.5">
-                      <span className="w-full rounded-[4px] bg-accent/70 transition-all duration-300" style={{ height: `${weekdayRates.TUE}%` }} title={`Tue — ${weekdayRates.TUE}%`} />
-                    </div>
-                    <div className="text-center">
-                      <span className="block text-[10.5px] font-semibold text-ink-2">TUE</span>
-                      <span className="font-mono text-[10px] text-ink-3 tabular-nums">{weekdayRates.TUE}%</span>
-                    </div>
-                  </div>
-
-                  {/* Wed */}
-                  <div className="flex flex-col items-center gap-2 flex-1">
-                    <div className="relative w-full max-w-[36px] h-24 flex items-end rounded-[6px] bg-inset p-0.5">
-                      <span className="w-full rounded-[4px] bg-accent/70 transition-all duration-300" style={{ height: `${weekdayRates.WED}%` }} title={`Wed — ${weekdayRates.WED}%`} />
-                    </div>
-                    <div className="text-center">
-                      <span className="block text-[10.5px] font-semibold text-ink-2">WED</span>
-                      <span className="font-mono text-[10px] text-ink-3 tabular-nums">{weekdayRates.WED}%</span>
-                    </div>
-                  </div>
-
-                  {/* Thu */}
-                  <div className="flex flex-col items-center gap-2 flex-1">
-                    <div className="relative w-full max-w-[36px] h-24 flex items-end rounded-[6px] bg-inset p-0.5">
-                      <span className="w-full rounded-[4px] bg-accent/70 transition-all duration-300" style={{ height: `${weekdayRates.THU}%` }} title={`Thu — ${weekdayRates.THU}%`} />
-                    </div>
-                    <div className="text-center">
-                      <span className="block text-[10.5px] font-semibold text-ink-2">THU</span>
-                      <span className="font-mono text-[10px] text-ink-3 tabular-nums">{weekdayRates.THU}%</span>
-                    </div>
-                  </div>
-
-                  {/* Fri */}
-                  <div className="flex flex-col items-center gap-2 flex-1">
-                    <div className="relative w-full max-w-[36px] h-24 flex items-end rounded-[6px] bg-inset p-0.5">
-                      <span className="w-full rounded-[4px] bg-orange/70 transition-all duration-300" style={{ height: `${weekdayRates.FRI}%` }} title={`Fri — ${weekdayRates.FRI}%`} />
-                    </div>
-                    <div className="text-center">
-                      <span className="block text-[10.5px] font-semibold text-ink-2">FRI</span>
-                      <span className="font-mono text-[10px] text-orange tabular-nums">{weekdayRates.FRI}%</span>
-                    </div>
-                  </div>
+                  {WEEKDAY_KEYS.map((key) => {
+                    const rate = weekdayRates[key];
+                    const low = rate < 80;
+                    return (
+                      <div key={key} className="flex flex-col items-center gap-2 flex-1">
+                        <div className="relative w-full max-w-[36px] h-24 flex items-end rounded-[6px] bg-inset p-0.5">
+                          <span
+                            className={`w-full rounded-[4px] transition-all duration-300 ${low ? "bg-orange/70" : "bg-accent/70"}`}
+                            style={{ height: `${Math.max(rate, 2)}%` }}
+                            title={`${key} — ${rate}%`}
+                          />
+                        </div>
+                        <div className="text-center">
+                          <span className="block text-[10.5px] font-semibold text-ink-2">{key}</span>
+                          <span className={`font-mono text-[10px] tabular-nums ${low ? "text-orange" : "text-ink-3"}`}>{rate}%</span>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
 
                 <div className="flex items-center justify-between border-t border-line px-3.5 py-2 text-[11.5px] text-ink-3">
-                  <span>Lowest attendance day: <b className="text-orange">Mon ({weekdayRates.MON}%)</b></span>
-                  <span className="text-green">Highest: <b>Tue ({weekdayRates.TUE}%)</b></span>
+                  <span>Lowest attendance day: <b className="text-orange">{worstDayLabel} ({weekdayRates[lowestDay]}%)</b></span>
+                  <span className="text-green">Highest: <b>{bestDayLabel} ({weekdayRates[highestDay]}%)</b></span>
                 </div>
               </section>
             </div>
 
-            {/* ── courses breakdown grid (5 courses) ─────────── */}
+            {/* ── courses breakdown grid ─────────────────────── */}
             <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <h2 className="text-[14px] font-semibold text-ink">Courses &amp; Lab Sessions ({courses.length})</h2>
-                <span className="text-[11.5px] text-ink-3 font-mono">Click course squares to toggle individual attendance</span>
+                <span className="text-[11.5px] text-ink-3 font-mono">Click course squares to cycle Present → Late → Absent</span>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                {courses.map((course) => {
-                  const isMath = course.courseCode.includes("201");
-                  const isCs = course.courseCode.includes("210");
-                  const isPhys = course.courseCode.includes("211");
-                  const isEng = course.courseCode.includes("105");
-                  const isHist = course.courseCode.includes("140");
-
-                  let monogramColor = "border-accent/30 bg-accent-tint text-accent";
-                  if (isMath) monogramColor = "border-orange/30 bg-orange-tint text-orange";
-                  else if (isPhys) monogramColor = "border-cyan-500/30 bg-cyan-500/10 text-cyan-400";
-                  else if (isEng) monogramColor = "border-pink-500/30 bg-pink-500/10 text-pink-400";
-                  else if (isHist) monogramColor = "border-emerald-500/30 bg-emerald-500/10 text-emerald-400";
+                {courses.map((course, courseIdx) => {
+                  const tint = COURSE_TINTS[courseIdx % COURSE_TINTS.length];
 
                   return (
                     <article
                       key={course.courseId}
-                      className="flex flex-col justify-between rounded-[12px] border border-line bg-surface p-3.5 shadow-card hover:-translate-y-0.5 transition-transform"
+                      className="flex flex-col justify-between rounded-[12px] border border-line bg-surface p-3.5 shadow-card transition-colors hover:border-line-strong"
                     >
                       <div>
                         <div className="flex items-start justify-between gap-2 mb-3">
                           <div className="flex items-center gap-2.5">
-                            <span className={`flex size-8.5 shrink-0 items-center justify-center rounded-[9px] border font-mono text-[11px] font-bold ${monogramColor}`}>
-                              {course.courseCode.slice(0, 2)}
+                            <span
+                              className="flex size-8.5 shrink-0 items-center justify-center rounded-[9px] border font-mono text-[11px] font-bold"
+                              style={{ color: tint.color, background: tint.bg, borderColor: tint.border }}
+                            >
+                              {course.courseCode.slice(0, 2).toUpperCase()}
                             </span>
                             <div>
                               <h3 className="text-[13.5px] font-semibold text-ink truncate">{course.title}</h3>
                               <span className="text-[11.5px] text-ink-3">
-                                {course.scheduleDays.join(" + ")} · {course.startTime}
+                                {course.scheduleDays.join(" + ")} · {fmtTime(course.startTime)}
                               </span>
                             </div>
                           </div>
@@ -995,29 +1118,20 @@ export default function AttendancePage() {
                             <span className={`text-[16px] font-semibold tabular-nums ${course.isAtRisk ? "text-red" : "text-ink"}`}>
                               {course.currentPercentage}%
                             </span>
-                            {course.isAtRisk ? (
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setSelectedCourseForRecovery(course);
-                                  setRecoveryModalOpen(true);
-                                }}
-                                className="inline-flex items-center gap-1 rounded-full bg-red-tint px-2 py-0.5 text-[9.5px] font-medium text-red hover:bg-red-tint/70 hover:brightness-95 cursor-pointer transition-colors border border-red/20"
-                              >
-                                At risk · Plan →
-                              </button>
-                            ) : (
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setSelectedCourseForRecovery(course);
-                                  setRecoveryModalOpen(true);
-                                }}
-                                className="inline-flex items-center gap-1 rounded-full bg-green-tint px-1.5 py-0.2 text-[9.5px] font-medium text-green hover:brightness-95 cursor-pointer"
-                              >
-                                {course.statusLabel}
-                              </button>
-                            )}
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSelectedCourseForRecovery(course);
+                                setRecoveryModalOpen(true);
+                              }}
+                              className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[9.5px] font-medium cursor-pointer transition-colors ${
+                                course.isAtRisk
+                                  ? "bg-red-tint text-red border border-red/20 hover:brightness-95"
+                                  : "bg-green-tint text-green hover:brightness-95"
+                              }`}
+                            >
+                              {course.isAtRisk ? `At risk · min ${course.minAttendancePct}%` : course.statusLabel}
+                            </button>
                           </div>
                         </div>
 
@@ -1030,28 +1144,35 @@ export default function AttendancePage() {
                               const isAbs = day.status === "ABSENT";
                               const isSched = day.status === "SCHEDULED";
 
-                              let cellBg = "bg-accent/80";
-                              if (isLte) cellBg = "bg-orange/80";
+                              let cellBg = "border border-line bg-transparent";
+                              if (isPres) cellBg = "bg-accent/80";
+                              else if (isLte) cellBg = "bg-orange/80";
                               else if (isAbs) cellBg = "bg-red/70";
-                              else if (isSched) cellBg = "border border-line bg-transparent";
+
+                              const opacityClass =
+                                (isPres && !filterPresent) ||
+                                (isLte && !filterLate) ||
+                                (isAbs && !filterAbsent) ||
+                                (isSched && !filterScheduled)
+                                  ? "opacity-20"
+                                  : "opacity-100";
 
                               return (
                                 <button
                                   key={dIdx}
                                   type="button"
-                                  onClick={() => handleToggleCourseSession(course.courseId, dIdx)}
-                                  title={`${course.courseCode} · ${day.date} (${day.day}) — ${day.status} (Click to toggle)`}
-                                  className={`size-3.5 rounded-xs cursor-pointer hover:scale-125 transition-transform hover:ring-1 hover:ring-accent ${cellBg}`}
+                                  onClick={() => handleToggleCourseSession(course, dIdx)}
+                                  disabled={isSched}
+                                  title={`${course.courseCode} · ${day.date} (${day.day}) — ${day.status}${isSched ? "" : " (click to cycle)"}`}
+                                  className={`size-3.5 rounded-xs transition-transform ${isSched ? "cursor-default" : "cursor-pointer hover:scale-125 hover:ring-1 hover:ring-accent"} ${cellBg} ${opacityClass}`}
                                 />
                               );
                             })}
                           </div>
                         ) : (
                           <div className="flex items-end gap-1 h-10 border-b border-line/50 pb-1">
-                            {course.heatmapDays.slice(0, 10).map((day, dIdx) => {
-                              const isPres = day.status === "PRESENT";
-                              const isAbs = day.status === "ABSENT";
-                              const h = isPres ? "h-full bg-accent/70" : isAbs ? "h-1/4 bg-red/70" : "h-2/3 bg-orange/70";
+                            {course.heatmapDays.filter((d) => d.status !== "SCHEDULED").slice(-10).map((day, dIdx) => {
+                              const h = day.status === "PRESENT" ? "h-full bg-accent/70" : day.status === "ABSENT" ? "h-1/4 bg-red/70" : "h-2/3 bg-orange/70";
                               return <i key={dIdx} className={`flex-1 rounded-xs ${h}`} />;
                             })}
                           </div>
@@ -1059,8 +1180,8 @@ export default function AttendancePage() {
                       </div>
 
                       <div className="flex items-center justify-between border-t border-line/60 pt-2.5 mt-3 text-[11.5px] text-ink-3">
-                        <span className="text-ink-2 font-medium">{course.instructor}</span>
-                        <div className="flex items-center gap-2 font-mono font-medium">
+                        <span className="text-ink-2 font-medium truncate">{course.instructor}</span>
+                        <div className="flex items-center gap-2 font-mono font-medium tabular-nums shrink-0">
                           <span className="text-green">✓ {course.attendedCount}</span>
                           <span className="text-orange">⏱ {course.lateCount}</span>
                           <span className="text-red">✕ {course.absentCount}</span>
@@ -1070,6 +1191,13 @@ export default function AttendancePage() {
                   );
                 })}
               </div>
+
+              {!isLoading && courses.length === 0 && !fetchError && (
+                <div className="rounded-[12px] border border-line bg-surface p-8 text-center shadow-card">
+                  <p className="text-[13px] font-medium text-ink-2">No enrolled courses found</p>
+                  <p className="mt-1 text-[11.5px] text-ink-3">Courses are seeded per account on first visit to this page.</p>
+                </div>
+              )}
             </div>
 
             {/* ── panel footer ───────────────────────────────── */}
@@ -1080,22 +1208,13 @@ export default function AttendancePage() {
                 <span>· synced live with Databricks Lakehouse</span>
               </div>
               <div className="flex items-center gap-3">
-                <span>Week <b>7</b> of 14 · <b>22</b> sessions remaining</span>
+                <span>
+                  Week <b className="tabular-nums">{term?.weekNumber ?? "—"}</b> of <b className="tabular-nums">{term?.weeksTotal ?? "—"}</b> ·{" "}
+                  <b className="tabular-nums">{stats.scheduledCount}</b> sessions remaining
+                </span>
                 <button
                   type="button"
-                  onClick={() => {
-                    const csvContent = "data:text/csv;charset=utf-8," +
-                      "Course,Instructor,Attended,Late,Absent,Percentage\n" +
-                      courses.map((c) => `${c.courseCode},${c.instructor},${c.attendedCount},${c.lateCount},${c.absentCount},${c.currentPercentage}%`).join("\n");
-                    const encodedUri = encodeURI(csvContent);
-                    const link = document.createElement("a");
-                    link.setAttribute("href", encodedUri);
-                    link.setAttribute("download", `attendance_report_week7.csv`);
-                    document.body.appendChild(link);
-                    link.click();
-                    document.body.removeChild(link);
-                    showToast("Downloaded attendance_report_week7.csv");
-                  }}
+                  onClick={handleExportCsv}
                   className="text-accent hover:underline flex items-center gap-1 font-sans cursor-pointer"
                 >
                   Export report
@@ -1122,11 +1241,11 @@ export default function AttendancePage() {
           courseName={selectedCourseForRecovery.title}
           instructor={selectedCourseForRecovery.instructor}
           location={selectedCourseForRecovery.location}
-          scheduleTime={`${selectedCourseForRecovery.scheduleDays?.join(", ") || "Mon, Wed, Fri"} ${selectedCourseForRecovery.startTime || "09:00 AM"}`}
-          currentSessions={selectedCourseForRecovery.totalSessionsToDate || 20}
-          attendedSessions={selectedCourseForRecovery.attendedCount || 14}
-          totalTermSessions={selectedCourseForRecovery.courseCode.includes("201") || selectedCourseForRecovery.courseCode.includes("210") ? 42 : 28}
-          cutoffPercentage={selectedCourseForRecovery.minAttendancePct || 75}
+          scheduleTime={`${selectedCourseForRecovery.scheduleDays?.join(", ") || "Mon, Wed, Fri"} · ${fmtTime(selectedCourseForRecovery.startTime || "09:00")}`}
+          currentSessions={selectedCourseForRecovery.totalSessionsToDate}
+          attendedSessions={selectedCourseForRecovery.attendedCount}
+          totalTermSessions={selectedCourseForRecovery.totalSessionsToDate + selectedCourseForRecovery.scheduledCount}
+          cutoffPercentage={selectedCourseForRecovery.minAttendancePct}
         />
       )}
 

@@ -802,8 +802,8 @@ export default function CampusGenieChatPage() {
           <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-3 pt-2 pb-28 sm:px-6 sm:pt-3 sm:pb-36">
             {messages.length === 0 ? (
               <div className="campus-genie-welcome my-auto flex flex-col items-center justify-center text-center max-w-3xl mx-auto w-full space-y-6 px-2">
-                <div className="campus-genie-welcome-mark flex size-12 items-center justify-center rounded-2xl text-ink shadow-hairline">
-                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <div className="campus-genie-welcome-mark flex size-12 items-center justify-center rounded-2xl text-[#121417] shadow-hairline">
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#121417" strokeWidth="2">
                     <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" />
                   </svg>
                 </div>

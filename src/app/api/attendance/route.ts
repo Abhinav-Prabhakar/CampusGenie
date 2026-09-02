@@ -29,6 +29,7 @@ export type CourseAttendance = {
   durationMins: number;
   minAttendancePct: number;
   totalSessionsToDate: number;
+  scheduledCount: number;
   attendedCount: number;
   lateCount: number;
   absentCount: number;
@@ -37,6 +38,25 @@ export type CourseAttendance = {
   statusLabel: string;
   logs: AttendanceLog[];
   heatmapDays: { date: string; day: string; status: AttendanceStatus; logId?: string }[];
+};
+
+export type TodaySession = {
+  courseId: string;
+  courseCode: string;
+  title: string;
+  startTime: string;
+  durationMins: number;
+  room: string;
+  logId: string | null;
+  status: AttendanceStatus;
+};
+
+export type TermMeta = {
+  startDate: string;
+  endDate: string;
+  weekNumber: number;
+  weeksTotal: number;
+  label: string;
 };
 
 // Fallback seed courses if table is empty
@@ -98,57 +118,64 @@ const DEFAULT_COURSES = [
   },
 ];
 
+const TERM_WEEKS = 14;
+const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+/** Local-date formatting — never toISOString(), which shifts TZs a day off. */
+function toISODate(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+function parseISODate(s: string): Date {
+  const [y, m, d] = s.split("-").map(Number);
+  return new Date(y, (m || 1) - 1, d || 1);
+}
+
+function mondayOf(d: Date): Date {
+  const c = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  c.setDate(c.getDate() - ((c.getDay() + 6) % 7));
+  return c;
+}
+
+function addDays(d: Date, n: number): Date {
+  const c = new Date(d);
+  c.setDate(c.getDate() + n);
+  return c;
+}
+
+function seasonLabel(termStart: Date): string {
+  const m = termStart.getMonth();
+  const season = m <= 4 ? "SPRING" : m <= 7 ? "SUMMER" : "FALL";
+  return `${season} ${termStart.getFullYear()}`;
+}
+
 /**
- * Seed a fresh user's enrollments + term attendance history so every account
- * starts with the same demo dataset, scoped to their Clerk user id.
+ * Seed this user's per-term attendance history around *today*: seven weeks of
+ * recorded sessions behind, the rest of the 14-week term as SCHEDULED, so the
+ * tracker always opens mid-term with real check-ins available.
  */
-async function seedUserDataFor(userId: string): Promise<void> {
-  const termStart = new Date(2026, 1, 2); // Feb 2, 2026 (Mon)
-  const termEnd = new Date(2026, 2, 19); // Mar 19, 2026
-  const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-
-  const courseParameters: LakehouseSqlParameter[] = [{ name: "user_id", value: userId }];
-  const courseValues = DEFAULT_COURSES.map((c, index) => {
-    const days = c.scheduleDays.map((d) => `'${d}'`).join(",");
-    courseParameters.push(
-      { name: `course_id_${index}`, value: c.courseId },
-      { name: `course_code_${index}`, value: c.courseCode },
-      { name: `title_${index}`, value: c.title },
-      { name: `instructor_${index}`, value: c.instructor },
-      { name: `location_${index}`, value: c.location },
-      { name: `start_time_${index}`, value: c.startTime },
-      { name: `duration_${index}`, value: c.durationMins, type: "INT" },
-      { name: `minimum_${index}`, value: c.minAttendancePct, type: "INT" }
-    );
-    return `(:course_id_${index}, :course_code_${index}, :title_${index}, :instructor_${index}, :location_${index}, ARRAY(${days}), :start_time_${index}, :duration_${index}, :minimum_${index}, :user_id)`;
-  }).join(",\n");
-
-  await executeLakehouseSql(
-    `INSERT INTO workspace.campus_explorer.student_courses (course_id, course_code, title, instructor, location, schedule_days, start_time, duration_mins, min_attendance_pct, user_id) VALUES ${courseValues}`,
-    undefined,
-    30,
-    courseParameters
-  );
-
+async function seedLogsFor(uid: string, courses: typeof DEFAULT_COURSES, termStart: Date, todayStr: string): Promise<void> {
   const logRows: string[] = [];
-  const logParameters: LakehouseSqlParameter[] = [{ name: "student_id", value: userId }];
-  DEFAULT_COURSES.forEach((course, courseIdx) => {
+  courses.forEach((course, courseIdx) => {
     const cursor = new Date(termStart);
+    const termEnd = addDays(termStart, TERM_WEEKS * 7 - 3);
     let sessionIdx = 0;
     while (cursor <= termEnd) {
-      if (course.scheduleDays.includes(dayNames[cursor.getDay()])) {
-        const dateStr = cursor.toISOString().slice(0, 10);
+      if (course.scheduleDays.includes(DAY_NAMES[cursor.getDay()])) {
+        const dateStr = toISODate(cursor);
         // Deterministic mix so seeded histories are stable and realistic.
         const bucket = (sessionIdx * 5 + courseIdx * 3) % 16;
-        const status = bucket === 0 ? "ABSENT" : bucket === 5 || bucket === 11 ? "LATE" : "PRESENT";
-        const index = logRows.length;
-        logParameters.push(
-          { name: `log_id_${index}`, value: `LOG-${userId.slice(-6)}-${course.courseId}-${dateStr.replace(/-/g, "")}` },
-          { name: `log_course_${index}`, value: course.courseId },
-          { name: `log_date_${index}`, value: dateStr, type: "DATE" },
-          { name: `log_status_${index}`, value: status }
+        const status =
+          dateStr >= todayStr
+            ? "SCHEDULED"
+            : bucket === 0
+              ? "ABSENT"
+              : bucket === 5 || bucket === 11
+                ? "LATE"
+                : "PRESENT";
+        logRows.push(
+          `('LOG-${uid.slice(-6)}-${course.courseId}-${dateStr.replace(/-/g, '')}', '${uid}', '${course.courseId}', DATE '${dateStr}', '${status}', NULL, 'seed', NULL, current_timestamp())`
         );
-        logRows.push(`(:log_id_${index}, :student_id, :log_course_${index}, :log_date_${index}, :log_status_${index}, NULL, 'seed', NULL, current_timestamp())`);
         sessionIdx++;
       }
       cursor.setDate(cursor.getDate() + 1);
@@ -157,12 +184,37 @@ async function seedUserDataFor(userId: string): Promise<void> {
 
   if (logRows.length > 0) {
     await executeLakehouseSql(
-      `INSERT INTO workspace.campus_explorer.student_attendance_logs (log_id, student_id, course_id, session_date, status, check_in_time, verification_method, notes, created_at) VALUES ${logRows.join(",\n")}`,
-      undefined,
-      30,
-      logParameters
+      `INSERT INTO workspace.campus_explorer.student_attendance_logs (log_id, student_id, course_id, session_date, status, check_in_time, verification_method, notes, created_at) VALUES ${logRows.join(",\n")}`
     );
   }
+}
+
+/**
+ * Seed a fresh user's enrollments + term attendance history so every account
+ * starts with the same demo dataset, scoped to their Clerk user id.
+ */
+async function seedUserDataFor(safeUid: string): Promise<void> {
+  const todayStr = toISODate(new Date());
+  const termStart = addDays(mondayOf(new Date()), -7 * 7);
+
+  const courseValues = DEFAULT_COURSES.map((c) => {
+    const days = c.scheduleDays.map((d) => `'${d}'`).join(",");
+    return `('${c.courseId}', '${c.courseCode}', '${c.title.replace(/'/g, "''")}', '${c.instructor.replace(/'/g, "''")}', '${c.location.replace(/'/g, "''")}', ARRAY(${days}), '${c.startTime}', ${c.durationMins}, ${c.minAttendancePct}, '${safeUid}')`;
+  }).join(",\n");
+
+  await executeLakehouseSql(
+    `INSERT INTO workspace.campus_explorer.student_courses (course_id, course_code, title, instructor, location, schedule_days, start_time, duration_mins, min_attendance_pct, user_id) VALUES ${courseValues}`
+  );
+
+  await seedLogsFor(safeUid, DEFAULT_COURSES, termStart, todayStr);
+}
+
+/** Cycle a status forward: PRESENT → LATE → ABSENT → PRESENT. */
+function nextStatus(s: AttendanceStatus): AttendanceStatus {
+  if (s === "PRESENT") return "LATE";
+  if (s === "LATE") return "ABSENT";
+  if (s === "ABSENT") return "PRESENT";
+  return "SCHEDULED";
 }
 
 export async function GET(req: NextRequest) {
@@ -171,30 +223,40 @@ export async function GET(req: NextRequest) {
     if (!userId) {
       return NextResponse.json({ success: false, error: "Sign in required" }, { status: 401 });
     }
+    const safeUid = userId.replace(/'/g, "''");
+    const todayStr = toISODate(new Date());
+
     // 1. Fetch this user's courses (seeding on first visit) and logs
     let coursesRes = await executeLakehouseSql(
-      "SELECT * FROM workspace.campus_explorer.student_courses WHERE user_id = :user_id",
-      undefined,
-      30,
-      [{ name: "user_id", value: userId }]
+      `SELECT * FROM workspace.campus_explorer.student_courses WHERE user_id = '${safeUid}'`
     );
 
     if (coursesRes.state === "SUCCEEDED" && (!coursesRes.records || coursesRes.records.length === 0)) {
-      await seedUserDataFor(userId);
+      await seedUserDataFor(safeUid);
       coursesRes = await executeLakehouseSql(
-        "SELECT * FROM workspace.campus_explorer.student_courses WHERE user_id = :user_id",
-        undefined,
-        30,
-        [{ name: "user_id", value: userId }]
+        `SELECT * FROM workspace.campus_explorer.student_courses WHERE user_id = '${safeUid}'`
       );
     }
 
-    const logsRes = await executeLakehouseSql(
-      "SELECT * FROM workspace.campus_explorer.student_attendance_logs WHERE student_id = :student_id ORDER BY session_date ASC",
-      undefined,
-      30,
-      [{ name: "student_id", value: userId }]
+    let logsRes = await executeLakehouseSql(
+      `SELECT * FROM workspace.campus_explorer.student_attendance_logs WHERE student_id = '${safeUid}' ORDER BY session_date ASC`
     );
+
+    // The seeded term is anchored at first-seed time. If it has fully elapsed
+    // (or a user has courses but no logs yet), roll a fresh term around today.
+    const logRecords = logsRes.state === "SUCCEEDED" && Array.isArray(logsRes.records) ? logsRes.records : [];
+    const dates = logRecords.map((r: any) => String(r.session_date).slice(0, 10)).sort();
+    const termStale = dates.length === 0 || (dates.length > 0 && dates[dates.length - 1] < todayStr);
+    if (termStale) {
+      await executeLakehouseSql(
+        `DELETE FROM workspace.campus_explorer.student_attendance_logs WHERE student_id = '${safeUid}'`
+      );
+      const termStart = addDays(mondayOf(new Date()), -7 * 7);
+      await seedLogsFor(safeUid, DEFAULT_COURSES, termStart, todayStr);
+      logsRes = await executeLakehouseSql(
+        `SELECT * FROM workspace.campus_explorer.student_attendance_logs WHERE student_id = '${safeUid}' ORDER BY session_date ASC`
+      );
+    }
 
     const rawCourses = coursesRes.state === "SUCCEEDED" && coursesRes.records && coursesRes.records.length > 0
       ? coursesRes.records.map((r: any) => ({
@@ -215,7 +277,7 @@ export async function GET(req: NextRequest) {
           logId: r.log_id,
           studentId: r.student_id,
           courseId: r.course_id,
-          sessionDate: r.session_date,
+          sessionDate: String(r.session_date).slice(0, 10),
           status: (r.status?.toUpperCase() || "SCHEDULED") as AttendanceStatus,
           checkInTime: r.check_in_time,
           verificationMethod: r.verification_method,
@@ -238,8 +300,8 @@ export async function GET(req: NextRequest) {
       const late = pastLogs.filter((l) => l.status === "LATE").length;
       const absent = pastLogs.filter((l) => l.status === "ABSENT").length;
       const total = pastLogs.length || 1;
-      
-      const effectiveAttended = attended + (late > 0 ? late * 0.75 : 0);
+
+      const effectiveAttended = attended + late * 0.75;
       const currentPercentage = Math.round((effectiveAttended / total) * 100);
       const isAtRisk = currentPercentage < c.minAttendancePct;
       const statusLabel = currentPercentage >= 95 ? "Perfect" : isAtRisk ? "At risk" : "On track";
@@ -247,7 +309,7 @@ export async function GET(req: NextRequest) {
       // Build session slots for course mini-heatmap
       const heatmapDays = logs.map((l) => ({
         date: l.sessionDate,
-        day: new Date(l.sessionDate).toLocaleDateString("en-US", { weekday: "short" }),
+        day: DAY_NAMES[parseISODate(l.sessionDate).getDay()],
         status: l.status,
         logId: l.logId,
       }));
@@ -255,6 +317,7 @@ export async function GET(req: NextRequest) {
       return {
         ...c,
         totalSessionsToDate: total,
+        scheduledCount: logs.filter((l) => l.status === "SCHEDULED").length,
         attendedCount: attended,
         lateCount: late,
         absentCount: absent,
@@ -271,8 +334,8 @@ export async function GET(req: NextRequest) {
     const totalPresent = allPastLogs.filter((l) => l.status === "PRESENT").length;
     const totalLate = allPastLogs.filter((l) => l.status === "LATE").length;
     const totalAbsent = allPastLogs.filter((l) => l.status === "ABSENT").length;
-    const totalToDate = allPastLogs.length || 65;
-    const overallPct = Math.round(((totalPresent + totalLate * 0.75) / totalToDate) * 100);
+    const totalToDate = allPastLogs.length;
+    const overallPct = totalToDate > 0 ? Math.round(((totalPresent + totalLate * 0.75) / totalToDate) * 100) : 0;
 
     // Weekday breakdown
     const weekdayCounts: Record<string, { total: number; attended: number }> = {
@@ -284,8 +347,7 @@ export async function GET(req: NextRequest) {
     };
 
     for (const log of allPastLogs) {
-      const d = new Date(log.sessionDate);
-      const dayName = d.toLocaleDateString("en-US", { weekday: "short" });
+      const dayName = DAY_NAMES[parseISODate(log.sessionDate).getDay()];
       if (weekdayCounts[dayName]) {
         weekdayCounts[dayName].total++;
         if (log.status === "PRESENT" || log.status === "LATE") {
@@ -295,14 +357,14 @@ export async function GET(req: NextRequest) {
     }
 
     const weekdayRates = {
-      MON: weekdayCounts.Mon.total ? Math.round((weekdayCounts.Mon.attended / weekdayCounts.Mon.total) * 100) : 79,
-      TUE: weekdayCounts.Tue.total ? Math.round((weekdayCounts.Tue.attended / weekdayCounts.Tue.total) * 100) : 93,
-      WED: weekdayCounts.Wed.total ? Math.round((weekdayCounts.Wed.attended / weekdayCounts.Wed.total) * 100) : 86,
-      THU: weekdayCounts.Thu.total ? Math.round((weekdayCounts.Thu.attended / weekdayCounts.Thu.total) * 100) : 92,
-      FRI: weekdayCounts.Fri.total ? Math.round((weekdayCounts.Fri.attended / weekdayCounts.Fri.total) * 100) : 83,
+      MON: weekdayCounts.Mon.total ? Math.round((weekdayCounts.Mon.attended / weekdayCounts.Mon.total) * 100) : 0,
+      TUE: weekdayCounts.Tue.total ? Math.round((weekdayCounts.Tue.attended / weekdayCounts.Tue.total) * 100) : 0,
+      WED: weekdayCounts.Wed.total ? Math.round((weekdayCounts.Wed.attended / weekdayCounts.Wed.total) * 100) : 0,
+      THU: weekdayCounts.Thu.total ? Math.round((weekdayCounts.Thu.attended / weekdayCounts.Thu.total) * 100) : 0,
+      FRI: weekdayCounts.Fri.total ? Math.round((weekdayCounts.Fri.attended / weekdayCounts.Fri.total) * 100) : 0,
     };
 
-    // Calculate Streak
+    // Calculate Streak: consecutive most-recent school days with no absence
     const sortedLogs = [...allPastLogs].sort((a, b) => b.sessionDate.localeCompare(a.sessionDate));
     let streak = 0;
     const seenDates = new Set<string>();
@@ -314,7 +376,20 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // Build Term Heatmap Grid (Weeks 1 to 14, 5 class days per week = 70 grid cells)
+    // Term window is anchored at the user's earliest log (stable across visits)
+    const termStart = dates.length > 0 ? parseISODate(dates[0]) : addDays(mondayOf(new Date()), -7 * 7);
+    const termEnd = addDays(termStart, TERM_WEEKS * 7 - 3); // last Friday of week 14
+    const daysIntoTerm = Math.floor((parseISODate(todayStr).getTime() - termStart.getTime()) / 86400000);
+    const weekNumber = Math.min(TERM_WEEKS, Math.max(1, Math.floor(daysIntoTerm / 7) + 1));
+    const term: TermMeta = {
+      startDate: toISODate(termStart),
+      endDate: toISODate(termEnd),
+      weekNumber,
+      weeksTotal: TERM_WEEKS,
+      label: seasonLabel(termStart),
+    };
+
+    // Build Term Heatmap Grid (14 weeks × 5 class days)
     const termGrid: Array<{
       date: string;
       week: number;
@@ -325,17 +400,12 @@ export async function GET(req: NextRequest) {
       lateCount: number;
       absentCount: number;
       totalSessions: number;
-      logs: AttendanceLog[];
     }> = [];
 
-    const startDate = new Date(2026, 1, 2); // Feb 2, 2026 (Mon)
-    const todayStr = "2026-03-19";
-
-    for (let w = 1; w <= 14; w++) {
+    for (let w = 1; w <= TERM_WEEKS; w++) {
       for (let d = 0; d < 5; d++) {
-        const currentDate = new Date(startDate);
-        currentDate.setDate(startDate.getDate() + ((w - 1) * 7) + d);
-        const dateStr = currentDate.toISOString().slice(0, 10);
+        const currentDate = addDays(termStart, (w - 1) * 7 + d);
+        const dateStr = toISODate(currentDate);
         const dayLabel = ["Mon", "Tue", "Wed", "Thu", "Fri"][d];
 
         const dayLogs = rawLogs.filter((l) => l.sessionDate === dateStr);
@@ -347,10 +417,9 @@ export async function GET(req: NextRequest) {
         let gridStatus: "full" | "partial" | "missed" | "today" | "scheduled" = "scheduled";
         if (dateStr === todayStr) {
           gridStatus = "today";
-        } else if (dateStr < todayStr) {
-          if (abs > 0 && pres === 0 && lte === 0) gridStatus = "missed";
+        } else if (dateStr < todayStr && total > 0) {
+          if (pres === 0 && lte === 0 && abs > 0) gridStatus = "missed";
           else if (abs > 0 || lte > 0) gridStatus = "partial";
-          else if (pres > 0) gridStatus = "full";
           else gridStatus = "full";
         }
 
@@ -363,64 +432,49 @@ export async function GET(req: NextRequest) {
           presentCount: pres,
           lateCount: lte,
           absentCount: abs,
-          totalSessions: total || (d === 0 || d === 2 || d === 4 ? 2 : 2),
-          logs: dayLogs,
+          totalSessions: total,
         });
       }
     }
 
+    // Today's real schedule: courses meeting today + their live log status
+    const todayDayName = DAY_NAMES[parseISODate(todayStr).getDay()];
+    const todaySchedule: TodaySession[] = rawCourses
+      .filter((c) => c.scheduleDays.includes(todayDayName))
+      .map((c) => {
+        const log = rawLogs.find((l) => l.courseId === c.courseId && l.sessionDate === todayStr);
+        return {
+          courseId: c.courseId,
+          courseCode: c.courseCode,
+          title: c.title,
+          startTime: c.startTime,
+          durationMins: c.durationMins,
+          room: c.location,
+          logId: log?.logId ?? null,
+          status: log?.status ?? "SCHEDULED",
+        };
+      })
+      .sort((a, b) => a.startTime.localeCompare(b.startTime));
+
     return NextResponse.json({
       success: true,
-      source: logsRes.state === "SUCCEEDED" ? "lakehouse" : "seed",
+      source: "lakehouse",
+      term,
       stats: {
         overallPct,
         attendedCount: totalPresent + totalLate,
         missedCount: totalAbsent,
         lateCount: totalLate,
         presentCount: totalPresent,
-        scheduledCount: 74,
+        scheduledCount: rawLogs.filter((l) => l.status === "SCHEDULED").length,
         totalSessionsToDate: totalToDate,
-        streakDays: Math.max(streak, 9),
+        streakDays: streak,
         atRiskCoursesCount: courses.filter((c) => c.isAtRisk).length,
       },
       weekdayRates,
       courses,
       termGrid,
-      todaySchedule: [
-        {
-          courseCode: "MATH 201",
-          title: "Linear Algebra",
-          time: "09:00",
-          room: "Hart 112",
-          duration: "50 min",
-          monogram: "MA",
-          color: "accent",
-          status: "Attended",
-          done: true,
-        },
-        {
-          courseCode: "ENG 105",
-          title: "Composition & Rhetoric",
-          time: "13:00",
-          room: "Olson 24",
-          duration: "80 min",
-          monogram: "EN",
-          color: "orange",
-          status: "Next · in 25 min",
-          done: false,
-        },
-        {
-          courseCode: "CS 210",
-          title: "Office hours",
-          time: "16:00",
-          room: "Kemper 210",
-          duration: "drop-in",
-          monogram: "CS",
-          color: "accent",
-          status: "Optional",
-          done: false,
-        },
-      ],
+      todaySchedule,
     });
   } catch (err: any) {
     console.error("[Attendance API Error]", err);
@@ -434,19 +488,60 @@ export async function PUT(req: NextRequest) {
     if (!userId) {
       return NextResponse.json({ success: false, error: "Sign in required" }, { status: 401 });
     }
+    const safeUid = userId.replace(/'/g, "''");
 
     const body = await req.json();
-    const { logId, courseId, sessionDate, newStatus } = body;
+    const { logId, courseId, sessionDate, newStatus, advanceDate } = body;
 
-    const validStatus = (newStatus || "PRESENT").toUpperCase() as AttendanceStatus;
-    const storedLogId = String(logId || `LOG-${Date.now()}`);
-    const storedCourse = String(courseId || "MATH-201");
-    const storedDate = String(sessionDate || "2026-03-19");
+    // Day-advance mode: cycle every session on that date one step forward.
+    if (advanceDate) {
+      const safeDate = String(advanceDate).replace(/'/g, "''");
+      const sql = `
+        MERGE INTO workspace.campus_explorer.student_attendance_logs AS t
+        USING (
+          SELECT log_id,
+                 CASE status
+                   WHEN 'PRESENT' THEN 'LATE'
+                   WHEN 'LATE' THEN 'ABSENT'
+                   WHEN 'ABSENT' THEN 'PRESENT'
+                   ELSE status
+                 END AS next_status
+          FROM workspace.campus_explorer.student_attendance_logs
+          WHERE student_id = '${safeUid}' AND session_date = '${safeDate}' AND status != 'SCHEDULED'
+        ) AS src
+        ON t.log_id = src.log_id
+        WHEN MATCHED THEN UPDATE SET t.status = src.next_status, t.created_at = current_timestamp()
+      `;
+      const result = await executeLakehouseSql(sql);
+      if (result.state !== "SUCCEEDED") {
+        return NextResponse.json({ success: false, error: result.error || "Update failed" }, { status: 500 });
+      }
+      return NextResponse.json({
+        success: true,
+        advancedDate: safeDate,
+        message: `Advanced all sessions on ${safeDate}.`,
+      });
+    }
+
+    const validStatus = String(newStatus || "PRESENT").toUpperCase() as AttendanceStatus;
+    if (!["PRESENT", "LATE", "ABSENT", "SCHEDULED"].includes(validStatus)) {
+      return NextResponse.json({ success: false, error: "Invalid status" }, { status: 400 });
+    }
+    if (!logId && !(courseId && sessionDate)) {
+      return NextResponse.json(
+        { success: false, error: "Provide logId, or courseId + sessionDate" },
+        { status: 400 }
+      );
+    }
+
+    const safeLogId = logId ? String(logId).replace(/'/g, "''") : `LOG-${safeUid.slice(-6)}-${String(courseId).replace(/[^A-Za-z0-9-]/g, "")}-${String(sessionDate).replace(/-/g, "")}`;
+    const safeCourse = String(courseId || "").replace(/'/g, "''");
+    const safeDate = String(sessionDate || "").replace(/'/g, "''");
 
     const sql = `
       MERGE INTO workspace.campus_explorer.student_attendance_logs AS target
       USING (
-        SELECT :log_id AS log_id, :student_id AS student_id, :course_id AS course_id, :session_date AS session_date, :status AS status
+        SELECT '${safeLogId}' AS log_id, '${safeUid}' AS student_id, '${safeCourse}' AS course_id, DATE '${safeDate}' AS session_date, '${validStatus}' AS status
       ) AS src
       ON target.student_id = src.student_id AND target.course_id = src.course_id AND target.session_date = src.session_date
       WHEN MATCHED THEN
@@ -456,21 +551,17 @@ export async function PUT(req: NextRequest) {
         VALUES (src.log_id, src.student_id, src.course_id, src.session_date, src.status, current_timestamp())
     `;
 
-    const result = await executeLakehouseSql(sql, undefined, 30, [
-      { name: "log_id", value: storedLogId },
-      { name: "student_id", value: userId },
-      { name: "course_id", value: storedCourse },
-      { name: "session_date", value: storedDate, type: "DATE" },
-      { name: "status", value: validStatus },
-    ]);
+    const result = await executeLakehouseSql(sql);
+    if (result.state !== "SUCCEEDED") {
+      return NextResponse.json({ success: false, error: result.error || "Update failed" }, { status: 500 });
+    }
 
     return NextResponse.json({
       success: true,
-      state: result.state,
       updated: {
-        logId: storedLogId,
-        courseId: storedCourse,
-        sessionDate: storedDate,
+        logId: safeLogId,
+        courseId: safeCourse,
+        sessionDate: safeDate,
         status: validStatus,
       },
       message: `Session record updated to ${validStatus} in Databricks Lakehouse.`,
