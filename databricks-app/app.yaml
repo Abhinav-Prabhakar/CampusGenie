@@ -1,0 +1,6 @@
+command: ["npm", "run", "start"]
+env:
+  - name: DATABRICKS_WAREHOUSE_ID
+    value: "25132a20d91813ef"
+  - name: DATABRICKS_GENIE_SPACE_ID
+    value: "01f1a5c5fe5110d3b2618830a3195ee7"

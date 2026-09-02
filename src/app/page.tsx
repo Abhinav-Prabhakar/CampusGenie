@@ -11,14 +11,7 @@ import FineTuneCard from "@/components/primitives/FineTuneCard";
 import MarkdownMessage from "@/components/primitives/MarkdownMessage";
 import { EntityChip } from "@/components/atoms/EntityChip";
 import { Button } from "@/components/atoms/Button";
-import {
-  DEFAULT_AVAILABLE_MODELS,
-  getStoredCustomModels,
-  saveStoredCustomModels,
-  type LLMModelConfig,
-  type LLMProvider,
-} from "@/lib/llm";
-import KeyboardShortcutsModal from "@/components/shortcuts/KeyboardShortcutsModal";
+import { DEFAULT_AVAILABLE_MODELS, type LLMProvider } from "@/lib/llm";
 import EventIcons from "@/components/events/EventIcons";
 import { useTheme } from "@/lib/theme";
 import { useChatStore, createThreadTitle, type ChatThread } from "@/lib/chatStore";
@@ -251,8 +244,8 @@ export default function CampusGenieChatPage() {
   const { isDark, toggleTheme } = useTheme();
   const { threads, activeThreadId, saveThread, deleteThread, setActiveThreadId } = useChatStore();
 
-  const [models, setModels] = useState<LLMModelConfig[]>(DEFAULT_AVAILABLE_MODELS);
-  const [selectedModel, setSelectedModel] = useState<LLMModelConfig>(DEFAULT_AVAILABLE_MODELS[0]);
+  const [models, setModels] = useState(DEFAULT_AVAILABLE_MODELS);
+  const [selectedModel, setSelectedModel] = useState(DEFAULT_AVAILABLE_MODELS[0]);
   const [routingMode, setRoutingMode] = useState<RoutingMode>("auto");
   const [rateLimitBlocked, setRateLimitBlocked] = useState<boolean>(false);
   const [rateLimitSecondsRemaining, setRateLimitSecondsRemaining] = useState<number>(0);
@@ -262,8 +255,16 @@ export default function CampusGenieChatPage() {
   const [currentThreadId, setCurrentThreadId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [settingsOpen, setSettingsOpen] = useState<boolean>(false);
-  const [shortcutsOpen, setShortcutsOpen] = useState<boolean>(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [customApiKey, setCustomApiKey] = useState("");
+  const [customBaseUrl, setCustomBaseUrl] = useState("");
+  const [showAddModelForm, setShowAddModelForm] = useState(false);
+  const [newModelName, setNewModelName] = useState("");
+  const [newModelId, setNewModelId] = useState("");
+  const [newModelProvider, setNewModelProvider] = useState<"openai" | "gemini" | "anthropic" | "databricks" | "ollama" | "custom">("openai");
+  const [newModelReasoning, setNewModelReasoning] = useState(false);
+  const [newModelBaseUrl, setNewModelBaseUrl] = useState("");
+  const [newModelApiKey, setNewModelApiKey] = useState("");
   
   // Rate limit countdown effect
   useEffect(() => {
@@ -290,18 +291,6 @@ export default function CampusGenieChatPage() {
     return () => clearInterval(timer);
   }, [rateLimitBlocked, rateLimitSecondsRemaining]);
   
-  // Custom API settings
-  const [customApiKey, setCustomApiKey] = useState<string>("");
-  const [customBaseUrl, setCustomBaseUrl] = useState<string>("");
-
-  // New Custom Model Form State
-  const [showAddModelForm, setShowAddModelForm] = useState<boolean>(false);
-  const [newModelName, setNewModelName] = useState<string>("");
-  const [newModelId, setNewModelId] = useState<string>("");
-  const [newModelProvider, setNewModelProvider] = useState<LLMProvider>("openai");
-  const [newModelReasoning, setNewModelReasoning] = useState<boolean>(false);
-  const [newModelBaseUrl, setNewModelBaseUrl] = useState<string>("");
-  const [newModelApiKey, setNewModelApiKey] = useState<string>("");
   const [lakehouseEvents, setLakehouseEvents] = useState<EventRecord[]>([]);
   const [toolActivity, setToolActivity] = useState<{ label: string; active: boolean } | null>(null);
   const requestAbortRef = useRef<AbortController | null>(null);
@@ -334,46 +323,8 @@ export default function CampusGenieChatPage() {
 
   const scrollAnchorRef = useRef<HTMLDivElement>(null);
 
-  // Sync models from /api/models and localStorage
-  const refreshModels = async () => {
-    const customStored = getStoredCustomModels();
-    try {
-      const res = await fetch("/api/models");
-      if (res.ok) {
-        const data = await res.json();
-        const serverModels: LLMModelConfig[] = data.models || DEFAULT_AVAILABLE_MODELS;
-        
-        // Merge server models with custom models from localStorage without duplicates
-        const merged = [...customStored, ...serverModels.filter((sm) => !customStored.some((cm) => cm.id === sm.id))];
-        setModels(merged);
-        
-        if (data.defaultModel) {
-          const match = merged.find((m) => m.id === data.defaultModel);
-          if (match) setSelectedModel(match);
-        }
-        return;
-      }
-    } catch (e) {
-      console.warn("Failed to fetch /api/models, falling back to local list:", e);
-    }
-    const fallbackMerged = [...customStored, ...DEFAULT_AVAILABLE_MODELS.filter((dm) => !customStored.some((cm) => cm.id === dm.id))];
-    setModels(fallbackMerged);
-  };
-
+  // Load an active thread or prompt from another view.
   useEffect(() => {
-    refreshModels();
-    const handleCustomModelsUpdated = () => refreshModels();
-    window.addEventListener("cg-custom-models-updated", handleCustomModelsUpdated);
-    return () => window.removeEventListener("cg-custom-models-updated", handleCustomModelsUpdated);
-  }, []);
-
-  // Initialize settings and load active thread or prompt
-  useEffect(() => {
-    const savedKey = localStorage.getItem("cg_api_key");
-    const savedUrl = localStorage.getItem("cg_base_url");
-    if (savedKey) setCustomApiKey(savedKey);
-    if (savedUrl) setCustomBaseUrl(savedUrl);
-
     // Initial thread or prompt from redirect
     const activeChatId = sessionStorage.getItem("cg_active_chat_id");
     const initPrompt = sessionStorage.getItem("cg_initial_prompt");
@@ -400,48 +351,9 @@ export default function CampusGenieChatPage() {
     scrollAnchorRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, isLoading]);
 
-  const handleSaveSettings = () => {
-    localStorage.setItem("cg_api_key", customApiKey);
-    localStorage.setItem("cg_base_url", customBaseUrl);
-    setSettingsOpen(false);
-  };
-
-  const handleAddCustomModel = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newModelId.trim() || !newModelName.trim()) return;
-
-    const newConfig: LLMModelConfig = {
-      id: newModelId.trim(),
-      name: newModelName.trim(),
-      provider: newModelProvider,
-      isReasoning: newModelReasoning,
-      customBaseUrl: newModelBaseUrl.trim() || undefined,
-      customApiKey: newModelApiKey.trim() || undefined,
-      isCustom: true,
-    };
-
-    const existing = getStoredCustomModels();
-    const updated = [newConfig, ...existing.filter((m) => m.id !== newConfig.id)];
-    saveStoredCustomModels(updated);
-    setSelectedModel(newConfig);
-
-    // Reset form
-    setNewModelName("");
-    setNewModelId("");
-    setNewModelReasoning(false);
-    setNewModelBaseUrl("");
-    setNewModelApiKey("");
-    setShowAddModelForm(false);
-  };
-
-  const handleDeleteCustomModel = (id: string) => {
-    const existing = getStoredCustomModels();
-    const updated = existing.filter((m) => m.id !== id);
-    saveStoredCustomModels(updated);
-    if (selectedModel.id === id) {
-      setSelectedModel(DEFAULT_AVAILABLE_MODELS[0]);
-    }
-  };
+  const handleSaveSettings = () => setSettingsOpen(false);
+  const handleAddCustomModel = (event: React.FormEvent) => event.preventDefault();
+  const handleDeleteCustomModel = (_id: string) => undefined;
 
   const handleSend = async (text: string) => {
     if (!text.trim() || isLoading) return;
@@ -824,73 +736,19 @@ export default function CampusGenieChatPage() {
                 </button>
               )}
 
-              {/* Model Picker */}
-              <div className="relative">
-                <select
-                  value={selectedModel.id}
-                  onChange={(e) => {
-                    if (e.target.value === "ADD_CUSTOM") {
-                      setShowAddModelForm(true);
-                      setSettingsOpen(true);
-                      return;
-                    }
-                    const m = models.find((x) => x.id === e.target.value);
-                    if (m) setSelectedModel(m);
-                  }}
-                  className="h-7 rounded-[7px] border border-line bg-surface px-2 text-[12px] font-medium text-ink outline-none cursor-pointer hover:border-line-strong transition-colors"
-                >
-                  <optgroup label="Environment Default">
-                    {models.filter((m) => m.id === "env-default").map((m) => (
-                      <option key={m.id} value={m.id}>
-                        ⚡ {m.name} {m.isReasoning ? "🧠" : ""}
-                      </option>
-                    ))}
-                  </optgroup>
-                  {models.some((m) => m.isCustom) && (
-                    <optgroup label="Custom Models">
-                      {models.filter((m) => m.isCustom).map((m) => (
-                        <option key={m.id} value={m.id}>
-                          ★ {m.name} ({m.provider}) {m.isReasoning ? "🧠" : ""}
-                        </option>
-                      ))}
-                    </optgroup>
-                  )}
-                  <optgroup label="Preset Providers">
-                    {models.filter((m) => m.id !== "env-default" && !m.isCustom).map((m) => (
-                      <option key={m.id} value={m.id}>
-                        {m.name} {m.isReasoning ? "🧠" : ""}
-                      </option>
-                    ))}
-                  </optgroup>
-                  <option value="ADD_CUSTOM">+ Add Custom Model...</option>
-                </select>
-              </div>
-
-              {/* Keyboard Shortcuts Trigger */}
-              <button
-                type="button"
-                onClick={() => setShortcutsOpen(true)}
-                title="Keyboard Shortcuts (⌘K)"
-                className="flex size-7 items-center justify-center rounded-[7px] border border-line bg-surface text-ink-2 hover:bg-hover hover:text-ink transition-colors duration-100"
-              >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <rect x="2.5" y="6" width="19" height="12" rx="2" />
-                  <path d="M6.2 10h.01M10 10h.01M13.8 10h.01M17.6 10h.01M6.2 14h.01M17.6 14h.01M9.2 14h5.6" />
-                </svg>
-              </button>
-
-              {/* API Settings Trigger */}
+              {false && (
               <button
                 type="button"
                 onClick={() => setSettingsOpen(true)}
                 title="LLM API Settings"
-                className="flex size-7 items-center justify-center rounded-[7px] border border-line bg-surface text-ink-2 hover:bg-hover hover:text-ink transition-colors duration-100"
+                className="hidden"
               >
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <circle cx="12" cy="12" r="3" />
                   <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
                 </svg>
               </button>
+              )}
 
               {/* Theme Switcher */}
               <button
@@ -1327,12 +1185,6 @@ export default function CampusGenieChatPage() {
       {/* Global SVG Icons Sprite */}
       <EventIcons />
 
-      {/* Keyboard Shortcuts Dialog Modal */}
-      <KeyboardShortcutsModal
-        isOpen={shortcutsOpen}
-        onClose={() => setShortcutsOpen(false)}
-        onOpen={() => setShortcutsOpen(true)}
-      />
     </main>
   );
 }

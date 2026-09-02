@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Campus Genie</string>
+    <string name="title_activity_main">Campus Genie</string>
+    <string name="package_name">com.campusgenie.app</string>
+    <string name="custom_url_scheme">com.campusgenie.app</string>
+</resources>
