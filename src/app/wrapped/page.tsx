@@ -1,12 +1,11 @@
 "use client";
 
-import PageFrame from "@/components/shared/PageFrame";
 import CampusWrapped from "@/components/wrapped/CampusWrapped";
 
+/**
+ * Campus Wrapped is a standalone fullscreen takeover — no app shell, no
+ * sidebar, no shared chrome. Clear separation from the website itself.
+ */
 export default function WrappedPage() {
-  return (
-    <PageFrame title="Campus Wrapped · Semester Rewind" navKey="wrapped">
-      <CampusWrapped />
-    </PageFrame>
-  );
+  return <CampusWrapped />;
 }

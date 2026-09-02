@@ -22,10 +22,6 @@ export type AppUser = {
   updatedAt?: string;
 };
 
-export function isValidRole(role: unknown): role is AppUserRole {
-  return role === "student" || role === "admin";
-}
-
 function sqlString(value: string | null | undefined): string {
   return `'${String(value ?? "").replace(/'/g, "''")}'`;
 }
@@ -80,15 +76,21 @@ export async function ensureAppUser(userId: string): Promise<AppUser | null> {
   }
 
   // Tables provisioned before the college/phone columns existed need a lazy migration.
+  // SQL warehouses reject `ADD COLUMN IF NOT EXISTS`, so use plain ALTERs and
+  // tolerate FIELD_ALREADY_EXISTS on tables that already have the columns.
   try {
     await executeLakehouseSql(
-      "ALTER TABLE workspace.campus_explorer.app_users ADD COLUMN IF NOT EXISTS college STRING"
-    );
-    await executeLakehouseSql(
-      "ALTER TABLE workspace.campus_explorer.app_users ADD COLUMN IF NOT EXISTS phone_number STRING"
+      "ALTER TABLE workspace.campus_explorer.app_users ADD COLUMN college STRING"
     );
   } catch {
-    console.warn("[ensureAppUser] column migration skipped");
+    // college column already exists (or migration otherwise skipped) — proceed.
+  }
+  try {
+    await executeLakehouseSql(
+      "ALTER TABLE workspace.campus_explorer.app_users ADD COLUMN phone_number STRING"
+    );
+  } catch {
+    // phone_number column already exists (or migration otherwise skipped) — proceed.
   }
 
   const insertRes = await executeLakehouseSql(`
@@ -141,22 +143,6 @@ export async function getUserRole(userId: string): Promise<AppUserRole | null> {
     return res.records[0].role === "admin" ? "admin" : "student";
   }
   return null;
-}
-
-export async function setUserRole(userId: string, role: AppUserRole): Promise<boolean> {
-  const res = await executeLakehouseSql(`
-    MERGE INTO workspace.campus_explorer.app_users AS target
-    USING (SELECT ${sqlString(userId)} AS user_id, ${sqlString(role)} AS role) AS src
-    ON target.user_id = src.user_id
-    WHEN MATCHED THEN UPDATE SET target.role = src.role, target.updated_at = current_timestamp()
-    WHEN NOT MATCHED THEN INSERT (user_id, email, first_name, last_name, role, created_at, updated_at)
-      VALUES (src.user_id, NULL, NULL, NULL, src.role, current_timestamp(), current_timestamp())
-  `);
-  if (res.state !== "SUCCEEDED") {
-    console.error("[setUserRole] failed:", res.error);
-    return false;
-  }
-  return true;
 }
 
 export async function setUserCollege(userId: string, college: string): Promise<boolean> {

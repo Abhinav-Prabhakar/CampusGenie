@@ -22,10 +22,13 @@ CREATE TABLE IF NOT EXISTS app_users (
 USING DELTA
 TBLPROPERTIES ('delta.enableChangeDataFeed' = 'true');
 
--- Lazy migration for tables provisioned before newer columns existed.
-ALTER TABLE app_users ADD COLUMN IF NOT EXISTS college STRING;
-ALTER TABLE app_users ADD COLUMN IF NOT EXISTS phone_number STRING;
-ALTER TABLE campus_events ADD COLUMN IF NOT EXISTS whatsapp_url STRING;
+-- Lazy migrations for tables provisioned before these columns existed.
+-- NOTE: SQL warehouses reject `ADD COLUMN IF NOT EXISTS`, so these are plain
+-- ALTERs — on re-runs they fail with FIELD_ALREADY_EXISTS, which the init
+-- script tolerates and continues past.
+ALTER TABLE app_users ADD COLUMN college STRING;
+ALTER TABLE app_users ADD COLUMN phone_number STRING;
+ALTER TABLE campus_events ADD COLUMN whatsapp_url STRING;
 
 -- 0b. Per-user chat threads (server-side chat history)
 CREATE TABLE IF NOT EXISTS chat_threads (
@@ -247,6 +250,32 @@ CREATE TABLE IF NOT EXISTS teammate_swipes (
   user_id STRING,                   -- Clerk user id
   profile_id STRING,
   action STRING,
+  created_at TIMESTAMP
+)
+USING DELTA;
+
+-- 14. Complaint Box (per-user grievance submissions; anonymous rows have NULL user_id)
+CREATE TABLE IF NOT EXISTS complaints (
+  complaint_id STRING,
+  user_id STRING,                   -- Clerk user id; NULL when submitted anonymously
+  title STRING,
+  category STRING,
+  location STRING,
+  urgency STRING,                   -- 'low' | 'medium' | 'high' | 'urgent'
+  description STRING,
+  is_anonymous BOOLEAN,
+  status STRING,                    -- 'open' | 'in_review' | 'resolved'
+  created_at TIMESTAMP
+)
+USING DELTA;
+
+-- 15. Alumni intro requests (student → alumni office mentorship intros)
+CREATE TABLE IF NOT EXISTS alumni_intro_requests (
+  request_id STRING,
+  user_id STRING NOT NULL,          -- Clerk user id of the requesting student
+  alumni_id STRING,                 -- alumni_career_pathways.alumni_id
+  note STRING,                      -- optional context for the alumni office
+  status STRING,                    -- 'pending' | 'approved' | 'declined' | 'introduced'
   created_at TIMESTAMP
 )
 USING DELTA;

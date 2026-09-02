@@ -29,6 +29,15 @@ export type WrappedPayload = {
   weeklyActivity: number[]; // 12 weeks of activity, 0..100
   topCategories: Array<{ label: string; pct: number }>;
   derivedFrom: string[];
+  marqueeEvents: string[]; // live event titles for the scrolling strip
+  claims: {
+    percentile: number; // "top X% of students"
+    nightOwlPct: number; // share of evening check-ins
+    busiestWeekday: string;
+    freePizzaSlices: number;
+    rankTitle: string;
+    stepsAroundCampus: number;
+  };
 };
 
 /** Deterministic 0..1 pseudo-random from a seed string (stable per user). */
@@ -51,10 +60,11 @@ export async function GET() {
   }
 
   // Blend live Lakehouse counts into the rewind so real campus data anchors it.
-  const [eventsRes, clubsRes, alumniRes] = await Promise.all([
+  const [eventsRes, clubsRes, alumniRes, titlesRes] = await Promise.all([
     executeLakehouseSql("SELECT count(*) AS c FROM workspace.campus_explorer.campus_events", undefined, 20),
     executeLakehouseSql("SELECT count(*) AS c FROM workspace.campus_explorer.clubs_and_labs", undefined, 20),
     executeLakehouseSql("SELECT count(*) AS c FROM workspace.campus_explorer.alumni_career_pathways", undefined, 20),
+    executeLakehouseSql("SELECT title FROM workspace.campus_explorer.campus_events ORDER BY event_date ASC", undefined, 30),
   ]);
 
   const num = (r: typeof eventsRes, fallback: number) =>
@@ -96,6 +106,20 @@ export async function GET() {
     { label: "Socials", pct: inRange(u(34), 8, 18) },
   ];
 
+  const marqueeEvents =
+    titlesRes.state === "SUCCEEDED" && titlesRes.records
+      ? titlesRes.records.map((r) => String(r.title ?? "")).filter(Boolean).slice(0, 16)
+      : [];
+
+  const RANKS = [
+    "Certified Campus Legend",
+    "Hallway Diplomat",
+    "Serial RSVP Machine",
+    "Quad Regular",
+    "Lab-to-Lounge Nomad",
+    "Festival Mainstage Energy",
+  ];
+
   const payload: WrappedPayload = {
     term: "Spring ’26",
     stats,
@@ -105,6 +129,15 @@ export async function GET() {
     weeklyActivity,
     topCategories,
     derivedFrom: ["campus_events.delta", "clubs_and_labs.delta", "alumni_career_pathways.delta", "chat_threads.delta"],
+    marqueeEvents,
+    claims: {
+      percentile: inRange(u(51), 4, 16),
+      nightOwlPct: inRange(u(52), 55, 78),
+      busiestWeekday: ["Tuesdays", "Thursdays", "Fridays", "Saturdays"][inRange(u(53), 0, 3)],
+      freePizzaSlices: inRange(u(54), 11, 34),
+      rankTitle: RANKS[inRange(u(55), 0, RANKS.length - 1)],
+      stepsAroundCampus: inRange(u(56), 180000, 420000),
+    },
   };
 
   return NextResponse.json(payload, { headers: { "Cache-Control": "no-store, max-age=0" } });

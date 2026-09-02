@@ -6,6 +6,8 @@ import { checkRateLimit, getClientIdFromHeaders } from "@/lib/rateLimiter";
 import { getCurrentUser, DEFAULT_COLLEGE } from "@/lib/appUsers";
 import { buildWalkingRoute } from "@/lib/campusDirections";
 import { getCollegeForUser, fetchCampusLocations, resolveCampusPoint, listCampusLocationNames } from "@/lib/campusLocations";
+import { validateCampusReadOnlySql } from "@/lib/chatSqlSecurity";
+import { customEndpointsEnabled, validateCustomEndpointDestination } from "@/lib/llmEndpointSecurity";
 
 export const runtime = "nodejs";
 
@@ -85,13 +87,17 @@ const CAMPUS_TOOLS = [
     function: {
       name: "ask_user_questions",
       description:
-        "Present the user with MCQ questions to gather preferences before making a tailored recommendation. Use when you need to clarify the student's interests, availability, or tech stack.",
+        "Present the student with 2-4 MCQ questions YOU write yourself to gather context that is genuinely missing from the conversation before making a tailored recommendation (interests, availability, tech stack, constraints). " +
+        "Rules: write original questions and options tailored to their request — never reuse or fetch stored survey questions; " +
+        "scan the conversation history FIRST and do not ask anything the student has already answered; " +
+        "call this at most ONCE per conversation, and only when a recommendation would otherwise be guesswork. " +
+        "If the request is already specific enough, answer directly without this tool.",
       parameters: {
         type: "object",
         properties: {
           questions: {
             type: "array",
-            description: "List of questions to ask the user",
+            description: "Questions written by you for this specific request",
             items: {
               type: "object",
               properties: {
@@ -105,7 +111,7 @@ const CAMPUS_TOOLS = [
                 options: {
                   type: "array",
                   items: { type: "string" },
-                  description: "List of answer choices",
+                  description: "3-5 answer choices written by you",
                 },
               },
               required: ["id", "q", "type", "options"],
@@ -154,8 +160,12 @@ KNOWLEDGE SOURCES IN LAKEHOUSE:
 ${sourcesSnippet}
 You can query more details from any source using: SELECT content_sample FROM workspace.campus_explorer.knowledge_sources WHERE source_id = 'DOC-XX'
 
-SURVEY / MCQ:
-If the student asks you to help them choose between options, recommend events, or guide them through preferences, call ask_user_questions first to gather their context.
+SURVEY / MCQ (ask_user_questions tool):
+- The ask_user_questions tool renders an interactive MCQ card. Use it ONLY when the student's request lacks context you genuinely need (interests, availability, tech stack) — and a recommendation without it would be a guess.
+- You WRITE the questions and options yourself, tailored to their request. Never fetch questions from campus_surveys for this card; stored surveys are data to *report on*, not to re-ask.
+- BEFORE calling it, scan the conversation history. If the student already stated preferences or submitted answers (e.g. a "Survey Responses" message), use those and do NOT ask again.
+- At most ONE ask_user_questions call per conversation. Re-asking answered questions is a bug.
+- If the request is already specific ("any hackathon with food this weekend"), skip the card and answer directly.
 
 RESPONSE STYLE:
 - Friendly, knowledgeable campus AI persona
@@ -255,23 +265,11 @@ async function executeToolCall(
   const sseEvents: any[] = [];
 
   if (toolName === "query_campus_data") {
-    let sql = String(toolArgs.sql || "").trim();
-    if (!sql) {
-      return { content: "Error: No SQL statement provided.", sseEvents };
+    const validation = validateCampusReadOnlySql(toolArgs.sql);
+    if (!validation.ok) {
+      return { content: `Error: ${validation.error}. Only one read-only SELECT/WITH query over approved campus analytics tables is permitted.`, sseEvents };
     }
-
-    // Disallow destructive statements
-    const destructive = /\b(DROP|DELETE|UPDATE|INSERT|ALTER|TRUNCATE|GRANT|REVOKE)\b/i;
-    if (destructive.test(sql)) {
-      return { content: "Error: Only read-only queries (SELECT, SHOW, DESCRIBE, EXPLAIN, WITH) are permitted.", sseEvents };
-    }
-
-    // Auto-namespace unqualified table names to workspace.campus_explorer.<table_name>
-    const tables = ["campus_events", "knowledge_sources", "campus_surveys", "campus_locations", "clubs_and_labs"];
-    for (const tbl of tables) {
-      const regex = new RegExp(`(?<!workspace\\.campus_explorer\\.)\\b${tbl}\\b`, "gi");
-      sql = sql.replace(regex, `workspace.campus_explorer.${tbl}`);
-    }
+    const sql = validation.sql;
 
     try {
       const result = await executeLakehouseSql(sql, undefined, 20);
@@ -371,7 +369,10 @@ async function executeToolCall(
       sseEvents.push({ type: "survey", questions });
     }
     return {
-      content: `Survey questions presented to the user (${Array.isArray(questions) ? questions.length : 0} questions).`,
+      content:
+        "The MCQ card is now displayed to the student. STOP here: end your turn with a short line telling them you'll continue once they answer. " +
+        "Do NOT answer the questions yourself, do NOT continue with a recommendation, and do NOT call ask_user_questions again — " +
+        "their answers will arrive as their next message, and you must use those instead of re-asking.",
       sseEvents,
     };
   }
@@ -449,6 +450,40 @@ export async function POST(req: NextRequest) {
       customBaseUrl,
     } = body;
 
+    const supportedProviders = new Set(["databricks", "openai", "gemini", "anthropic", "ollama", "custom"]);
+    if (!supportedProviders.has(inputProvider)) {
+      return NextResponse.json({ error: "Unsupported LLM provider" }, { status: 400 });
+    }
+    const callerRequestedCustomEndpoint =
+      inputProvider === "custom" || customBaseUrl !== undefined || customApiKey !== undefined;
+    if (callerRequestedCustomEndpoint && inputProvider !== "custom") {
+      return NextResponse.json(
+        { error: "Custom endpoint credentials are accepted only when provider is 'custom'" },
+        { status: 400 },
+      );
+    }
+    if (callerRequestedCustomEndpoint && !customEndpointsEnabled(process.env)) {
+      return NextResponse.json(
+        { error: "Custom LLM endpoints are disabled on this deployment" },
+        { status: 403 },
+      );
+    }
+
+    let validatedCallerBaseUrl: string | undefined;
+    if (callerRequestedCustomEndpoint) {
+      if (typeof customApiKey !== "string" || !customApiKey.trim()) {
+        return NextResponse.json(
+          { error: "A caller-owned API key is required for a custom endpoint" },
+          { status: 400 },
+        );
+      }
+      const endpointValidation = await validateCustomEndpointDestination(customBaseUrl);
+      if (!endpointValidation.ok) {
+        return NextResponse.json({ error: endpointValidation.error }, { status: 400 });
+      }
+      validatedCallerBaseUrl = endpointValidation.url;
+    }
+
     const latestPrompt = [...messages]
       .reverse()
       .find((m: { role?: string }) => m.role === "user")?.content;
@@ -474,9 +509,8 @@ export async function POST(req: NextRequest) {
         ? process.env.LLM_MODEL || process.env.NEXT_PUBLIC_DEFAULT_MODEL || "gemini-2.5-flash"
         : inputModel;
 
-    let provider =
-      requestsGenie && !routeToGenie ? "custom" : inputProvider;
-    if (provider === "custom" && !customBaseUrl && !process.env.LLM_BASE_URL) {
+    let provider = requestsGenie && !routeToGenie ? "custom" : inputProvider;
+    if (provider === "custom" && !callerRequestedCustomEndpoint && !process.env.LLM_BASE_URL) {
       const lower = model.toLowerCase();
       if (lower.includes("gemini")) provider = "gemini";
       else if (lower.includes("claude")) provider = "anthropic";
@@ -484,15 +518,15 @@ export async function POST(req: NextRequest) {
       else provider = "openai";
     }
 
-    const apiKey =
-      customApiKey ||
-      process.env.LLM_API_KEY ||
-      (provider === "databricks" ? process.env.DATABRICKS_TOKEN : undefined) ||
-      (provider === "openai" ? process.env.OPENAI_API_KEY : undefined) ||
-      (provider === "gemini" ? process.env.GEMINI_API_KEY : undefined) ||
-      (provider === "anthropic" ? process.env.ANTHROPIC_API_KEY : undefined);
+    const apiKey = callerRequestedCustomEndpoint
+      ? customApiKey.trim()
+      : process.env.LLM_API_KEY ||
+        (provider === "databricks" ? process.env.DATABRICKS_TOKEN : undefined) ||
+        (provider === "openai" ? process.env.OPENAI_API_KEY : undefined) ||
+        (provider === "gemini" ? process.env.GEMINI_API_KEY : undefined) ||
+        (provider === "anthropic" ? process.env.ANTHROPIC_API_KEY : undefined);
 
-    let baseUrl = customBaseUrl || process.env.LLM_BASE_URL;
+    let baseUrl = validatedCallerBaseUrl || process.env.LLM_BASE_URL;
     let endpoint = "";
     const headers: Record<string, string> = { "Content-Type": "application/json" };
 
@@ -500,7 +534,7 @@ export async function POST(req: NextRequest) {
       if (provider === "databricks") {
         const host = process.env.DATABRICKS_HOST || "https://adb-default.cloud.databricks.com";
         baseUrl = host.replace(/\/+$/, "");
-        endpoint = `${baseUrl}/serving-endpoints/${model}/invocations`;
+        endpoint = `${baseUrl}/serving-endpoints/${encodeURIComponent(model)}/invocations`;
       } else if (provider === "gemini") {
         baseUrl = "https://generativelanguage.googleapis.com/v1beta/openai";
         endpoint = `${baseUrl}/chat/completions`;
@@ -594,6 +628,7 @@ export async function POST(req: NextRequest) {
               headers,
               body: JSON.stringify(payload),
               signal: req.signal,
+              redirect: callerRequestedCustomEndpoint ? "error" : "follow",
             });
 
             if (!upstreamRes.ok || !upstreamRes.body) {

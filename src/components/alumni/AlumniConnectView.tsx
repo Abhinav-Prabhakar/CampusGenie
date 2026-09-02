@@ -53,6 +53,47 @@ function toTableRows(alumni: AlumniApiRecord[]): RecordRow[] {
   }));
 }
 
+function csvCell(value: string | number): string {
+  const s = String(value ?? "");
+  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+
+function downloadCsv(rows: AlumniApiRecord[]): void {
+  const header = [
+    "Alumni ID", "Name", "Graduation Year", "Major", "Domain",
+    "Clubs", "Labs", "First Job", "First Company",
+    "Current Role", "Current Organization", "LinkedIn", "Advice",
+  ];
+  const lines = rows.map((a) =>
+    [
+      a.id,
+      a.displayName,
+      a.graduationYear,
+      a.major,
+      a.domain,
+      a.clubs.join("; "),
+      a.labs.join("; "),
+      a.firstJobTitle,
+      a.firstCompany,
+      a.currentRole,
+      a.currentOrganization,
+      `linkedin.com/in/${slugify(a.displayName.split(" — ")[0])}`,
+      a.advice,
+    ]
+      .map(csvCell)
+      .join(",")
+  );
+  const blob = new Blob([`${header.join(",")}\n${lines.join("\n")}\n`], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = `alumni-connect-${new Date().toISOString().slice(0, 10)}.csv`;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(url);
+}
+
 /* ── icon glyphs (2px rounded stroke, matches the app's inline set) ── */
 function Icon({ children, size = 15 }: { children: React.ReactNode; size?: number }) {
   return (
@@ -118,6 +159,15 @@ export default function AlumniConnectView() {
   const [error, setError] = useState<string | null>(null);
   const [domainFilter, setDomainFilter] = useState<string>("All");
 
+  // Request-intro dialog state
+  const [introOpen, setIntroOpen] = useState<boolean>(false);
+  const [introAlumniId, setIntroAlumniId] = useState<string>("");
+  const [introNote, setIntroNote] = useState<string>("");
+  const [introBusy, setIntroBusy] = useState<boolean>(false);
+  const [introError, setIntroError] = useState<string | null>(null);
+  const [introSuccessId, setIntroSuccessId] = useState<string | null>(null);
+  const [requestedIds, setRequestedIds] = useState<string[]>([]);
+
   useEffect(() => {
     let cancelled = false;
     fetch("/api/alumni", { cache: "no-store" })
@@ -141,6 +191,37 @@ export default function AlumniConnectView() {
   );
   const rows = useMemo(() => toTableRows(filtered), [filtered]);
 
+  const openIntro = () => {
+    setIntroError(null);
+    setIntroSuccessId(null);
+    setIntroNote("");
+    setIntroAlumniId((prev) => prev || filtered[0]?.id || "");
+    setIntroOpen(true);
+  };
+
+  const submitIntro = async () => {
+    if (!introAlumniId || introBusy) return;
+    setIntroBusy(true);
+    setIntroError(null);
+    try {
+      const res = await fetch("/api/alumni/intro", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ alumniId: introAlumniId, note: introNote.trim() }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || `Request failed (${res.status})`);
+      setIntroSuccessId(String(data.requestId ?? ""));
+      setRequestedIds((prev) => (prev.includes(introAlumniId) ? prev : [...prev, introAlumniId]));
+    } catch (e: any) {
+      setIntroError(e?.message || "Request failed — please try again.");
+    } finally {
+      setIntroBusy(false);
+    }
+  };
+
+  const selectedIntroAlumni = filtered.find((a) => a.id === introAlumniId) ?? null;
+
   return (
     <div className="p-4 md:p-6 space-y-6">
       {/* header */}
@@ -154,8 +235,12 @@ export default function AlumniConnectView() {
           </p>
         </div>
         <div className="hidden items-center gap-2 sm:flex">
-          <Button variant="secondary" className="text-xs">Export CSV</Button>
-          <Button variant="primary" className="text-xs">Request intro</Button>
+          <Button variant="secondary" className="text-xs" onClick={() => downloadCsv(filtered)}>
+            Export CSV
+          </Button>
+          <Button variant="primary" className="text-xs" onClick={openIntro}>
+            Request intro
+          </Button>
         </div>
       </div>
 
@@ -233,6 +318,107 @@ export default function AlumniConnectView() {
             </div>
           </div>
         </>
+      )}
+
+      {/* Request intro dialog */}
+      {introOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fade-in">
+          <div className="w-full max-w-md rounded-[14px] border border-line bg-canvas p-5 shadow-overlay space-y-4">
+            <div className="flex items-start justify-between gap-3 border-b border-line-soft pb-3">
+              <div>
+                <h3 className="text-[15px] font-semibold text-ink">Request an intro</h3>
+                <p className="mt-0.5 text-[11.5px] text-ink-3">
+                  The alumni office reviews requests and makes the email introduction.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIntroOpen(false)}
+                aria-label="Close dialog"
+                className="text-ink-3 transition-colors hover:text-ink"
+              >
+                ✕
+              </button>
+            </div>
+
+            {introSuccessId ? (
+              <div className="space-y-4 py-2">
+                <div className="flex items-start gap-3">
+                  <span className="flex size-8 shrink-0 items-center justify-center rounded-[8px] bg-green-tint text-green">
+                    <Icon size={15}><polyline points="20 6 9 17 4 12" /></Icon>
+                  </span>
+                  <div>
+                    <p className="text-[13.5px] font-semibold text-ink">Request sent</p>
+                    <p className="mt-0.5 text-[12px] text-ink-2 leading-relaxed">
+                      Logged as <span className="font-mono text-accent-ink tabular-nums">{introSuccessId}</span> in{" "}
+                      <code className="font-mono text-[11px] text-accent-ink">alumni_intro_requests</code>. You&apos;ll hear back from the alumni office by email.
+                    </p>
+                  </div>
+                </div>
+                <div className="flex justify-end border-t border-line-soft pt-3">
+                  <Button variant="primary" className="text-xs" onClick={() => setIntroOpen(false)}>
+                    Done
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-3.5">
+                <div>
+                  <label htmlFor="intro-alumni" className="mb-1.5 block text-[12.5px] font-medium text-ink-2">
+                    Alumnus
+                  </label>
+                  <select
+                    id="intro-alumni"
+                    value={introAlumniId}
+                    onChange={(e) => setIntroAlumniId(e.target.value)}
+                    className="h-8 w-full rounded-[8px] border border-line bg-field px-2 text-[12px] text-ink outline-none transition-colors duration-150 focus:border-line-strong"
+                  >
+                    {filtered.map((a) => (
+                      <option key={a.id} value={a.id}>
+                        {a.displayName} · Class of {a.graduationYear}
+                      </option>
+                    ))}
+                  </select>
+                  {selectedIntroAlumni && (
+                    <p className="mt-1.5 text-[11.5px] text-ink-3">
+                      {selectedIntroAlumni.currentRole} · {selectedIntroAlumni.currentOrganization}
+                    </p>
+                  )}
+                </div>
+
+                <div>
+                  <label htmlFor="intro-note" className="mb-1.5 block text-[12.5px] font-medium text-ink-2">
+                    Note to the alumni office <span className="text-ink-3">(optional)</span>
+                  </label>
+                  <textarea
+                    id="intro-note"
+                    rows={3}
+                    maxLength={500}
+                    value={introNote}
+                    onChange={(e) => setIntroNote(e.target.value)}
+                    placeholder="e.g., Seeking guidance on moving from systems into AI infrastructure roles…"
+                    className="w-full resize-none rounded-[8px] border border-line bg-field p-2.5 text-[12.5px] text-ink placeholder:text-ink-3 outline-none transition-colors duration-150 focus:border-line-strong"
+                  />
+                </div>
+
+                {introError && (
+                  <div className="rounded-[8px] border border-red/30 bg-red-tint/20 px-3 py-2 text-[12px] text-red">
+                    {introError}
+                  </div>
+                )}
+
+                <div className="flex justify-end gap-2 border-t border-line-soft pt-3">
+                  <Button variant="ghost" className="text-xs" onClick={() => setIntroOpen(false)}>
+                    Cancel
+                  </Button>
+                  <Button variant="primary" className="text-xs" onClick={submitIntro} disabled={introBusy || !introAlumniId}>
+                    {introBusy ? "Sending…" : requestedIds.includes(introAlumniId) ? "Send again" : "Send Request"}
+                  </Button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
       )}
     </div>
   );

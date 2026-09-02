@@ -923,36 +923,51 @@ export default function CampusGenieChatPage() {
                           </div>
                         )}
 
-                        {/* Interactive Multi-Step MCQ Survey from LLM (ask_questions tool) */}
+                        {/* Interactive Multi-Step MCQ Survey from LLM (ask_questions tool).
+                            Once the student has answered (a later "Survey Responses" user
+                            message exists), collapse the card so Genie never re-asks. */}
                         {msg.questions && msg.questions.length > 0 && (
                           <div className="w-full animate-fade-in">
-                            <ApprovalCard
-                              questions={msg.questions}
-                              labels={{
-                                skip: "Skip",
-                                continue: "Continue",
-                                send: "Submit Answers",
-                                customPlaceholder: "Other details…",
-                                sentMessage: "Answers sent to Genie",
-                              }}
-                              onSubmitted={(_answers, result) => {
-                                if (result?.formattedText) {
-                                  handleSend(result.formattedText);
-                                } else {
-                                  const summary = Object.entries(_answers)
-                                    .map(([qIdx, optionIndices]) => {
-                                      const questionObj = msg.questions?.[Number(qIdx)];
-                                      const qTitle = questionObj?.q || `Question ${Number(qIdx) + 1}`;
-                                      const selected = Array.isArray(optionIndices)
-                                        ? optionIndices.map((i) => questionObj?.options?.[i] || i).join(", ")
-                                        : optionIndices;
-                                      return `${qTitle} -> ${selected}`;
-                                    })
-                                    .join("\n");
-                                  handleSend(`Survey Responses:\n${summary}`);
-                                }
-                              }}
-                            />
+                            {messages
+                              .slice(idx + 1)
+                              .some((m) => m.role === "user" && typeof m.content === "string" && m.content.startsWith("Survey Responses")) ? (
+                              <div className="flex items-center gap-2 rounded-[10px] border border-line bg-inset px-3 py-2.5 text-[12.5px] font-medium text-ink-3">
+                                <span className="text-green">
+                                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                                    <path d="M20 6 9 17l-5-5" />
+                                  </svg>
+                                </span>
+                                Preferences captured — answers already sent to Genie
+                              </div>
+                            ) : (
+                              <ApprovalCard
+                                questions={msg.questions}
+                                labels={{
+                                  skip: "Skip",
+                                  continue: "Continue",
+                                  send: "Submit Answers",
+                                  customPlaceholder: "Other details…",
+                                  sentMessage: "Answers sent to Genie",
+                                }}
+                                onSubmitted={(_answers, result) => {
+                                  if (result?.formattedText) {
+                                    handleSend(result.formattedText);
+                                  } else {
+                                    const summary = Object.entries(_answers)
+                                      .map(([qIdx, optionIndices]) => {
+                                        const questionObj = msg.questions?.[Number(qIdx)];
+                                        const qTitle = questionObj?.q || `Question ${Number(qIdx) + 1}`;
+                                        const selected = Array.isArray(optionIndices)
+                                          ? optionIndices.map((i) => questionObj?.options?.[i] || i).join(", ")
+                                          : optionIndices;
+                                        return `${qTitle} -> ${selected}`;
+                                      })
+                                      .join("\n");
+                                    handleSend(`Survey Responses:\n${summary}`);
+                                  }
+                                }}
+                              />
+                            )}
                           </div>
                         )}
 

@@ -237,7 +237,7 @@ const NAV_ITEMS = [
   { key: "awards", label: "Awards", icon: <IconTrophy size={18} />, count: "4", href: "/awards" },
   { key: "sources", label: "Sources", icon: <IconDatabase size={18} />, count: "5", href: "/sources" },
   { key: "gallery", label: "Gallery", icon: <IconSparkles size={18} />, href: "/gallery" },
-  { key: "compliance", label: "Compliant Box", icon: <IconBoxCheck size={18} />, href: "/compliance" },
+  { key: "compliance", label: "Complaint Box", icon: <IconBoxCheck size={18} />, href: "/compliance" },
 ];
 
 export type SidebarRecent = {

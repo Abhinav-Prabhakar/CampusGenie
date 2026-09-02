@@ -1,15 +1,24 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import SidebarNav from "@/components/primitives/SidebarNav";
 import EventAdminView from "@/components/admin/EventAdminView";
+import ComplaintsAdminView from "@/components/admin/ComplaintsAdminView";
 import KeyboardShortcutsModal from "@/components/shortcuts/KeyboardShortcutsModal";
 import EventIcons from "@/components/events/EventIcons";
 import { useTheme } from "@/lib/theme";
 
+type AdminTab = "events" | "complaints";
+
+const TABS: Array<{ key: AdminTab; label: string }> = [
+  { key: "events", label: "Event Manager" },
+  { key: "complaints", label: "Complaint Box" },
+];
+
 export default function AdminPage() {
   const { isDark, toggleTheme } = useTheme();
   const [shortcutsOpen, setShortcutsOpen] = useState<boolean>(false);
+  const [tab, setTab] = useState<AdminTab>("events");
 
   return (
     <main className="flex h-[100dvh] w-full gap-0 bg-canvas p-2.5 text-ink lg:pl-0 select-none">
@@ -26,7 +35,23 @@ export default function AdminPage() {
           {/* Minimal Top Header */}
           <header className="flex h-11 shrink-0 items-center justify-between px-3 sm:px-4 bg-transparent">
             <div className="flex items-center gap-2">
-              <span className="text-[14px] font-semibold text-ink">Student Admin · Event Manager</span>
+              <span className="text-[14px] font-semibold text-ink">
+                Student Admin · {TABS.find((t) => t.key === tab)?.label}
+              </span>
+              <div className="flex items-center gap-1 rounded-[7px] bg-inset p-0.5">
+                {TABS.map((t) => (
+                  <button
+                    key={t.key}
+                    type="button"
+                    onClick={() => setTab(t.key)}
+                    className={`h-6 rounded-[5px] px-2.5 text-[11.5px] font-medium transition-colors duration-100 ${
+                      tab === t.key ? "bg-canvas text-ink shadow-hairline" : "text-ink-3 hover:text-ink-2"
+                    }`}
+                  >
+                    {t.label}
+                  </button>
+                ))}
+              </div>
             </div>
 
             <div className="flex items-center gap-2">
@@ -63,7 +88,7 @@ export default function AdminPage() {
 
           <div className="min-h-0 flex-1 overflow-y-auto p-1 sm:p-2 bg-transparent">
             <div className="max-w-[1152px] mx-auto">
-              <EventAdminView />
+              {tab === "events" ? <EventAdminView /> : <ComplaintsAdminView />}
             </div>
           </div>
         </section>
