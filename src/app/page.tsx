@@ -243,7 +243,9 @@ export default function CampusGenieChatPage() {
 
   const [models, setModels] = useState(DEFAULT_AVAILABLE_MODELS);
   const [selectedModel, setSelectedModel] = useState(DEFAULT_AVAILABLE_MODELS[0]);
-  const [routingMode, setRoutingMode] = useState<RoutingMode>("auto");
+  const [routingMode, setRoutingMode] = useState<RoutingMode>("genie");
+  const [attachedSource, setAttachedSource] = useState<{ id: string; name: string } | null>(null);
+  const [prefillPrompt, setPrefillPrompt] = useState<string>("");
   const [rateLimitBlocked, setRateLimitBlocked] = useState<boolean>(false);
   const [rateLimitSecondsRemaining, setRateLimitSecondsRemaining] = useState<number>(0);
   const [rateLimitMessage, setRateLimitMessage] = useState<string | null>(null);
@@ -339,9 +341,25 @@ export default function CampusGenieChatPage() {
       }
     }
 
+    const initSourceRaw = sessionStorage.getItem("cg_initial_source");
+    const prefillOnly = sessionStorage.getItem("cg_prefill_only");
+
+    if (initSourceRaw) {
+      sessionStorage.removeItem("cg_initial_source");
+      try {
+        setAttachedSource(JSON.parse(initSourceRaw));
+      } catch {}
+      setRoutingMode("genie");
+    }
+
     if (initPrompt) {
       sessionStorage.removeItem("cg_initial_prompt");
-      handleSendRef.current(initPrompt);
+      sessionStorage.removeItem("cg_prefill_only");
+      setRoutingMode("genie");
+      setPrefillPrompt(initPrompt);
+      if (!prefillOnly) {
+        handleSendRef.current(initPrompt);
+      }
     }
   }, [threads]);
 
@@ -356,6 +374,8 @@ export default function CampusGenieChatPage() {
   const handleSend = async (text: string) => {
     if (!text.trim() || isLoading) return;
 
+    setPrefillPrompt("");
+    setAttachedSource(null);
     setErrorMessage(null);
     const userMsgId = Date.now().toString();
     const userMsg: ChatMessage = {
@@ -919,7 +939,13 @@ export default function CampusGenieChatPage() {
                         {/* Interactive Lakehouse Event Cards with click-to-open modal */}
                         {msg.events && msg.events.length > 0 && (
                           <div className="w-full animate-fade-in">
-                            <ChatEventCards events={msg.events} onAskGenie={handleSend} />
+                            <ChatEventCards
+                              events={msg.events}
+                              onAskGenie={(p) => {
+                                setPrefillPrompt(p);
+                                setRoutingMode("genie");
+                              }}
+                            />
                           </div>
                         )}
 
@@ -1060,6 +1086,9 @@ export default function CampusGenieChatPage() {
                 onStop={handleStop}
                 routingMode={routingMode}
                 onSelectRoutingMode={setRoutingMode}
+                prefillDraft={prefillPrompt}
+                attachedSource={attachedSource}
+                onRemoveAttachedSource={() => setAttachedSource(null)}
                 rateLimitBlocked={rateLimitBlocked}
                 rateLimitSecondsRemaining={rateLimitSecondsRemaining}
                 rateLimitMessage={rateLimitMessage}

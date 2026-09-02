@@ -58,6 +58,8 @@ export default function ChatDirectionsCard({
   route: DirectionsPayload;
   isDark: boolean;
 }) {
+  if (!route || !route.from || !route.to) return null;
+
   return (
     <div className="w-full overflow-hidden rounded-[12px] border border-line bg-surface shadow-card">
       {/* Header: route title + distance/ETA pills */}
@@ -88,10 +90,11 @@ export default function ChatDirectionsCard({
       </div>
 
       {/* Map: dark basemap that auto-adapts to the app theme, 3D buildings */}
-      <div className="relative h-[280px] w-full sm:h-[320px]">
+      <div className="relative h-[280px] w-full sm:h-[320px] bg-canvas overflow-hidden">
         <DirectionsMap route={route} isDark={isDark} />
-        <div className="pointer-events-none absolute left-2 top-2 z-10 rounded-[6px] border border-line bg-surface/85 px-1.5 py-0.5 text-[10.5px] font-medium text-ink-3 backdrop-blur-sm">
-          3D buildings
+        <div className="pointer-events-none absolute left-2 top-2 z-10 rounded-[6px] border border-line bg-surface/85 px-2 py-0.5 text-[10.5px] font-medium text-ink-3 backdrop-blur-sm flex items-center gap-1.5">
+          <span className="size-1.5 rounded-full bg-accent animate-pulse" />
+          <span>3D Vector Campus Map</span>
         </div>
       </div>
 

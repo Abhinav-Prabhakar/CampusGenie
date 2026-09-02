@@ -16,6 +16,7 @@ export default function EventsPage() {
 
   const handleAskGenie = (prompt: string) => {
     sessionStorage.setItem("cg_initial_prompt", prompt);
+    sessionStorage.setItem("cg_prefill_only", "true");
     router.push("/");
   };
 

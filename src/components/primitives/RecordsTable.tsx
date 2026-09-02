@@ -534,9 +534,11 @@ export default function RecordsTable({ rows = INITIAL_ROWS, fill = false }: { ro
   useEffect(() => {
     if (!calc) return;
     if (calc.resolved > visibleRows.length) {
-      if (calc.col === AI_LABEL) setAiDone(true);
-      setCalc(null);
-      return;
+      const t = setTimeout(() => {
+        if (calc.col === AI_LABEL) setAiDone(true);
+        setCalc(null);
+      }, 0);
+      return () => clearTimeout(t);
     }
     const t = setTimeout(() => setCalc((current) => (current ? { ...current, resolved: current.resolved + 1 } : current)), 110);
     return () => clearTimeout(t);

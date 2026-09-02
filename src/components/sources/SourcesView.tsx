@@ -8,7 +8,7 @@ import { StatusPill } from "@/components/atoms/StatusPill";
 import { EntityChip } from "@/components/atoms/EntityChip";
 
 interface SourcesViewProps {
-  onAskGenie?: (prompt: string) => void;
+  onAskGenie?: (prompt: string, sourceDoc?: { id: string; name: string }) => void;
 }
 
 export default function SourcesView({ onAskGenie }: SourcesViewProps) {
@@ -577,7 +577,7 @@ export default function SourcesView({ onAskGenie }: SourcesViewProps) {
                       type="button"
                       onClick={(e) => {
                         e.stopPropagation();
-                        onAskGenie?.(`According to "${doc.name}", what are the key policies and guidelines?`);
+                        onAskGenie?.(`According to "${doc.name}", what are the key policies and guidelines?`, { id: doc.id, name: doc.name });
                       }}
                       className="text-accent-ink hover:underline font-medium"
                     >
@@ -664,7 +664,7 @@ export default function SourcesView({ onAskGenie }: SourcesViewProps) {
                   onClick={() => {
                     const prompt = `According to the knowledge source "${previewDoc.name}", summarize the key policies, prerequisites, and schedules.`;
                     setPreviewDoc(null);
-                    onAskGenie?.(prompt);
+                    onAskGenie?.(prompt, { id: previewDoc.id, name: previewDoc.name });
                   }}
                 >
                   Ask Genie About This Document →

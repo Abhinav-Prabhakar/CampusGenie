@@ -159,6 +159,30 @@ export async function resolveGenieWalkingRoute(
     if (fromMatch && toMatch && fromMatch.point.name !== toMatch.point.name) {
       return buildWalkingRoute(fromMatch.point, toMatch.point, college);
     }
+    if (toMatch && !fromMatch) {
+      const defaultHub =
+        locations.find((l) => /main gate|central library|student center/i.test(l.name) && l.name !== toMatch.point.name) ||
+        locations.find((l) => l.name !== toMatch.point.name);
+      if (defaultHub) {
+        return buildWalkingRoute(
+          { name: defaultHub.name, lat: defaultHub.lat, lng: defaultHub.lng, category: defaultHub.category },
+          toMatch.point,
+          college
+        );
+      }
+    }
+    if (fromMatch && !toMatch) {
+      const defaultDest =
+        locations.find((l) => /main canteen|student center|central library/i.test(l.name) && l.name !== fromMatch.point.name) ||
+        locations.find((l) => l.name !== fromMatch.point.name);
+      if (defaultDest) {
+        return buildWalkingRoute(
+          fromMatch.point,
+          { name: defaultDest.name, lat: defaultDest.lat, lng: defaultDest.lng, category: defaultDest.category },
+          college
+        );
+      }
+    }
   }
 
   // 2. Check if Genie SQL query returned location records

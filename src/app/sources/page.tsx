@@ -13,8 +13,12 @@ export default function SourcesPage() {
   const [shortcutsOpen, setShortcutsOpen] = useState<boolean>(false);
   const router = useRouter();
 
-  const handleAskGenie = (prompt: string) => {
+  const handleAskGenie = (prompt: string, sourceDoc?: { id: string; name: string }) => {
     sessionStorage.setItem("cg_initial_prompt", prompt);
+    if (sourceDoc) {
+      sessionStorage.setItem("cg_initial_source", JSON.stringify(sourceDoc));
+    }
+    sessionStorage.setItem("cg_prefill_only", "true");
     router.push("/");
   };
 

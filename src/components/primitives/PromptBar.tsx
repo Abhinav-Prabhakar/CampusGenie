@@ -97,18 +97,18 @@ export interface RoutingOption {
 
 export const ROUTING_MODES: RoutingOption[] = [
   {
-    key: "auto",
-    name: "Auto (Smart Hybrid)",
-    shortName: "Auto",
-    tag: "Default",
-    desc: "Auto-routes read queries to Genie Space & actions to Campus Genie Gemini LLM",
-  },
-  {
     key: "genie",
     name: "Databricks Genie Agent",
     shortName: "Genie",
-    tag: "Genie Space",
+    tag: "Default",
     desc: "Direct queries to Databricks Lakehouse Genie Space",
+  },
+  {
+    key: "auto",
+    name: "Auto (Smart Hybrid)",
+    shortName: "Auto",
+    tag: "Hybrid",
+    desc: "Auto-routes read queries to Genie Space & actions to Campus Genie Gemini LLM",
   },
   {
     key: "gemini",
@@ -139,8 +139,11 @@ export default function PromptBar({
   onSend,
   isWorking = false,
   onStop,
-  routingMode = "auto",
+  routingMode = "genie",
   onSelectRoutingMode,
+  prefillDraft,
+  attachedSource,
+  onRemoveAttachedSource,
   rateLimitBlocked = false,
   rateLimitSecondsRemaining = 0,
   rateLimitMessage,
@@ -154,12 +157,21 @@ export default function PromptBar({
   onStop?: () => void;
   routingMode?: RoutingMode;
   onSelectRoutingMode?: (mode: RoutingMode) => void;
+  prefillDraft?: string;
+  attachedSource?: { id: string; name: string } | null;
+  onRemoveAttachedSource?: () => void;
   rateLimitBlocked?: boolean;
   rateLimitSecondsRemaining?: number;
   rateLimitMessage?: string | null;
 }) {
   const pill = variant === "Pill";
   const [draft, setDraft] = useState("");
+
+  useEffect(() => {
+    if (typeof prefillDraft === "string" && prefillDraft) {
+      setDraft(prefillDraft);
+    }
+  }, [prefillDraft]);
   const [dismissed, setDismissed] = useState(false);
   const [plusOpen, setPlusOpen] = useState(false);
   const [modelOpen, setModelOpen] = useState(false);
@@ -462,14 +474,19 @@ export default function PromptBar({
     inputRef.current?.focus();
   };
 
-  const canSend = (draft.trim().length > 0 || attachments.length > 0) && !rateLimitBlocked;
+  const canSend = (draft.trim().length > 0 || attachments.length > 0 || Boolean(attachedSource)) && !rateLimitBlocked;
   const send = () => {
     if (isWorking) {
       onStop?.();
       return;
     }
     if (!canSend) return;
-    onSend?.(draft.trim());
+    let fullText = draft.trim();
+    if (attachedSource) {
+      fullText = `[Attached Source: ${attachedSource.id} - ${attachedSource.name}]\n${fullText}`;
+      onRemoveAttachedSource?.();
+    }
+    onSend?.(fullText);
     setDraft("");
     setAttachments([]);
     closeMenus();
@@ -651,8 +668,34 @@ export default function PromptBar({
             {draft}
           </span>
 
-          {attachments.length > 0 && (
+          {(attachments.length > 0 || Boolean(attachedSource)) && (
             <div className={`flex flex-wrap gap-1.5 pt-0.5 ${pill ? "px-1" : "px-0.5"}`}>
+              {attachedSource && (
+                <span
+                  className={`flex h-6.5 items-center gap-1.5 bg-accent-tint border border-accent/30 py-1 pr-1 pl-2 text-[11.5px] font-medium text-accent-ink shadow-hairline ${
+                    pill ? "rounded-full" : "rounded-chip"
+                  }`}
+                >
+                  <Icon size={12} strokeWidth={2}>
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                    <polyline points="14 2 14 8 20 8" />
+                  </Icon>
+                  <span className="max-w-56 truncate">
+                    <strong className="font-semibold mr-1">[{attachedSource.id}]</strong>
+                    {attachedSource.name}
+                  </span>
+                  {onRemoveAttachedSource && (
+                    <button
+                      type="button"
+                      aria-label={`Remove attached source ${attachedSource.name}`}
+                      onClick={onRemoveAttachedSource}
+                      className="flex size-4.5 items-center justify-center rounded-full text-accent-ink hover:bg-accent-tint/60 transition-colors"
+                    >
+                      <Icon size={10} strokeWidth={2.4}><path d="M18 6 6 18M6 6l12 12" /></Icon>
+                    </button>
+                  )}
+                </span>
+              )}
               {attachments.map((file, i) => (
                 <span
                   key={`${file}-${i}`}

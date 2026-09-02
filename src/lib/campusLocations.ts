@@ -17,25 +17,46 @@ export type CampusLocationRow = {
 
 // Students rarely use exact table names; expand common campus slang.
 const SYNONYMS: Record<string, string[]> = {
-  canteen: ["canteen", "dining", "mess"],
-  cafe: ["cafe", "canteen", "coffee"],
-  dining: ["dining", "canteen", "cafe"],
-  library: ["library"],
-  gym: ["gym", "sports"],
-  sports: ["sports", "gym"],
-  hostel: ["hostel", "housing", "dorm"],
-  dorm: ["dorm", "hostel", "housing"],
-  dormitory: ["dorm", "hostel", "housing"],
-  class: ["academics", "lecture", "hall"],
-  lecture: ["academics", "lecture"],
-  lab: ["lab"],
-  auditorium: ["auditorium"],
-  clinic: ["wellness", "health"],
-  medical: ["health", "wellness"],
+  canteen: ["canteen", "dining", "mess", "cafeteria", "cafe", "food", "eatery"],
+  cafeteria: ["canteen", "dining", "mess", "cafeteria", "cafe", "food", "eatery"],
+  cafe: ["cafe", "canteen", "coffee", "cafeteria", "food"],
+  coffee: ["cafe", "canteen", "coffee"],
+  dining: ["dining", "canteen", "cafe", "cafeteria", "mess", "food"],
+  food: ["canteen", "dining", "cafe"],
+  library: ["library", "reading", "books", "study"],
+  gym: ["gym", "sports", "court", "fitness"],
+  court: ["sports", "gym", "court"],
+  sports: ["sports", "gym", "court", "turf"],
+  hostel: ["hostel", "housing", "dorm", "residence"],
+  dorm: ["dorm", "hostel", "housing", "residence"],
+  dormitory: ["dorm", "hostel", "housing", "residence"],
+  housing: ["housing", "hostel", "dorm", "residence"],
+  class: ["academics", "lecture", "hall", "classroom"],
+  lecture: ["academics", "lecture", "hall", "classroom"],
+  hall: ["hall", "academics", "auditorium", "lecture"],
+  lab: ["lab", "innovation", "robotics", "maker"],
+  robotics: ["lab", "innovation"],
+  innovation: ["lab", "maker"],
+  auditorium: ["auditorium", "amphitheatre", "stage", "theatre"],
+  stage: ["auditorium", "quad"],
+  firepit: ["auditorium", "quad"],
+  clinic: ["wellness", "health", "hospital", "doctor"],
+  medical: ["health", "wellness", "clinic"],
+  health: ["health", "wellness", "clinic", "medical"],
+  gate: ["gate", "entrance", "main gate", "security"],
+  entrance: ["gate", "entrance", "main gate"],
+  admin: ["admin", "administration", "dean", "registrar"],
+  office: ["admin", "administration"],
 };
 
 export function normalizeLocationTerm(term: string): string {
-  return String(term || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+  return String(term || "")
+    .toLowerCase()
+    .replace(/\b(the|main|room|building|hall|block)\b/g, " ")
+    .replace(/\b\d+[a-z]?\b/gi, " ") // strip room numbers like 210, 214, 317
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 /**

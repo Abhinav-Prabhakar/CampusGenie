@@ -68,19 +68,20 @@ function markerElement(kind: "origin" | "destination") {
 export default function DirectionsMap({ route, isDark }: { route: DirectionsPayload; isDark: boolean }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<MaplibreMap | null>(null);
-  const markersAddedRef = useRef(false);
-  const fittedRef = useRef(false);
+  const markersRef = useRef<any[]>([]);
   const routeRef = useRef(route);
   const isDarkRef = useRef(isDark);
-  // Theme the current basemap was created/switched for — guards the async
-  // mount vs. theme-flip race.
+  const applyOverlaysRef = useRef<(() => void) | null>(null);
   const styleThemeRef = useRef(isDark);
 
-  // Mirror latest props into refs for use inside the async mount closure
-  // (declared before the mount effect so they run first).
   useEffect(() => {
     routeRef.current = route;
+    if (mapRef.current && mapRef.current.isStyleLoaded()) {
+      applyOverlaysRef.current?.();
+      mapRef.current.resize();
+    }
   }, [route]);
+
   useEffect(() => {
     isDarkRef.current = isDark;
   }, [isDark]);
@@ -118,100 +119,124 @@ export default function DirectionsMap({ route, isDark }: { route: DirectionsPayl
         const dark = isDarkRef.current;
         const palette = PAINT[dark ? "dark" : "light"];
 
-        // 3D buildings (fill-extrusion) — reference whichever vector source the
-        // active style provides so the layer survives basemap switches.
-        const vectorSourceEntry = Object.entries(current.getStyle()?.sources ?? {}).find(
-          ([, source]) => source.type === "vector"
-        );
-        if (vectorSourceEntry && !current.getLayer("cg-3d-buildings")) {
-          current.addLayer({
-            id: "cg-3d-buildings",
-            type: "fill-extrusion",
-            source: vectorSourceEntry[0],
-            "source-layer": "building",
-            minzoom: 13,
-            paint: {
-              "fill-extrusion-color": [
-                "interpolate", ["linear"],
-                ["coalesce", ["get", "render_height"], ["coalesce", ["get", "height"], 5]],
-                0, palette.buildingLow,
-                30, palette.buildingMid,
-                90, palette.buildingHigh,
-              ],
-              "fill-extrusion-height": [
-                "coalesce", ["get", "render_height"], ["coalesce", ["get", "height"], 6],
-              ],
-              "fill-extrusion-base": ["coalesce", ["get", "render_min_height"], 0],
-              "fill-extrusion-opacity": palette.buildingOpacity,
-            },
-          } as const);
+        // 3D buildings (fill-extrusion)
+        try {
+          const vectorSourceEntry = Object.entries(current.getStyle()?.sources ?? {}).find(
+            ([, source]) => source.type === "vector"
+          );
+          if (vectorSourceEntry && !current.getLayer("cg-3d-buildings")) {
+            current.addLayer({
+              id: "cg-3d-buildings",
+              type: "fill-extrusion",
+              source: vectorSourceEntry[0],
+              "source-layer": "building",
+              minzoom: 13,
+              paint: {
+                "fill-extrusion-color": [
+                  "interpolate", ["linear"],
+                  ["coalesce", ["get", "render_height"], ["coalesce", ["get", "height"], 5]],
+                  0, palette.buildingLow,
+                  30, palette.buildingMid,
+                  90, palette.buildingHigh,
+                ],
+                "fill-extrusion-height": [
+                  "coalesce", ["get", "render_height"], ["coalesce", ["get", "height"], 6],
+                ],
+                "fill-extrusion-base": ["coalesce", ["get", "render_min_height"], 0],
+                "fill-extrusion-opacity": palette.buildingOpacity,
+              },
+            } as const);
+          }
+        } catch (bErr) {
+          console.warn("[DirectionsMap] 3d buildings error:", bErr);
         }
 
         // Route casing + main line
-        const data = routeFeatureCollection(routeRef.current);
-        if (!current.getSource("cg-route")) {
-          current.addSource("cg-route", { type: "geojson", data });
-        } else {
-          (current.getSource("cg-route") as GeoJSONSource).setData(data);
-        }
-        if (!current.getLayer("cg-route-casing")) {
-          current.addLayer({
-            id: "cg-route-casing",
-            type: "line",
-            source: "cg-route",
-            layout: { "line-cap": "round", "line-join": "round" },
-            paint: {
-              "line-color": palette.routeCasing,
-              "line-width": ["interpolate", ["linear"], ["zoom"], 13, 6, 17, 13],
-            },
-          });
-        }
-        if (!current.getLayer("cg-route-line")) {
-          current.addLayer({
-            id: "cg-route-line",
-            type: "line",
-            source: "cg-route",
-            layout: { "line-cap": "round", "line-join": "round" },
-            paint: {
-              "line-color": palette.routeLine,
-              "line-width": ["interpolate", ["linear"], ["zoom"], 13, 3.5, 17, 8],
-              "line-opacity": 0.95,
-            },
-          });
+        try {
+          const data = routeFeatureCollection(routeRef.current);
+          const existingSource = current.getSource("cg-route") as GeoJSONSource | undefined;
+          if (!existingSource) {
+            current.addSource("cg-route", { type: "geojson", data });
+          } else {
+            existingSource.setData(data);
+          }
+
+          if (!current.getLayer("cg-route-casing")) {
+            current.addLayer({
+              id: "cg-route-casing",
+              type: "line",
+              source: "cg-route",
+              layout: { "line-cap": "round", "line-join": "round" },
+              paint: {
+                "line-color": palette.routeCasing,
+                "line-width": ["interpolate", ["linear"], ["zoom"], 13, 6, 17, 13],
+              },
+            });
+          }
+          if (!current.getLayer("cg-route-line")) {
+            current.addLayer({
+              id: "cg-route-line",
+              type: "line",
+              source: "cg-route",
+              layout: { "line-cap": "round", "line-join": "round" },
+              paint: {
+                "line-color": palette.routeLine,
+                "line-width": ["interpolate", ["linear"], ["zoom"], 13, 3.5, 17, 8],
+                "line-opacity": 0.95,
+              },
+            });
+          }
+        } catch (rErr) {
+          console.warn("[DirectionsMap] route layer error:", rErr);
         }
 
-        if (!markersAddedRef.current) {
-          markersAddedRef.current = true;
+        // Origin and Destination markers
+        try {
+          markersRef.current.forEach((m) => m?.remove?.());
+          markersRef.current = [];
           const { from, to } = routeRef.current;
-          new maplibregl.Marker({ element: markerElement("origin"), anchor: "center" })
+          const originMarker = new maplibregl.Marker({ element: markerElement("origin"), anchor: "center" })
             .setLngLat([from.lng, from.lat])
             .addTo(current);
-          new maplibregl.Marker({ element: markerElement("destination"), anchor: "bottom" })
+          const destMarker = new maplibregl.Marker({ element: markerElement("destination"), anchor: "bottom" })
             .setLngLat([to.lng, to.lat])
             .addTo(current);
+          markersRef.current = [originMarker, destMarker];
+        } catch (mErr) {
+          console.warn("[DirectionsMap] markers error:", mErr);
         }
 
-        if (!fittedRef.current) {
-          fittedRef.current = true;
+        // Fit bounds
+        try {
           const lats = routeRef.current.coordinates.map((c) => c[1]);
           const lngs = routeRef.current.coordinates.map((c) => c[0]);
-          current.fitBounds(
-            [
-              [Math.min(...lngs), Math.min(...lats)],
-              [Math.max(...lngs), Math.max(...lats)],
-            ],
-            { padding: { top: 70, bottom: 70, left: 60, right: 60 }, maxZoom: 17.2, duration: 900, essential: true }
-          );
+          if (lats.length > 0 && lngs.length > 0) {
+            current.fitBounds(
+              [
+                [Math.min(...lngs), Math.min(...lats)],
+                [Math.max(...lngs), Math.max(...lats)],
+              ],
+              { padding: { top: 70, bottom: 70, left: 60, right: 60 }, maxZoom: 17.2, duration: 800, essential: true }
+            );
+          }
+        } catch (fErr) {
+          console.warn("[DirectionsMap] fitBounds error:", fErr);
         }
+
+        setTimeout(() => current.resize(), 120);
+        setTimeout(() => current.resize(), 600);
       };
 
+      applyOverlaysRef.current = applyOverlays;
+
       map.on("style.load", () => {
-        // Wait one tick so basemap sources are queryable before layering.
         map.once("idle", applyOverlays);
-        // If the map already finished idling (cached style), run immediately.
         if (map.isStyleLoaded()) applyOverlays();
       });
+
       map.on("load", () => {
+        applyOverlays();
+        map.resize();
         if (containerRef.current) {
           resizeObserver = new ResizeObserver(() => map.resize());
           resizeObserver.observe(containerRef.current);
@@ -222,8 +247,8 @@ export default function DirectionsMap({ route, isDark }: { route: DirectionsPayl
     return () => {
       cancelled = true;
       resizeObserver?.disconnect();
-      markersAddedRef.current = false;
-      fittedRef.current = false;
+      markersRef.current.forEach((m) => m?.remove?.());
+      markersRef.current = [];
       mapRef.current?.remove();
       mapRef.current = null;
     };
