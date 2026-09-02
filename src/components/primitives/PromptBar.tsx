@@ -167,6 +167,7 @@ export default function PromptBar({
   const [connected, setConnected] = useState(false);
   const [active, setActive] = useState(0);
   const [listening, setListening] = useState(false);
+  const [voiceNotice, setVoiceNotice] = useState<string | null>(null);
   const [expanded, setExpanded] = useState(false);
   const wide = expanded || tall;
   const [rowBox, setRowBox] = useState<{ top: number; height: number } | null>(null);
@@ -185,16 +186,8 @@ export default function PromptBar({
   const glimmRef = useRef<HTMLCanvasElement>(null);
   const shaderRef = useRef<ReturnType<typeof createShader> | null>(null);
   const recognitionRef = useRef<any>(null);
-  const voiceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const sampleVoiceIndexRef = useRef(0);
-
-  const SAMPLE_VOICE_PROMPTS = [
-    "Find upcoming hackathons and workshops with free food this weekend",
-    "Show my attendance rates and generate an academic recovery schedule for CS301",
-    "What student clubs and AI research labs are recruiting this term?",
-    "Recommend campus career panels with alumni working at Databricks and Stripe",
-    "Help me prepare for Hack the Lake build sprint and find teammates",
-  ];
+  // Draft text captured when dictation starts — transcripts append to it.
+  const dictationBaseRef = useRef("");
 
   const currentModeOption = ROUTING_MODES.find((m) => m.key === routingMode) || ROUTING_MODES[0];
 
@@ -261,40 +254,11 @@ export default function PromptBar({
     }
   };
 
-  /* voice dictation & auto sample input */
-  const fallbackToSampleVoice = () => {
-    const sample = SAMPLE_VOICE_PROMPTS[sampleVoiceIndexRef.current % SAMPLE_VOICE_PROMPTS.length];
-    sampleVoiceIndexRef.current += 1;
-    setDraft("");
-    setListening(true);
-    setDismissed(true);
-
-    const words = sample.split(" ");
-    let curIndex = 0;
-
-    if (voiceTimerRef.current) clearTimeout(voiceTimerRef.current);
-
-    const streamNextWord = () => {
-      if (curIndex < words.length) {
-        curIndex++;
-        setDraft(words.slice(0, curIndex).join(" "));
-        const delay = Math.floor(Math.random() * 80) + 120;
-        voiceTimerRef.current = setTimeout(streamNextWord, delay);
-      } else {
-        setListening(false);
-        if (shaderRef.current) {
-          playSweep(shaderRef.current, { sweepMs: 900 });
-        }
-        inputRef.current?.focus();
-      }
-    };
-
-    voiceTimerRef.current = setTimeout(streamNextWord, 180);
-  };
-
+  /* voice dictation — real speech-to-text into the composer.
+   * The transcript lands in the prompt box; the user reviews it and hits send. */
   const startVoiceInput = () => {
     if (rateLimitBlocked) return;
-    setListening(true);
+    setVoiceNotice(null);
     setDismissed(true);
 
     const SpeechRecognition =
@@ -302,65 +266,76 @@ export default function PromptBar({
         ? (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
         : null;
 
-    let nativeStarted = false;
-
-    if (SpeechRecognition) {
-      try {
-        const recognition = new SpeechRecognition();
-        recognition.continuous = true;
-        recognition.interimResults = true;
-        recognition.lang = "en-US";
-
-        recognition.onresult = (event: any) => {
-          let currentTranscript = "";
-          for (let i = 0; i < event.results.length; i++) {
-            currentTranscript += event.results[i][0].transcript;
-          }
-          if (currentTranscript.trim()) {
-            setDraft(currentTranscript);
-          }
-        };
-
-        recognition.onerror = (e: any) => {
-          console.warn("Speech recognition notice, using sample voice simulation:", e?.error);
-          try {
-            recognition.stop();
-          } catch {}
-          fallbackToSampleVoice();
-        };
-
-        recognition.onend = () => {
-          setListening(false);
-          if (shaderRef.current) {
-            playSweep(shaderRef.current, { sweepMs: 800 });
-          }
-        };
-
-        recognitionRef.current = recognition;
-        recognition.start();
-        nativeStarted = true;
-      } catch (err) {
-        console.warn("Could not start speech recognition, using sample simulation:", err);
-      }
+    if (!SpeechRecognition) {
+      setVoiceNotice("Dictation isn't supported in this browser — try Chrome, Edge, or Safari.");
+      return;
     }
 
-    if (!nativeStarted) {
-      fallbackToSampleVoice();
+    try {
+      const recognition = new SpeechRecognition();
+      recognition.continuous = true;
+      recognition.interimResults = true;
+      recognition.lang = "en-US";
+
+      dictationBaseRef.current = draft.trim();
+
+      recognition.onresult = (event: any) => {
+        let transcript = "";
+        for (let i = 0; i < event.results.length; i++) {
+          transcript += event.results[i][0].transcript;
+        }
+        transcript = transcript.replace(/\s+/g, " ").trim();
+        if (!transcript) return;
+        if (transcript.length > 0) {
+          transcript = transcript.charAt(0).toUpperCase() + transcript.slice(1);
+        }
+        setDraft(dictationBaseRef.current ? `${dictationBaseRef.current} ${transcript}` : transcript);
+      };
+
+      recognition.onerror = (e: any) => {
+        try {
+          recognition.stop();
+        } catch {}
+        const code = e?.error;
+        if (code === "not-allowed" || code === "service-not-allowed") {
+          setVoiceNotice("Microphone access is blocked — allow it in your browser's site settings.");
+        } else if (code === "audio-capture") {
+          setVoiceNotice("No microphone was found on this device.");
+        } else if (code === "network") {
+          setVoiceNotice("Dictation needs a network connection — please try again.");
+        } else if (code === "no-speech") {
+          setVoiceNotice("No speech detected — tap the mic and speak.");
+        } else if (code !== "aborted") {
+          setVoiceNotice("Dictation failed — please try again.");
+        }
+      };
+
+      recognition.onend = () => {
+        setListening(false);
+        recognitionRef.current = null;
+        // Land the caret in the composer so the user can review and send.
+        inputRef.current?.focus();
+      };
+
+      recognitionRef.current = recognition;
+      recognition.start();
+      setListening(true);
+    } catch {
+      recognitionRef.current = null;
+      setListening(false);
+      setVoiceNotice("Couldn't start dictation — please try again.");
     }
   };
 
   const stopVoiceInput = () => {
-    setListening(false);
-    if (voiceTimerRef.current) {
-      clearTimeout(voiceTimerRef.current);
-      voiceTimerRef.current = null;
-    }
+    // stop() lets the engine flush its final transcript before ending.
     if (recognitionRef.current) {
       try {
         recognitionRef.current.stop();
       } catch {}
       recognitionRef.current = null;
     }
+    setListening(false);
   };
 
   const toggleVoiceInput = () => {
@@ -373,7 +348,6 @@ export default function PromptBar({
 
   useEffect(() => {
     return () => {
-      if (voiceTimerRef.current) clearTimeout(voiceTimerRef.current);
       if (recognitionRef.current) {
         try {
           recognitionRef.current.stop();
@@ -829,6 +803,26 @@ export default function PromptBar({
             </button>
           </div>
         </div>
+
+        {/* ── dictation notice (permissions, unsupported, failures) ── */}
+        {voiceNotice && (
+          <div className="mt-2 flex items-center gap-2 rounded-[10px] border border-orange/35 bg-orange-tint/20 px-3 py-2 animate-fade-in">
+            <span className="flex size-5 shrink-0 items-center justify-center text-orange">
+              <Icon size={13} strokeWidth={2}>
+                <path d="M9 9v3a3 3 0 0 0 5.12 2.12M15 9.34V5a3 3 0 0 0-5.94-.6M17 16.95A7 7 0 0 1 5 12v-2m14 0v2a7 7 0 0 1-.11 1.23M12 19v3M1 1l22 22" />
+              </Icon>
+            </span>
+            <span className="flex-1 text-[11.5px] font-medium text-orange">{voiceNotice}</span>
+            <button
+              type="button"
+              aria-label="Dismiss dictation notice"
+              onClick={() => setVoiceNotice(null)}
+              className="flex size-4.5 shrink-0 items-center justify-center rounded-full text-orange/70 transition-colors hover:bg-orange/15 hover:text-orange"
+            >
+              <Icon size={10} strokeWidth={2.4}><path d="M18 6 6 18M6 6l12 12" /></Icon>
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );
