@@ -319,14 +319,18 @@ html:not(.dark) .profile-scope .theme-btn .moon { display: block; }
 .profile-scope .stat-ic svg,
 .profile-scope .stat-ic .i {
   display: block;
-  margin: auto;
   width: 14px;
   height: 14px;
   stroke: currentColor;
   fill: none;
 }
+.profile-scope .stat > div {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
 .profile-scope .stat b { display: block; font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; line-height: 1.2; }
-.profile-scope .stat span { display: block; font-size: 11px; font-weight: 500; color: var(--ink-3); }
+.profile-scope .stat span { display: block; font-size: 11px; font-weight: 500; color: var(--ink-3); line-height: 1.2; }
 
 .profile-scope .hero-foot {
   display: flex; align-items: center; gap: 12px; flex-wrap: wrap;

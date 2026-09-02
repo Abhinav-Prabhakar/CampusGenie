@@ -22,10 +22,12 @@ export default function AuthScreen({ children }: { children: ReactNode }) {
       </div>
 
       <div
-        className="w-full max-w-[400px] rounded-[14px] border border-line bg-canvas p-5 sm:p-6 shadow-overlay"
+        className="w-full max-w-[420px] rounded-[16px] border border-line bg-canvas p-6 sm:p-7 shadow-overlay flex flex-col items-center justify-center"
         style={{ animation: "pop-in 220ms cubic-bezier(0.23,1,0.32,1) both" }}
       >
-        {children}
+        <div className="w-full flex items-center justify-center">
+          {children}
+        </div>
       </div>
 
       <div className="flex items-center gap-1.5 text-[11.5px] font-medium text-ink-3 tabular-nums">
