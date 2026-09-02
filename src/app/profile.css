@@ -751,3 +751,65 @@ textarea.profile-scope .fld,
   .profile-scope .card, .profile-scope .hero { animation: none; }
   .profile-scope .ring-p { stroke-dashoffset: 45.2; }
 }
+
+/* ── share-contact QR card ─────────────────────────────── */
+@keyframes vqr-scan {
+  0%   { top: 10px; opacity: 0; }
+  12%  { opacity: 1; }
+  88%  { opacity: 1; }
+  100% { top: calc(100% - 24px); opacity: 0; }
+}
+
+.profile-scope .vqr-wrap { display: flex; gap: 14px; align-items: flex-start; flex-wrap: wrap; }
+.profile-scope .vqr-frame {
+  position: relative; flex-shrink: 0;
+  padding: 11px;
+  border: 1px solid var(--line); border-radius: 10px;
+  background: oklch(0.985 0.001 286.376);
+  box-shadow: var(--shadow-btn);
+  transition: transform 220ms var(--ease-out-strong);
+}
+.profile-scope .vqr-frame:hover { transform: scale(1.025); }
+.profile-scope .vqr-svg { display: block; width: 148px; height: 148px; }
+
+/* corner brackets — bloom outward on hover (matches the event pass) */
+.profile-scope .vbr { position: absolute; width: 13px; height: 13px; border: 0 solid var(--accent); transition: transform 220ms var(--ease-out-strong); }
+.profile-scope .b1 { top: -4px; left: -4px; border-top-width: 2px; border-left-width: 2px; border-top-left-radius: 4px; }
+.profile-scope .b2 { top: -4px; right: -4px; border-top-width: 2px; border-right-width: 2px; border-top-right-radius: 4px; }
+.profile-scope .b3 { bottom: -4px; left: -4px; border-bottom-width: 2px; border-left-width: 2px; border-bottom-left-radius: 4px; }
+.profile-scope .b4 { bottom: -4px; right: -4px; border-bottom-width: 2px; border-right-width: 2px; border-bottom-right-radius: 4px; }
+.profile-scope .vqr-frame:hover .b1 { transform: translate(-2px, -2px); }
+.profile-scope .vqr-frame:hover .b2 { transform: translate(2px, -2px); }
+.profile-scope .vqr-frame:hover .b3 { transform: translate(-2px, 2px); }
+.profile-scope .vqr-frame:hover .b4 { transform: translate(2px, 2px); }
+
+.profile-scope .vqr-scan {
+  position: absolute; left: 8px; right: 8px; top: 10px; z-index: 2;
+  height: 12px; border-radius: 3px; pointer-events: none;
+  background: linear-gradient(to bottom, transparent, oklch(0.705 0.154 153.814 / 0.28));
+  border-bottom: 1.5px solid var(--green);
+  animation: vqr-scan 2.8s var(--ease-in-out-strong) 0.8s infinite;
+}
+
+.profile-scope .vqr-badge {
+  position: absolute; left: 50%; top: 50%; z-index: 3;
+  transform: translate(-50%, -50%);
+  display: flex; align-items: center; justify-content: center; gap: 3px;
+  height: 26px; padding: 0 7px;
+  border: 1.5px solid oklch(0.985 0.001 286.376); border-radius: 8px;
+  background: var(--surface); color: var(--ink);
+  box-shadow: var(--shadow-btn);
+  font-size: 10.5px; font-weight: 700; letter-spacing: 0.02em;
+}
+.profile-scope .vqr-badge .i { color: var(--accent); }
+
+.profile-scope .vqr-side { flex: 1; min-width: 200px; display: flex; flex-direction: column; gap: 10px; }
+.profile-scope .vqr-edit { display: flex; align-items: center; gap: 7px; }
+.profile-scope .vqr-edit .ic { color: var(--ink-3); display: inline-flex; }
+.profile-scope .vqr-input { flex: 1; min-width: 0; height: 26px; padding: 0 9px; font-size: 12px; }
+.profile-scope .vqr-input:focus { outline: none; border-color: var(--accent); }
+.profile-scope .vqr-err { color: var(--red); font-size: 11px; font-weight: 500; }
+
+@media (prefers-reduced-motion: reduce) {
+  .profile-scope .vqr-scan { animation: none; }
+}

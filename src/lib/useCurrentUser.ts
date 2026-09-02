@@ -10,6 +10,7 @@ export type CurrentUser = {
   fullName: string;
   role: "student" | "admin";
   college?: string | null;
+  phoneNumber?: string | null;
 };
 
 export function initialsFor(user: CurrentUser | null): string {

@@ -1,5 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getCurrentUser, setUserRole, setUserCollege, isValidRole, DEFAULT_COLLEGE } from "@/lib/appUsers";
+import {
+  getCurrentUser,
+  setUserRole,
+  setUserCollege,
+  setUserPhoneNumber,
+  isValidRole,
+  DEFAULT_COLLEGE,
+} from "@/lib/appUsers";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -23,12 +30,15 @@ export async function PATCH(req: NextRequest) {
     const wantsRole = body.role !== undefined;
     const rawCollege = typeof body.college === "string" ? body.college.trim().slice(0, 120) : undefined;
     const wantsCollege = rawCollege !== undefined && rawCollege.length > 0;
+    // phoneNumber: string sets/updates it, null clears it.
+    const wantsPhone = body.phoneNumber !== undefined && (body.phoneNumber === null || typeof body.phoneNumber === "string");
+    const rawPhone = typeof body.phoneNumber === "string" ? body.phoneNumber.trim().slice(0, 24) : null;
 
     if (wantsRole && !isValidRole(body.role)) {
       return NextResponse.json({ error: "role must be 'student' or 'admin'" }, { status: 400 });
     }
-    if (!wantsRole && !wantsCollege) {
-      return NextResponse.json({ error: "nothing to update — send 'role' and/or 'college'" }, { status: 400 });
+    if (!wantsRole && !wantsCollege && !wantsPhone) {
+      return NextResponse.json({ error: "nothing to update — send 'role', 'college', and/or 'phoneNumber'" }, { status: 400 });
     }
 
     let updated = { ...user, college: user.college || DEFAULT_COLLEGE };
@@ -49,9 +59,19 @@ export async function PATCH(req: NextRequest) {
       updated = { ...updated, college: rawCollege! };
     }
 
-    const message = wantsCollege
-      ? `College updated to ${rawCollege} in Databricks Lakehouse.`
-      : `Access level updated to ${body.role} in Databricks Lakehouse.`;
+    if (wantsPhone) {
+      const ok = await setUserPhoneNumber(user.userId, rawPhone && rawPhone.length > 0 ? rawPhone : null);
+      if (!ok) {
+        return NextResponse.json({ error: "Failed to persist phone number to Lakehouse" }, { status: 500 });
+      }
+      updated = { ...updated, phoneNumber: rawPhone && rawPhone.length > 0 ? rawPhone : null };
+    }
+
+    const message = wantsPhone
+      ? "Contact details updated in Databricks Lakehouse."
+      : wantsCollege
+        ? `College updated to ${rawCollege} in Databricks Lakehouse.`
+        : `Access level updated to ${body.role} in Databricks Lakehouse.`;
 
     return NextResponse.json({
       success: true,

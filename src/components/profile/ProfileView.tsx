@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState } from "react";
 import { useCurrentUser, initialsFor, setCurrentUserCached } from "@/lib/useCurrentUser";
+import ContactQrCard from "@/components/profile/ContactQrCard";
 import "@/app/profile.css";
 
 type ChatUsage = {
@@ -191,6 +192,7 @@ export default function ProfileView() {
         <symbol id="i-up" viewBox="0 0 24 24"><path d="M7 17 17 7M8 7h9v9"/></symbol>
         <symbol id="i-down" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></symbol>
         <symbol id="i-flask" viewBox="0 0 24 24"><path d="M10 2.5v6.2L4.6 18a2 2 0 0 0 1.8 3h11.2a2 2 0 0 0 1.8-3L14 8.7V2.5"/><path d="M8.5 2.5h7M7.5 14.5h9"/></symbol>
+        <symbol id="i-qr" viewBox="0 0 24 24"><path d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4z"/><path d="M14 14h2v2h-2zM18 14h2v2h-2zM14 18h2v2h-2zM18 18h2v2h-2z"/></symbol>
       </svg>
 
       {/* theme toggle lives outside the form */}
@@ -712,6 +714,8 @@ export default function ProfileView() {
                   </div>
                 </div>
               </section>
+
+              <ContactQrCard user={user} />
 
               {/* chat usage & limits */}
               <section className="card" style={{ "--i": 1 } as React.CSSProperties}>

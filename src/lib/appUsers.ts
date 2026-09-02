@@ -17,6 +17,7 @@ export type AppUser = {
   fullName: string;
   role: AppUserRole;
   college: string | null;
+  phoneNumber: string | null;
   createdAt?: string;
   updatedAt?: string;
 };
@@ -41,6 +42,7 @@ function mapRowToAppUser(r: Record<string, any>): AppUser {
     fullName,
     role: r.role === "admin" ? "admin" : "student",
     college: r.college || null,
+    phoneNumber: r.phone_number || null,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   };
@@ -65,28 +67,33 @@ export async function ensureAppUser(userId: string): Promise<AppUser | null> {
   let email: string | null = null;
   let firstName: string | null = null;
   let lastName: string | null = null;
+  let phoneNumber: string | null = null;
   try {
     const client = await clerkClient();
     const clerkUser = await client.users.getUser(userId);
     email = clerkUser.primaryEmailAddress?.emailAddress ?? null;
     firstName = clerkUser.firstName ?? null;
     lastName = clerkUser.lastName ?? null;
+    phoneNumber = clerkUser.primaryPhoneNumber?.phoneNumber ?? null;
   } catch (err: any) {
     console.warn("[ensureAppUser] Clerk lookup failed:", err?.message);
   }
 
-  // Tables provisioned before the college column existed need a lazy migration.
+  // Tables provisioned before the college/phone columns existed need a lazy migration.
   try {
     await executeLakehouseSql(
       "ALTER TABLE workspace.campus_explorer.app_users ADD COLUMN IF NOT EXISTS college STRING"
     );
+    await executeLakehouseSql(
+      "ALTER TABLE workspace.campus_explorer.app_users ADD COLUMN IF NOT EXISTS phone_number STRING"
+    );
   } catch {
-    console.warn("[ensureAppUser] college column migration skipped");
+    console.warn("[ensureAppUser] column migration skipped");
   }
 
   const insertRes = await executeLakehouseSql(`
-    INSERT INTO workspace.campus_explorer.app_users (user_id, email, first_name, last_name, role, college, created_at, updated_at)
-    VALUES (${sqlString(userId)}, ${sqlString(email)}, ${sqlString(firstName)}, ${sqlString(lastName)}, 'student', ${sqlString(DEFAULT_COLLEGE)}, current_timestamp(), current_timestamp())
+    INSERT INTO workspace.campus_explorer.app_users (user_id, email, first_name, last_name, role, college, phone_number, created_at, updated_at)
+    VALUES (${sqlString(userId)}, ${sqlString(email)}, ${sqlString(firstName)}, ${sqlString(lastName)}, 'student', ${sqlString(DEFAULT_COLLEGE)}, ${phoneNumber ? sqlString(phoneNumber) : "NULL"}, current_timestamp(), current_timestamp())
   `);
 
   if (insertRes.state !== "SUCCEEDED") {
@@ -111,6 +118,7 @@ export async function ensureAppUser(userId: string): Promise<AppUser | null> {
     fullName: [firstName, lastName].filter(Boolean).join(" ") || email?.split("@")[0] || "Student",
     role: "student",
     college: DEFAULT_COLLEGE,
+    phoneNumber,
   };
 }
 
@@ -157,6 +165,17 @@ export async function setUserCollege(userId: string, college: string): Promise<b
   );
   if (res.state !== "SUCCEEDED") {
     console.error("[setUserCollege] failed:", res.error);
+    return false;
+  }
+  return true;
+}
+
+export async function setUserPhoneNumber(userId: string, phone: string | null): Promise<boolean> {
+  const res = await executeLakehouseSql(
+    `UPDATE workspace.campus_explorer.app_users SET phone_number = ${phone ? sqlString(phone) : "NULL"}, updated_at = current_timestamp() WHERE user_id = ${sqlString(userId)}`
+  );
+  if (res.state !== "SUCCEEDED") {
+    console.error("[setUserPhoneNumber] failed:", res.error);
     return false;
   }
   return true;
