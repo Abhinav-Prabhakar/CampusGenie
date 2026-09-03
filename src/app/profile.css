@@ -584,15 +584,48 @@ textarea.profile-scope .fld,
 .profile-scope .qrow .tm { font-family: var(--font-mono); font-size: 11.5px; font-variant-numeric: tabular-nums; }
 
 /* ── profile strength (ProgressRing) ───────────────────── */
-.profile-scope .ringbox { display: flex; align-items: center; gap: 14px; }
-.profile-scope .ring { position: relative; width: 72px; height: 72px; flex-shrink: 0; }
-.profile-scope .ring svg { transform: rotate(-90deg); }
-.profile-scope .ring-t {
+.profile-scope .ringbox {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  border: none !important;
+  outline: none !important;
+  box-shadow: none !important;
+}
+.profile-scope .ring,
+.profile-scope .progress-ring {
+  position: relative;
+  width: 72px;
+  height: 72px;
+  flex-shrink: 0;
+  border: 0 !important;
+  outline: none !important;
+  box-shadow: none !important;
+  background: transparent !important;
+  --tw-ring-offset-shadow: 0 0 #0000 !important;
+  --tw-ring-shadow: 0 0 #0000 !important;
+  --tw-shadow: 0 0 #0000 !important;
+  --tw-ring-color: transparent !important;
+  --tw-ring-offset-width: 0px !important;
+}
+.profile-scope .ring svg,
+.profile-scope .progress-ring svg {
+  transform: rotate(-90deg);
+  border: 0 !important;
+  outline: none !important;
+  box-shadow: none !important;
+}
+.profile-scope .ring-t,
+.profile-scope .progress-ring .ring-t {
   position: absolute; inset: 0;
   display: flex; align-items: center; justify-content: center;
   font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--ink);
+  border: none !important;
+  outline: none !important;
+  box-shadow: none !important;
 }
-.profile-scope .ring-p {
+.profile-scope .ring-p,
+.profile-scope .progress-ring .ring-p {
   stroke-dasharray: 188.5; stroke-dashoffset: 45.2;
   animation: ringfill 900ms var(--ease-out-strong) both;
 }

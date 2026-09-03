@@ -953,11 +953,36 @@ export default function ProfileView() {
                   <h3>Profile strength</h3>
                 </div>
                 <div className="cb">
-                  <div className="ringbox">
-                    <div className="ring">
-                      <svg width="72" height="72" viewBox="0 0 72 72" aria-hidden="true">
-                        <circle cx="36" cy="36" r="30" fill="none" stroke="color-mix(in srgb, var(--ink) 10%, transparent)" strokeWidth="6"/>
-                        <circle className="ring-p" cx="36" cy="36" r="30" fill="none" stroke="var(--accent)" strokeWidth="6" strokeLinecap="round"/>
+                  <div className="ringbox" style={{ border: 0, outline: "none", boxShadow: "none" }}>
+                    <div
+                      className="ring progress-ring ring-0 ring-offset-0 border-0 outline-none shadow-none"
+                      style={{ border: 0, outline: "none", boxShadow: "none", background: "transparent" }}
+                    >
+                      <svg
+                        width="72"
+                        height="72"
+                        viewBox="0 0 72 72"
+                        aria-hidden="true"
+                        style={{ border: 0, outline: "none", boxShadow: "none" }}
+                      >
+                        <circle
+                          cx="36"
+                          cy="36"
+                          r="30"
+                          fill="none"
+                          stroke="color-mix(in srgb, var(--ink) 10%, transparent)"
+                          strokeWidth="6"
+                        />
+                        <circle
+                          className="ring-p"
+                          cx="36"
+                          cy="36"
+                          r="30"
+                          fill="none"
+                          stroke="var(--accent)"
+                          strokeWidth="6"
+                          strokeLinecap="round"
+                        />
                       </svg>
                       <span className="ring-t">76%</span>
                     </div>
