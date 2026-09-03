@@ -204,7 +204,8 @@ function IconTrophy({ size = 18 }: { size?: number }) {
 
 /* ─────────────────────────────────────────────────────────
  * SIDEBAR NAV
- * Primary navigation: Chat, Events, Admin, Sources, and Gallery.
+ * Primary navigation: Chat, Events, Admin, Sources.
+ * Gallery is defined below but hidden from the nav (may return later).
  * ───────────────────────────────────────────────────────── */
 
 function IconBoxCheck({ size = 18 }: { size?: number }) {
@@ -236,7 +237,8 @@ const NAV_ITEMS = [
   { key: "wrapped", label: "Campus Wrapped", icon: <IconWrapped size={18} />, count: "’26", href: "/wrapped" },
   { key: "awards", label: "Awards", icon: <IconTrophy size={18} />, count: "4", href: "/awards" },
   { key: "sources", label: "Sources", icon: <IconDatabase size={18} />, count: "5", href: "/sources" },
-  { key: "gallery", label: "Gallery", icon: <IconSparkles size={18} />, href: "/gallery" },
+  // Hidden from the nav for now — kept here so it can be re-enabled later.
+  { key: "gallery", label: "Gallery", icon: <IconSparkles size={18} />, href: "/gallery", hidden: true },
   { key: "compliance", label: "Complaint Box", icon: <IconBoxCheck size={18} />, href: "/compliance" },
 ];
 
@@ -449,7 +451,7 @@ export default function SidebarNav({
   const currentNav = activeNav ?? internalNav;
   const { user: appUser } = useCurrentUser();
   const isAdmin = appUser?.role === "admin";
-  const visibleNavItems = useMemo(() => NAV_ITEMS.filter((item) => !item.adminOnly || isAdmin), [isAdmin]);
+  const visibleNavItems = useMemo(() => NAV_ITEMS.filter((item) => !item.hidden && (!item.adminOnly || isAdmin)), [isAdmin]);
   const selectNav = (key: string) => {
     setInternalNav(key);
     onNavigate?.(key);
