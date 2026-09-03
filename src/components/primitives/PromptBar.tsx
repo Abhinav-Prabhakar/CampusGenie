@@ -283,59 +283,89 @@ export default function PromptBar({
       return;
     }
 
-    try {
-      const recognition = new SpeechRecognition();
-      recognition.continuous = true;
-      recognition.interimResults = true;
-      recognition.lang = "en-US";
+    const launch = () => {
+      try {
+        const recognition = new SpeechRecognition();
+        recognition.continuous = true;
+        recognition.interimResults = true;
+        recognition.lang = typeof navigator !== "undefined" && navigator.language ? navigator.language : "en-US";
 
-      dictationBaseRef.current = draft.trim();
+        dictationBaseRef.current = draft.trim();
 
-      recognition.onresult = (event: any) => {
-        let transcript = "";
-        for (let i = 0; i < event.results.length; i++) {
-          transcript += event.results[i][0].transcript;
-        }
-        transcript = transcript.replace(/\s+/g, " ").trim();
-        if (!transcript) return;
-        if (transcript.length > 0) {
-          transcript = transcript.charAt(0).toUpperCase() + transcript.slice(1);
-        }
-        setDraft(dictationBaseRef.current ? `${dictationBaseRef.current} ${transcript}` : transcript);
-      };
+        recognition.onstart = () => {
+          setListening(true);
+          setVoiceNotice(null);
+        };
 
-      recognition.onerror = (e: any) => {
-        try {
-          recognition.stop();
-        } catch {}
-        const code = e?.error;
-        if (code === "not-allowed" || code === "service-not-allowed") {
-          setVoiceNotice("Microphone access is blocked — allow it in your browser's site settings.");
-        } else if (code === "audio-capture") {
-          setVoiceNotice("No microphone was found on this device.");
-        } else if (code === "network") {
-          setVoiceNotice("Dictation needs a network connection — please try again.");
-        } else if (code === "no-speech") {
-          setVoiceNotice("No speech detected — tap the mic and speak.");
-        } else if (code !== "aborted") {
-          setVoiceNotice("Dictation failed — please try again.");
-        }
-      };
+        recognition.onresult = (event: any) => {
+          let transcript = "";
+          for (let i = 0; i < event.results.length; i++) {
+            transcript += event.results[i][0].transcript;
+          }
+          transcript = transcript.replace(/\s+/g, " ").trim();
+          if (!transcript) return;
+          if (transcript.length > 0) {
+            transcript = transcript.charAt(0).toUpperCase() + transcript.slice(1);
+          }
+          setDraft(dictationBaseRef.current ? `${dictationBaseRef.current} ${transcript}` : transcript);
+        };
 
-      recognition.onend = () => {
-        setListening(false);
+        recognition.onerror = (e: any) => {
+          try {
+            recognition.stop();
+          } catch {}
+          setListening(false);
+          recognitionRef.current = null;
+          const code = e?.error;
+          if (code === "not-allowed" || code === "service-not-allowed") {
+            setVoiceNotice("Microphone access is blocked — allow it in your browser's site settings.");
+          } else if (code === "audio-capture") {
+            setVoiceNotice("No microphone was found on this device.");
+          } else if (code === "network") {
+            setVoiceNotice("Dictation needs a network connection — please try again.");
+          } else if (code === "no-speech") {
+            setVoiceNotice("No speech detected — tap the mic and speak.");
+          } else if (code !== "aborted") {
+            setVoiceNotice("Dictation failed — please try again.");
+          }
+        };
+
+        recognition.onend = () => {
+          setListening(false);
+          recognitionRef.current = null;
+          // Land the caret in the composer so the user can review and send.
+          inputRef.current?.focus();
+        };
+
+        recognitionRef.current = recognition;
+        recognition.start();
+        setListening(true);
+      } catch {
         recognitionRef.current = null;
-        // Land the caret in the composer so the user can review and send.
-        inputRef.current?.focus();
-      };
+        setListening(false);
+        setVoiceNotice("Couldn't start dictation — please try again.");
+      }
+    };
 
-      recognitionRef.current = recognition;
-      recognition.start();
-      setListening(true);
-    } catch {
-      recognitionRef.current = null;
-      setListening(false);
-      setVoiceNotice("Couldn't start dictation — please try again.");
+    if (typeof navigator !== "undefined" && navigator.mediaDevices?.getUserMedia) {
+      navigator.mediaDevices
+        .getUserMedia({ audio: true })
+        .then((stream) => {
+          // Release track immediately; SpeechRecognition will handle speech-to-text
+          stream.getTracks().forEach((track) => track.stop());
+          launch();
+        })
+        .catch((err) => {
+          if (err?.name === "NotAllowedError" || err?.name === "PermissionDeniedError") {
+            setVoiceNotice("Microphone access is blocked — allow it in your browser's site settings.");
+          } else if (err?.name === "NotFoundError" || err?.name === "DevicesNotFoundError") {
+            setVoiceNotice("No microphone was found on this device.");
+          } else {
+            launch();
+          }
+        });
+    } else {
+      launch();
     }
   };
 
