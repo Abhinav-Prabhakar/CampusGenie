@@ -1,5 +1,7 @@
 ### Campus Genie
 
+![Campus Genie banner](banner.jpg)
+
 ### A Databricks-powered campus intelligence platform for discovering events, joining communities, exploring research opportunities, managing campus data, and making better use of student life.
 
 Campus Genie brings fragmented campus information into one conversational, governed interface. Students can ask natural-language questions, explore event cards, refine recommendations through interactive surveys, inspect trusted knowledge sources, and compare clubs, labs, alumni pathways, city meetups, and campus operations data. Administrators can manage events and surveys through the same application.
@@ -26,6 +28,8 @@ The project is a single Next.js App Router application backed by Databricks Lake
 - [Known boundaries](#known-boundaries)
 
 ## Why Campus Genie
+
+![Campus Genie](shot.jpeg)
 
 Campus opportunities are usually scattered across posters, chat groups, forms, spreadsheets, club pages, and word of mouth. That fragmentation creates several problems:
 
