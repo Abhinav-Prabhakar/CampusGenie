@@ -46,6 +46,8 @@ Campus Genie turns those disconnected records into a governed campus data layer 
 
 ### Conversational Campus Genie
 
+![Conversational Campus Genie](events.png)
+
 - Streaming chat with selectable LLM providers and a Databricks Genie route.
 - Governed tools for events, Lakehouse SQL, knowledge sources, interactive surveys, approvals, and recommendation cards.
 - Personalized event and club discovery based on interests, time, food preference, category, commitment, or location.
@@ -54,6 +56,8 @@ Campus Genie turns those disconnected records into a governed campus data layer 
 - Persistent local chat threads, titles, recent conversations, stop generation, and model settings.
 
 ### Event discovery
+
+![Event discovery](pass.png)
 
 - Campus event grid with category and time filters.
 - Event detail modal, availability information, venue, host, duration, and food indicators.
