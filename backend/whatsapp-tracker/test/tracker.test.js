@@ -11,7 +11,7 @@ import {
   getTrackedGroups,
   recordExtractedEvent,
 } from "../src/state.js";
-import { extractEventFromMessage } from "../src/eventExtractor.js";
+import { extractEventFromMessage, normalizeEventPayload } from "../src/eventExtractor.js";
 import { checkEventExists } from "../src/lakehouse.js";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -106,6 +106,44 @@ RSVP is mandatory: https://gdg.community.dev/events/spring-hack-2026`;
   assert.equal(extracted.foodProvided, true);
   assert.ok(extracted.location.length > 0);
   assert.ok(extracted.eventDate.startsWith("2026-"));
+});
+
+test("normalizeEventPayload coerces dates, categories and scalar types", () => {
+  const good = normalizeEventPayload({
+    isEvent: true,
+    title: "Spring Hackathon",
+    category: "HACKATHON",
+    eventDate: "March 14, 2026",
+    capacity: "250",
+    isVirtual: "true",
+    foodProvided: 1,
+  });
+  assert.equal(good.eventDate, "2026-03-14", "Flexible date strings should become YYYY-MM-DD");
+  assert.equal(good.category, "hackathon", "Category should be lowercased and allowed");
+  assert.equal(good.capacity, 250, "Numeric strings should become numbers");
+  assert.equal(good.isVirtual, true, "String 'true' should coerce to boolean true");
+  assert.equal(good.foodProvided, true, "Numeric 1 should coerce to boolean true");
+
+  const badCategory = normalizeEventPayload({
+    isEvent: true,
+    title: "Mystery Event",
+    category: "gala",
+    eventDate: "not a date at all",
+  });
+  assert.equal(badCategory.category, "social", "Unknown categories should fall back to social");
+  assert.match(
+    badCategory.eventDate,
+    /^\d{4}-\d{2}-\d{2}$/,
+    "Unparseable dates should fall back to today's YYYY-MM-DD"
+  );
+  assert.equal(badCategory.capacity, 100, "Missing capacity should default");
+
+  assert.equal(
+    normalizeEventPayload({ isEvent: false, title: "Nope" }),
+    null,
+    "Non-event payloads should be rejected"
+  );
+  assert.equal(normalizeEventPayload({ isEvent: true }), null, "Payloads without a title should be rejected");
 });
 
 test("Lakehouse SQL checkEventExists queries Delta table successfully", async () => {

@@ -7,22 +7,41 @@ import { CONFIG } from "./config.js";
  * Create and initialize the WhatsApp Web Client
  */
 export function createWhatsAppClient({ onQr, onReady, onAuthFailure } = {}) {
+  // By default Chromium inherits the OS proxy; local proxies (Charles,
+  // Proxyman, Zscaler...) reject WhatsApp's WebSocket upgrade so the QR code
+  // never renders. Bypass unless an explicit proxy was configured.
+  const proxyArgs = CONFIG.whatsappProxyServer
+    ? [`--proxy-server=${CONFIG.whatsappProxyServer}`]
+    : ["--no-proxy-server"];
+
+  const launchOptions = {
+    headless: true,
+    args: [
+      "--no-sandbox",
+      "--disable-setuid-sandbox",
+      "--disable-dev-shm-usage",
+      "--disable-accelerated-2d-canvas",
+      "--no-first-run",
+      "--no-zygote",
+      "--disable-gpu",
+      ...proxyArgs,
+    ],
+  };
+
+  // Allow recovering from a corrupt Puppeteer browser cache by pointing at
+  // any installed Chrome/Chromium build.
+  if (CONFIG.puppeteerExecutablePath) {
+    launchOptions.executablePath = CONFIG.puppeteerExecutablePath;
+  }
+
   const client = new Client({
     authStrategy: new LocalAuth({
       dataPath: CONFIG.sessionPath,
     }),
-    puppeteer: {
-      headless: true,
-      args: [
-        "--no-sandbox",
-        "--disable-setuid-sandbox",
-        "--disable-dev-shm-usage",
-        "--disable-accelerated-2d-canvas",
-        "--no-first-run",
-        "--no-zygote",
-        "--disable-gpu",
-      ],
-    },
+    // The library's default UA claims Chrome/101 (2022); WhatsApp serves a
+    // degraded login flow to stale UAs, so present a current one.
+    userAgent: CONFIG.whatsappUserAgent,
+    puppeteer: launchOptions,
   });
 
   client.on("qr", (qr) => {
@@ -67,7 +86,7 @@ export async function fetchAllGroups(client) {
 /**
  * Fetch unread or new messages from a specific group since a given UNIX timestamp
  */
-export async function fetchNewGroupMessages(client, groupId, sinceTimestamp = 0, limit = 50) {
+export async function fetchNewGroupMessages(client, groupId, sinceTimestamp = 0, limit = 50, lastMessageId = null) {
   try {
     const chat = await client.getChatById(groupId);
     if (!chat) return [];
@@ -75,11 +94,15 @@ export async function fetchNewGroupMessages(client, groupId, sinceTimestamp = 0,
     // Fetch up to `limit` recent messages
     const messages = await chat.fetchMessages({ limit });
 
-    // Filter to messages created strictly after the cursor timestamp
+    // Messages strictly after the cursor; `===` siblings of the cursor
+    // message are re-checked (minus the cursor itself) so messages sharing
+    // the cursor's second are never dropped.
     const newMessages = messages
       .filter((m) => {
         const ts = m.timestamp || 0;
-        return ts > sinceTimestamp && m.body && m.body.trim().length > 0;
+        if (ts < sinceTimestamp) return false;
+        if (ts === sinceTimestamp && m.id._serialized === lastMessageId) return false;
+        return Boolean(m.body && m.body.trim().length > 0);
       })
       .sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
 

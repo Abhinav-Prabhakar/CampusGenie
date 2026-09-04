@@ -95,7 +95,7 @@ export async function handleScanTrackedGroups(client) {
 
     console.log(chalk.bold(`📁 ${group.name}`) + chalk.gray(` (checking messages after ${sinceDateStr})`));
 
-    const messages = await fetchNewGroupMessages(client, group.id, sinceTs, 60);
+    const messages = await fetchNewGroupMessages(client, group.id, sinceTs, 60, group.lastMessageId);
 
     if (messages.length === 0) {
       console.log(chalk.gray("   No new messages.\n"));
@@ -172,6 +172,11 @@ export async function handleLiveWatchMode(client) {
     console.log(chalk.yellow("⚠️ No groups are currently tracked. Please select groups first."));
     return;
   }
+
+  // Drain everything posted since the last run first, so messages that
+  // arrived while offline are ingested before live listening begins.
+  console.log(chalk.blue("⏳ Catching up on messages posted since the last run..."));
+  await handleScanTrackedGroups(client);
 
   const trackedMap = new Map(tracked.map((g) => [g.id, g.name]));
 

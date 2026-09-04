@@ -9,6 +9,9 @@
     "scan": "node index.js --scan",
     "watch": "node index.js --watch",
     "groups": "node index.js --groups",
+    "status": "node index.js --status",
+    "verify:lakehouse": "node scripts/verify-ingestion.mjs",
+    "verify:whatsapp": "node scripts/verify-whatsapp-connection.mjs",
     "test": "node --test test/*.test.js"
   },
   "dependencies": {

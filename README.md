@@ -29,7 +29,7 @@ The project is a single Next.js App Router application backed by Databricks Lake
 
 ## Why Campus Genie
 
-![Campus Genie](shot.jpeg)
+![Campus Genie](shot.png)
 
 Campus opportunities are usually scattered across posters, chat groups, forms, spreadsheets, club pages, and word of mouth. That fragmentation creates several problems:
 

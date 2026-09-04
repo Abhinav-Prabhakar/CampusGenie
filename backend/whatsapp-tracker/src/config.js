@@ -35,6 +35,16 @@ export const CONFIG = {
   // State storage
   statePath: path.resolve(__dirname, "../data/tracker-state.json"),
   sessionPath: path.resolve(__dirname, "../.wwebjs_auth"),
+
+  // WhatsApp Web browser tuning
+  // Local system proxies (e.g. 127.0.0.1:8080 debuggers) break WhatsApp's
+  // WebSocket handshake, which blocks QR generation — bypass by default.
+  // Set WA_PROXY_SERVER to route through a proxy explicitly instead.
+  whatsappProxyServer: process.env.WA_PROXY_SERVER || "",
+  whatsappUserAgent:
+    process.env.WA_USER_AGENT ||
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36",
+  puppeteerExecutablePath: process.env.PUPPETEER_EXECUTABLE_PATH || "",
 };
 
 /**

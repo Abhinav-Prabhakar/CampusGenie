@@ -1,5 +1,63 @@
 import { CONFIG } from "./config.js";
 
+const VALID_CATEGORIES = new Set(["hackathon", "workshop", "social", "career", "meeting", "sports"]);
+
+function toBool(value) {
+  return value === true || value === "true" || value === 1 || value === "1" || value === "yes";
+}
+
+/**
+ * Format a Date's calendar components in LOCAL time as YYYY-MM-DD.
+ * toISOString() would shift the day for date-only strings parsed in
+ * non-UTC timezones (e.g. "March 14, 2026" at UTC+5:30 becoming March 13).
+ */
+function localDateKey(date) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+/**
+ * Coerce an LLM-provided date to a strict YYYY-MM-DD string.
+ * ISO strings pass through untouched; anything else is parsed and read back
+ * in local calendar time; unparseable input falls back to today.
+ */
+function toIsoDate(value) {
+  if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value.trim())) {
+    return value.trim();
+  }
+  const parsed = value ? new Date(value) : null;
+  if (parsed && !Number.isNaN(parsed.getTime())) {
+    return localDateKey(parsed);
+  }
+  return localDateKey(new Date());
+}
+
+/**
+ * Normalize an LLM-extracted event payload into values the Lakehouse INSERT
+ * can accept: strict YYYY-MM-DD dates, a known category, and scalar types.
+ * Returns null when the payload is not a usable event.
+ */
+export function normalizeEventPayload(payload) {
+  if (!payload || payload.isEvent !== true || !payload.title) return null;
+
+  // Accept flexible date strings ("March 14, 2026", "14/03/2026", ISO) and
+  // coerce to YYYY-MM-DD so DATE literals never fail; fall back to today.
+  const eventDate = toIsoDate(payload.eventDate);
+
+  const category = String(payload.category || "social").toLowerCase();
+
+  return {
+    ...payload,
+    eventDate,
+    category: VALID_CATEGORIES.has(category) ? category : "social",
+    capacity: Number.isFinite(Number(payload.capacity)) ? Math.max(1, Math.floor(Number(payload.capacity))) : 100,
+    isVirtual: toBool(payload.isVirtual),
+    foodProvided: toBool(payload.foodProvided),
+  };
+}
+
 /**
  * Helper to fetch with retry for transient 502/503/network errors
  */
@@ -136,9 +194,9 @@ ${messageText}
       return null;
     }
 
-    // Attach group metadata
+    // Attach group metadata and normalize fields for ingestion
     parsed.whatsappUrl = groupName ? `WhatsApp: ${groupName}` : "WhatsApp Group";
-    return parsed;
+    return normalizeEventPayload(parsed);
   } catch (err) {
     console.warn("[EventExtractor] Error extracting event:", err.message);
     return null;
